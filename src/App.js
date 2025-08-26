@@ -1,13 +1,13 @@
-import logo from './logo.svg';
 import './App.css';
-import SignIn from './Signin';
+import AppRoutes from './routes/AppRoutes';
+import { BrowserRouter } from 'react-router-dom';
+
 
 function App() {
   return (
-    <>
-      <SignIn/>
-    
-    </>
+      <BrowserRouter>
+       <AppRoutes/>
+      </BrowserRouter>
   );
 }
 
