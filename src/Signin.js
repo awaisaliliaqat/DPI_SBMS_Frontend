@@ -17,6 +17,10 @@ import ForgotPassword from './components/ForgotPassword';
 import AppTheme from './shared-theme/AppTheme';
 import ColorModeSelect from './shared-theme/ColorModeSelect';
 import { GoogleIcon, FacebookIcon, SitemarkIcon } from './components/Customicon';
+import { useAuth } from './auth/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { Alert, Snackbar } from '@mui/material';
+import { BASE_URL } from './constants/Constants';
 
 const Card = styled(MuiCard)(({ theme }) => ({
   display: 'flex',
@@ -66,6 +70,11 @@ export default function SignIn(props) {
   const [passwordError, setPasswordError] = React.useState(false);
   const [passwordErrorMessage, setPasswordErrorMessage] = React.useState('');
   const [open, setOpen] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [snackbar, setSnackbar] = React.useState({ open: false, message: '', severity: 'error' });
+
+  const { login, getRedirectRoute } = useAuth();
+  const navigate = useNavigate();
 
   const handleClickOpen = () => {
     setOpen(true);
@@ -75,16 +84,53 @@ export default function SignIn(props) {
     setOpen(false);
   };
 
-  const handleSubmit = (event) => {
-    if (emailError || passwordError) {
-      event.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    
+    if (!validateInputs()) {
       return;
     }
-    const data = new FormData(event.currentTarget);
-    console.log({
-      email: data.get('email'),
-      password: data.get('password'),
-    });
+    
+    setIsLoading(true);
+    
+    try {
+      const formData = new FormData(event.currentTarget);
+      const payload = {
+        usernameOrEmail: formData.get('email'),
+        password: formData.get('password')
+      };
+      
+      const response = await fetch(`${BASE_URL}/api/auth/signin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        // Login successful
+      login(data.token, data.data);
+      const redirectRoute = getRedirectRoute(data.data);
+      navigate(redirectRoute);
+      } else {
+        setSnackbar({
+          open: true,
+          message: data.message || 'Login failed',
+          severity: 'error'
+        });
+      }
+    } catch (err) {
+      setSnackbar({
+        open: true,
+        message: 'An error occurred during login. Please try again.',
+        severity: 'error'
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const validateInputs = () => {
@@ -93,18 +139,18 @@ export default function SignIn(props) {
 
     let isValid = true;
 
-    if (!email.value || !/\S+@\S+\.\S+/.test(email.value)) {
+    if (!email.value) {
       setEmailError(true);
-      setEmailErrorMessage('Please enter a valid email address.');
+      setEmailErrorMessage('Please enter your email or username.');
       isValid = false;
     } else {
       setEmailError(false);
       setEmailErrorMessage('');
     }
 
-    if (!password.value || password.value.length < 6) {
+    if (!password.value) {
       setPasswordError(true);
-      setPasswordErrorMessage('Password must be at least 6 characters long.');
+      setPasswordErrorMessage('Please enter your password.');
       isValid = false;
     } else {
       setPasswordError(false);
@@ -112,6 +158,10 @@ export default function SignIn(props) {
     }
 
     return isValid;
+  };
+
+  const handleCloseSnackbar = () => {
+    setSnackbar({ ...snackbar, open: false });
   };
 
   return (
@@ -140,20 +190,21 @@ export default function SignIn(props) {
             }}
           >
             <FormControl>
-              <FormLabel htmlFor="email">Email</FormLabel>
+              <FormLabel htmlFor="email">Email or Username</FormLabel>
               <TextField
                 error={emailError}
                 helperText={emailErrorMessage}
                 id="email"
-                type="email"
+                type="text"
                 name="email"
-                placeholder="your@email.com"
+                placeholder="your@email.com or username"
                 autoComplete="email"
                 autoFocus
                 required
                 fullWidth
                 variant="outlined"
                 color={emailError ? 'error' : 'primary'}
+                disabled={isLoading}
               />
             </FormControl>
             <FormControl>
@@ -166,11 +217,11 @@ export default function SignIn(props) {
                 type="password"
                 id="password"
                 autoComplete="current-password"
-                autoFocus
                 required
                 fullWidth
                 variant="outlined"
                 color={passwordError ? 'error' : 'primary'}
+                disabled={isLoading}
               />
             </FormControl>
             <ForgotPassword open={open} handleClose={handleClose} />
@@ -178,9 +229,9 @@ export default function SignIn(props) {
               type="submit"
               fullWidth
               variant="contained"
-              onClick={validateInputs}
+              disabled={isLoading}
             >
-              Sign in
+              {isLoading ? 'Signing in...' : 'Sign in'}
             </Button>
             <Link
               component="button"
@@ -188,12 +239,28 @@ export default function SignIn(props) {
               onClick={handleClickOpen}
               variant="body2"
               sx={{ alignSelf: 'center' }}
+              disabled={isLoading}
             >
               Forgot your password?
             </Link>
           </Box>
           <Divider>Diamond Paints</Divider>
         </Card>
+        
+        <Snackbar 
+          open={snackbar.open} 
+          autoHideDuration={6000} 
+          onClose={handleCloseSnackbar}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        >
+          <Alert 
+            onClose={handleCloseSnackbar} 
+            severity={snackbar.severity} 
+            sx={{ width: '100%' }}
+          >
+            {snackbar.message}
+          </Alert>
+        </Snackbar>
       </SignInContainer>
     </AppTheme>
   );

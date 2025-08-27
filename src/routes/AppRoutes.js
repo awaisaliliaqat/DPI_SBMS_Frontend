@@ -1,20 +1,54 @@
-// src/routes/AppRoutes.js
 import React from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import SignIn from '../Signin';
-// import Dashboard from '../components/Dashboard';
-// import Profile from '../components/Profile';
-// import NotFound from '../components/NotFound';
+import { useAuth } from '../auth/AuthContext';
+import { AuthProvider } from '../auth/AuthContext';
+import DashboardLayout from '../dashboard/components/DashboardLayout';
+// import DashboardHome from '../pages/DashboardHome';
+import UserManagement from '../pages/UserManagement';
+// import Reports from '../pages/Reports';
+// import Settings from '../pages/Settings';
+
+// Protected Route component
+const ProtectedRoute = ({ children }) => {
+  const { isAuthenticated, loading } = useAuth();
+  
+  if (loading) {
+    return <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>;
+  }
+  
+  return isAuthenticated ? children : <Navigate to="/signin" />;
+};
+
+const AppRoutesContent = () => {
+  return (
+    <Routes>
+      <Route path="/signin" element={<SignIn />} />
+      
+      {/* Dashboard Layout Route - contains navbar and sidebar */}
+      <Route 
+        path="/" 
+        element={
+          <ProtectedRoute>
+            <DashboardLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="users" element={<UserManagement />} />
+        <Route index element={<Navigate to="/signin" />} />
+      </Route>
+      
+      {/* Fallback route */}
+      <Route path="*" element={<Navigate to="/signin" />} />
+    </Routes>
+  );
+};
 
 const AppRoutes = () => {
   return (
-    <Routes>
-      <Route path="/" element={<SignIn />} />
-      <Route path="/signin" element={<SignIn />} />
-      {/* <Route path="/dashboard" element={<Dashboard />} />
-      <Route path="/profile" element={<Profile />} />
-      <Route path="*" element={<NotFound />} /> */}
-    </Routes>
+    <AuthProvider>
+      <AppRoutesContent />
+    </AuthProvider>
   );
 };
 
