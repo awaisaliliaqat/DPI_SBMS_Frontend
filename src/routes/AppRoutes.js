@@ -5,6 +5,8 @@ import { useAuth } from '../auth/AuthContext';
 import { AuthProvider } from '../auth/AuthContext';
 import DashboardLayout from '../dashboard/components/DashboardLayout';
 // import DashboardHome from '../pages/DashboardHome';
+// import UserManagement from '../pages/UserManagement';
+import RoleManagement from '../pages/Role';
 import UserManagement from '../pages/UserManagement';
 // import Reports from '../pages/Reports';
 // import Settings from '../pages/Settings';
@@ -34,7 +36,8 @@ const AppRoutesContent = () => {
           </ProtectedRoute>
         }
       >
-        <Route path="users" element={<UserManagement />} />
+        {/* <Route path="users" element={<UserManagement />} /> */}
+        <Route path="users" element={<RoleManagement />} />
         <Route index element={<Navigate to="/signin" />} />
       </Route>
       

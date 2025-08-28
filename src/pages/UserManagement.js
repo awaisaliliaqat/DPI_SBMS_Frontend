@@ -137,19 +137,7 @@ export default function UserManagement() {
             Manage system users, their roles, and permissions. You can view, edit, or remove users from the system.
           </Typography>
 
-          <DataTable
-            data={dummyUsers}
-            columns={userColumns}
-            title="System Users"
-            onView={handleView}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-            onAdd={handleAdd}
-            searchable={true}
-            pageable={true}
-            rowsPerPageOptions={[5, 10, 25, 50]}
-            defaultRowsPerPage={10}
-          />
+
         </Box>
       )}
     </Box>

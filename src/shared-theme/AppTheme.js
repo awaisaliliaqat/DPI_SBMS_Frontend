@@ -25,7 +25,7 @@ function AppTheme(props) {
           shadows,
           shape,
           components: {
-            ...inputsCustomizations,
+            // ...inputsCustomizations,
             ...dataDisplayCustomizations,
             ...feedbackCustomizations,
             ...navigationCustomizations,

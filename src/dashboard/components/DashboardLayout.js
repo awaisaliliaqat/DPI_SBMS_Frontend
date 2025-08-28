@@ -49,7 +49,7 @@ export default function DashboardLayout(props) {
               mt: { xs: 8, md: 0 },
             }}
                   >
-            <Header />         
+            {/* <Header />          */}
             {/* This is where the dynamic content will be rendered */}
             <Outlet />
           </Stack>
