@@ -42,8 +42,6 @@ export default function RoleManagement() {
   
   const { user, hasPermission, token } = useAuth();
 
-  console.log("user permissions ", user);
-
   // Check user permissions
   const canRead = user?.permissions?.role?.includes('read') || false;
   const canCreate = user?.permissions?.role?.includes('create') || false;

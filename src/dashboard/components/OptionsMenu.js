@@ -10,6 +10,7 @@ import ListItemIcon, { listItemIconClasses } from '@mui/material/ListItemIcon';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded';
 import MenuButton from './MenuButton';
+import { useAuth } from '../../auth/AuthContext'; // Import the useAuth hook
 
 const MenuItem = styled(MuiMenuItem)({
   margin: '2px 0',
@@ -18,12 +19,21 @@ const MenuItem = styled(MuiMenuItem)({
 export default function OptionsMenu() {
   const [anchorEl, setAnchorEl] = React.useState(null);
   const open = Boolean(anchorEl);
+  const { logout } = useAuth(); // Get the logout function from Auth context
+
   const handleClick = (event) => {
     setAnchorEl(event.currentTarget);
   };
+
   const handleClose = () => {
     setAnchorEl(null);
   };
+
+  const handleLogout = () => {
+    handleClose(); // Close the menu first
+    logout(); // Call the logout function from Auth context
+  };
+
   return (
     <React.Fragment>
       <MenuButton
@@ -54,13 +64,13 @@ export default function OptionsMenu() {
         }}
       >
         <MenuItem onClick={handleClose}>Profile</MenuItem>
-        <MenuItem onClick={handleClose}>My account</MenuItem>
+        {/* <MenuItem onClick={handleClose}>My account</MenuItem> */}
         <Divider />
-        <MenuItem onClick={handleClose}>Add another account</MenuItem>
-        <MenuItem onClick={handleClose}>Settings</MenuItem>
-        <Divider />
+        {/* <MenuItem onClick={handleClose}>Add another account</MenuItem>
+        <MenuItem onClick={handleClose}>Settings</MenuItem> */}
+        {/* <Divider /> */}
         <MenuItem
-          onClick={handleClose}
+          onClick={handleLogout} // Use handleLogout instead of handleClose
           sx={{
             [`& .${listItemIconClasses.root}`]: {
               ml: 'auto',
