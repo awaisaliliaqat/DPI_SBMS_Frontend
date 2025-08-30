@@ -78,62 +78,70 @@ export default function UserManagement() {
     }
   }, [canRead, navigate]);
 
-  // Define user form fields
-  const getUserFields = (isCreate = false, includePassword = false) => [
+// Update your getUserFields function to use a different field name for view mode
+const getUserFields = (isCreate = false, includePassword = false, isViewMode = false) => [
+  {
+    name: 'username',
+    label: 'Username',
+    type: 'text',
+    required: true,
+    readOnly: isViewMode,
+  },
+  {
+    name: 'email',
+    label: 'Email',
+    type: 'email',
+    required: true,
+    readOnly: isViewMode,
+  },
+  ...(isCreate ? [{
+    name: 'password',
+    label: 'Password',
+    type: 'password',
+    required: true,
+  }] : []),
+  ...(includePassword && !isCreate ? [
     {
-      name: 'username',
-      label: 'Username',
-      type: 'text',
-      required: true,
-    },
-    {
-      name: 'email',
-      label: 'Email',
-      type: 'email',
-      required: true,
-    },
-    ...(isCreate ? [{
       name: 'password',
-      label: 'Password',
+      label: 'New Password',
       type: 'password',
       required: true,
-    }] : []),
-    ...(includePassword && !isCreate ? [
-      {
-        name: 'password',
-        label: 'New Password',
-        type: 'password',
-        required: true,
-        placeholder: 'Enter new password',
-      },
-      {
-        name: 'confirmPassword',
-        label: 'Confirm New Password',
-        type: 'password',
-        required: true,
-        placeholder: 'Confirm new password',
-      }
-    ] : []),
+      placeholder: 'Enter new password',
+    },
     {
-      name: 'roleId',
-      label: 'Role',
-      type: 'select',
+      name: 'confirmPassword',
+      label: 'Confirm New Password',
+      type: 'password',
       required: true,
-      options: roles.map(role => ({
-        value: role.id,
-        label: role.name
-      })),
-      loading: loadingRoles,
-      error: rolesError,
-    },
-    {
-      name: 'isActive',
-      label: 'Active',
-      type: 'checkbox',
-      defaultValue: true,
-    },
-  ];
-
+      placeholder: 'Confirm new password',
+    }
+  ] : []),
+  // For view mode, use a different field name to display roleName
+  isViewMode ? {
+    name: 'roleName', // Use roleName field instead of roleId
+    label: 'Role',
+    type: 'text',
+    readOnly: true,
+  } : {
+    name: 'roleId',
+    label: 'Role',
+    type: 'select',
+    required: true,
+    options: roles.map(role => ({
+      value: role.id,
+      label: role.name
+    })),
+    loading: loadingRoles,
+    error: rolesError,
+  },
+  {
+    name: 'isActive',
+    label: 'Active',
+    type: 'checkbox',
+    defaultValue: true,
+    readOnly: isViewMode,
+  },
+];
   // API call to fetch roles
   const fetchRoles = React.useCallback(async () => {
     setLoadingRoles(true);
@@ -155,12 +163,12 @@ export default function UserManagement() {
     }
   }, [get]);
 
-  // Load roles when modal opens
+  // Load roles when modal opens for create/edit modes only
   React.useEffect(() => {
-    if (modalOpen && (canCreate || canUpdate)) {
+    if (modalOpen && (modalMode === 'create' || modalMode === 'edit')) {
       fetchRoles();
     }
-  }, [modalOpen, fetchRoles, canCreate, canUpdate]);
+  }, [modalOpen, modalMode, fetchRoles]);
 
   // Reset password change state when modal closes
   React.useEffect(() => {
@@ -352,6 +360,12 @@ export default function UserManagement() {
       }
     }
 
+    // Don't submit in view mode
+    if (modalMode === 'view') {
+      setModalOpen(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
       // Prepare submit data according to API requirements
@@ -540,7 +554,11 @@ export default function UserManagement() {
         mode={modalMode}
         title={`${modalMode === 'create' ? 'Create' : modalMode === 'edit' ? 'Edit' : 'View'} User`}
         initialData={selectedUser || {}}
-        fields={getUserFields(modalMode === 'create', showPasswordChange)}
+        fields={getUserFields(
+          modalMode === 'create', 
+          showPasswordChange, 
+          modalMode === 'view'
+        )}
         onSubmit={handleModalSubmit}
         loading={isLoading}
         showPasswordChange={showPasswordChange}

@@ -169,12 +169,12 @@ export default function RoleManagement() {
     }
   }, [token]);
 
-  // Load features when modal opens
+  // Load features when modal opens - but only for create/edit modes
   React.useEffect(() => {
-    if (modalOpen) {
+    if (modalOpen && modalMode !== 'view') {
       fetchFeatures();
     }
-  }, [modalOpen, fetchFeatures]);
+  }, [modalOpen, modalMode, fetchFeatures]);
 
 
   const handlePermissionChange = (permissionId, isChecked) => {
