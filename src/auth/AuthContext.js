@@ -49,6 +49,8 @@ export const AuthProvider = ({ children }) => {
     
     localStorage.removeItem('authToken');
     localStorage.removeItem('userData');
+
+     window.location.href = '/signin';
   };
 
   // Check if user has specific permission

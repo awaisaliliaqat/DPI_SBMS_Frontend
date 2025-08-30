@@ -26,12 +26,12 @@ import {
 } from '@mui/material';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import { useApi } from '../hooks/useApi';
 import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
 import { BASE_URL } from "../constants/Constants";
 import { Close, Add } from '@mui/icons-material';
-
 const INITIAL_PAGE_SIZE = 10;
 
 // Permissions data (static)
@@ -48,7 +48,10 @@ export default function RoleManagement() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   
+  
   const { user, hasPermission, token } = useAuth();
+
+   const { get, post, put, del } = useApi(); // Use the hook
   const [rowsState, setRowsState] = React.useState({
     rows: [],
     rowCount: 0,
@@ -248,22 +251,9 @@ export default function RoleManagement() {
     try {
       const { page, pageSize } = paginationModel;
       
-      // Build API URL with pagination parameters
-      const apiUrl = `${BASE_URL}/api/roles/with-permissions?page=${page}&size=${pageSize}`;
+      const apiUrl = `/api/roles/with-permissions?page=${page}&size=${pageSize}`;
       
-      const response = await fetch(apiUrl, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const rolesData = await response.json();
+      const rolesData = await get(apiUrl);
       
       // Handle both paginated and non-paginated responses
       if (Array.isArray(rolesData)) {
@@ -292,7 +282,7 @@ export default function RoleManagement() {
     } finally {
       setIsLoading(false);
     }
-  }, [paginationModel, token]);
+  }, [paginationModel, get]);
 
   // Load data when component mounts or pagination changes
   React.useEffect(() => {
@@ -323,18 +313,7 @@ export default function RoleManagement() {
       if (confirmed) {
         setIsLoading(true);
         try {
-          const response = await fetch(`${BASE_URL}/api/roles/${roleData.id}`, {
-            method: 'DELETE',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`,
-            },
-          });
-
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-
+          await del(`/api/roles/${roleData.id}`);
           alert('Role deleted successfully!');
           loadRoles();
         } catch (deleteError) {
@@ -344,9 +323,8 @@ export default function RoleManagement() {
         }
       }
     },
-    [loadRoles, token],
+    [loadRoles, del], // Add del to dependencies
   );
-
   const handleCreate = React.useCallback(() => {
     setSelectedRole({});
     setRolePermissions([]);
@@ -438,10 +416,7 @@ export default function RoleManagement() {
     setSelectedFeature('');
     setSelectedPermissions({});
   };
-
-  // Handle modal submit
-  const handleModalSubmit = async (formData) => {
-    // Validate permissions
+    const handleModalSubmit = async (formData) => {
     if (rolePermissions.length === 0) {
       alert('Please add at least one permission');
       return;
@@ -451,7 +426,6 @@ export default function RoleManagement() {
     try {
       const transformedPermissions = transformPermissionsForApi(rolePermissions);
       
-      // Prepare submit data according to API requirements
       const submitData = {
         name: formData.name,
         description: formData.description,
@@ -459,28 +433,12 @@ export default function RoleManagement() {
         permissions: transformedPermissions,
       };
 
-      let url, method;
+      let response;
       
       if (modalMode === 'create') {
-        url = `${BASE_URL}/api/roles/add-role-permission`;
-        method = 'POST';
+        response = await post('/api/roles/add-role-permission', submitData);
       } else {
-        url = `${BASE_URL}/api/roles/${selectedRole.id}/permissions`;
-        method = 'PUT';
-      }
-      
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(submitData),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.text();
-        throw new Error(`HTTP error! status: ${response.status}, message: ${errorData}`);
+        response = await put(`/api/roles/${selectedRole.id}/permissions`, submitData);
       }
 
       alert(`Role ${modalMode === 'create' ? 'created' : 'updated'} successfully!`);
@@ -492,7 +450,6 @@ export default function RoleManagement() {
       setIsLoading(false);
     }
   };
-
   const PermissionManager = () => {
     const groupedPermissions = groupPermissionsByFeature(rolePermissions);
     

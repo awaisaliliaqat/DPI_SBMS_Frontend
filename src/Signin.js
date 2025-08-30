@@ -16,11 +16,11 @@ import { styled } from '@mui/material/styles';
 import ForgotPassword from './components/ForgotPassword';
 import AppTheme from './shared-theme/AppTheme';
 import ColorModeSelect from './shared-theme/ColorModeSelect';
-import { GoogleIcon, FacebookIcon, SitemarkIcon } from './components/Customicon';
+import {  SitemarkIcon } from './components/Customicon';
 import { useAuth } from './auth/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Alert, Snackbar } from '@mui/material';
-import { BASE_URL } from './constants/Constants';
+import { useApi } from './hooks/useApi';
 
 const Card = styled(MuiCard)(({ theme }) => ({
   display: 'flex',
@@ -74,6 +74,7 @@ export default function SignIn(props) {
   const [snackbar, setSnackbar] = React.useState({ open: false, message: '', severity: 'error' });
 
   const { login, getRedirectRoute } = useAuth();
+  const { post } = useApi();
   const navigate = useNavigate();
 
   const handleClickOpen = () => {
@@ -100,20 +101,15 @@ export default function SignIn(props) {
         password: formData.get('password')
       };
       
-      const response = await fetch(`${BASE_URL}/api/auth/signin`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-      
-      const data = await response.json();
+     const data = await post('/api/auth/signin', payload, { requiresAuth: false });
       
       if (data.success) {
         // Login successful
+
+        console.log("data", data); 
       login(data.token, data.data);
-      const redirectRoute = getRedirectRoute(data.data);
+        const redirectRoute = getRedirectRoute(data.data);
+        console.log(redirectRoute);
       navigate(redirectRoute);
       } else {
         setSnackbar({

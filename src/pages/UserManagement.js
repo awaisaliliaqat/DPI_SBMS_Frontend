@@ -1,28 +1,8 @@
 import * as React from 'react';
 import {
   Alert,
-  Box,
   Chip,
-  Stack,
   Typography,
-  Grid,
-  Card,
-  CardContent,
-  Button,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  IconButton,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction,
-  Divider,
-  FormGroup,
-  Checkbox,
-  FormControlLabel,
-  CircularProgress,
 } from '@mui/material';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
@@ -30,7 +10,8 @@ import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
 import { BASE_URL } from "../constants/Constants";
-import { Close, Add } from '@mui/icons-material';
+import { useApi } from '../hooks/useApi';
+
 
 const INITIAL_PAGE_SIZE = 10;
 
@@ -40,6 +21,8 @@ export default function UserManagement() {
   const navigate = useNavigate();
   
   const { user, hasPermission, token } = useAuth();
+  const { get, post, put, del } = useApi(); // Use the useApi hook
+
   const [rowsState, setRowsState] = React.useState({
     rows: [],
     rowCount: 0,
@@ -122,19 +105,7 @@ export default function UserManagement() {
     setRolesError(null);
     
     try {
-      const response = await fetch(`${BASE_URL}/api/roles/ids-and-names`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
+       const data = await get('/api/roles/ids-and-names');
       
       if (Array.isArray(data)) {
         setRoles(data);
@@ -147,7 +118,7 @@ export default function UserManagement() {
     } finally {
       setLoadingRoles(false);
     }
-  }, [token]);
+  }, [get]);
 
   // Load roles when modal opens
   React.useEffect(() => {
@@ -213,22 +184,9 @@ export default function UserManagement() {
     try {
       const { page, pageSize } = paginationModel;
       
-      // Build API URL with pagination parameters
-      const apiUrl = `${BASE_URL}/api/users?page=${page}&size=${pageSize}`;
+      const apiUrl = `/api/users?page=${page}&size=${pageSize}`;
       
-      const response = await fetch(apiUrl, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const userData = await response.json();
+      const userData = await get(apiUrl);
       
       // Handle the response structure based on your API
       if (userData.users && Array.isArray(userData.users)) {
@@ -344,28 +302,14 @@ export default function UserManagement() {
         submitData.password = formData.password;
       }
 
-      let url, method;
+      // let url, method;
+
+      let response;
       
       if (modalMode === 'create') {
-        url = `${BASE_URL}/api/users`;
-        method = 'POST';
+        response = await post('/api/users', submitData);
       } else {
-        url = `${BASE_URL}/api/users/${selectedUser.id}`;
-        method = 'PUT';
-      }
-      
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(submitData),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.text();
-        throw new Error(`HTTP error! status: ${response.status}, message: ${errorData}`);
+        response = await put(`/api/users/${selectedUser.id}`, submitData);
       }
 
       alert(`User ${modalMode === 'create' ? 'created' : 'updated'} successfully!`);
