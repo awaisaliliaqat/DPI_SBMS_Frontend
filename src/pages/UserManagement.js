@@ -36,6 +36,9 @@ export default function UserManagement() {
   const [modalMode, setModalMode] = React.useState('view');
   const [selectedUser, setSelectedUser] = React.useState(null);
 
+  // Password change state
+  const [showPasswordChange, setShowPasswordChange] = React.useState(false);
+
   // Roles state (fetched from API)
   const [roles, setRoles] = React.useState([]);
   const [loadingRoles, setLoadingRoles] = React.useState(false);
@@ -60,7 +63,7 @@ export default function UserManagement() {
   );
 
   // Define user form fields
-  const getUserFields = (isCreate = false) => [
+  const getUserFields = (isCreate = false, includePassword = false) => [
     {
       name: 'username',
       label: 'Username',
@@ -79,6 +82,22 @@ export default function UserManagement() {
       type: 'password',
       required: true,
     }] : []),
+    ...(includePassword && !isCreate ? [
+      {
+        name: 'password',
+        label: 'New Password',
+        type: 'password',
+        required: true,
+        placeholder: 'Enter new password',
+      },
+      {
+        name: 'confirmPassword',
+        label: 'Confirm New Password',
+        type: 'password',
+        required: true,
+        placeholder: 'Confirm new password',
+      }
+    ] : []),
     {
       name: 'roleId',
       label: 'Role',
@@ -126,6 +145,13 @@ export default function UserManagement() {
       fetchRoles();
     }
   }, [modalOpen, fetchRoles]);
+
+  // Reset password change state when modal closes
+  React.useEffect(() => {
+    if (!modalOpen) {
+      setShowPasswordChange(false);
+    }
+  }, [modalOpen]);
 
   // URL state synchronization
   const handlePaginationModelChange = React.useCallback(
@@ -224,12 +250,14 @@ export default function UserManagement() {
   const handleView = React.useCallback((userData) => {
     setSelectedUser(userData);
     setModalMode('view');
+    setShowPasswordChange(false);
     setModalOpen(true);
   }, []);
 
   const handleEdit = React.useCallback((userData) => {
     setSelectedUser(userData);
     setModalMode('edit');
+    setShowPasswordChange(false);
     setModalOpen(true);
   }, []);
 
@@ -269,6 +297,7 @@ export default function UserManagement() {
   const handleCreate = React.useCallback(() => {
     setSelectedUser({ isActive: true }); // Default active to true for new users
     setModalMode('create');
+    setShowPasswordChange(false);
     setModalOpen(true);
   }, []);
 
@@ -287,6 +316,19 @@ export default function UserManagement() {
 
   // Handle modal submit
   const handleModalSubmit = async (formData) => {
+    // Validate password confirmation if password change is enabled
+    if (showPasswordChange && modalMode === 'edit') {
+      if (formData.password !== formData.confirmPassword) {
+        alert('Passwords do not match!');
+        return;
+      }
+      
+      if (!formData.password || formData.password.trim().length < 6) {
+        alert('Password must be at least 6 characters long!');
+        return;
+      }
+    }
+
     setIsLoading(true);
     try {
       // Prepare submit data according to API requirements
@@ -297,12 +339,10 @@ export default function UserManagement() {
         isActive: formData.isActive !== undefined ? formData.isActive : true,
       };
 
-      // Add password only for create mode
-      if (modalMode === 'create') {
+      // Add password for create mode or edit mode with password change
+      if (modalMode === 'create' || (modalMode === 'edit' && showPasswordChange)) {
         submitData.password = formData.password;
       }
-
-      // let url, method;
 
       let response;
       
@@ -312,8 +352,15 @@ export default function UserManagement() {
         response = await put(`/api/users/${selectedUser.id}`, submitData);
       }
 
-      alert(`User ${modalMode === 'create' ? 'created' : 'updated'} successfully!`);
+      const successMessage = modalMode === 'create' 
+        ? 'User created successfully!' 
+        : showPasswordChange 
+          ? 'User updated and password changed successfully!'
+          : 'User updated successfully!';
+      
+      alert(successMessage);
       setModalOpen(false);
+      setShowPasswordChange(false);
       loadUsers();
     } catch (submitError) {
       alert(`Failed to ${modalMode} user: ${submitError.message}`);
@@ -452,13 +499,19 @@ export default function UserManagement() {
       {/* Dynamic Modal for User CRUD */}
       <DynamicModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          setShowPasswordChange(false);
+        }}
         mode={modalMode}
         title={`${modalMode === 'create' ? 'Create' : modalMode === 'edit' ? 'Edit' : 'View'} User`}
         initialData={selectedUser || {}}
-        fields={getUserFields(modalMode === 'create')}
+        fields={getUserFields(modalMode === 'create', showPasswordChange)}
         onSubmit={handleModalSubmit}
         loading={isLoading}
+        showPasswordChange={showPasswordChange}
+        onTogglePasswordChange={() => setShowPasswordChange(!showPasswordChange)}
+        isEditMode={modalMode === 'edit'}
       />
     </PageContainer>
   );

@@ -104,12 +104,8 @@ export default function SignIn(props) {
      const data = await post('/api/auth/signin', payload, { requiresAuth: false });
       
       if (data.success) {
-        // Login successful
-
-        console.log("data", data); 
       login(data.token, data.data);
         const redirectRoute = getRedirectRoute(data.data);
-        console.log(redirectRoute);
       navigate(redirectRoute);
       } else {
         setSnackbar({
