@@ -110,53 +110,6 @@ export default function RoleManagement() {
     },
   ];
 
-  // API call to fetch features
-  const fetchFeatures = React.useCallback(async () => {
-    setLoadingFeatures(true);
-    setFeaturesError(null);
-    
-    try {
-      const response = await fetch(`${BASE_URL}/api/tabs/all`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      
-      if (data.success && data.data) {
-        // Transform API response to match our expected format
-        const formattedFeatures = data.data.map(tab => ({
-          id: tab.id,
-          name: tab.displayName || tab.name,
-          originalData: tab
-        }));
-        
-        setFeatures(formattedFeatures);
-      } else {
-        throw new Error(data.message || 'Failed to fetch features');
-      }
-    } catch (error) {
-      setFeaturesError(error.message || 'Failed to load features');
-      console.error('Error loading features:', error);
-    } finally {
-      setLoadingFeatures(false);
-    }
-  }, [token]);
-
-  // Load features when modal opens
-  React.useEffect(() => {
-    if (modalOpen) {
-      fetchFeatures();
-    }
-  }, [modalOpen, fetchFeatures]);
-
   // URL state synchronization
   const handlePaginationModelChange = React.useCallback(
     (model) => {
