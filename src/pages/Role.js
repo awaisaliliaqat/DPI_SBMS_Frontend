@@ -2,8 +2,6 @@ import * as React from 'react';
 import {
   Alert,
   Box,
-  Chip,
-  Stack,
   Typography,
   Grid,
   Card,
@@ -30,18 +28,11 @@ import { useApi } from '../hooks/useApi';
 import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
-import { BASE_URL } from "../constants/Constants";
 import { Close, Add } from '@mui/icons-material';
+import { PERMISSIONS,BASE_URL } from '../constants/Constants';
+
 const INITIAL_PAGE_SIZE = 10;
 
-// Permissions data (static)
-const PERMISSIONS = [
-  { id: 'create', name: 'Create' },
-  { id: 'read', name: 'Read' },
-  { id: 'update', name: 'Update' },
-  { id: 'delete', name: 'Delete' },
-  { id: 'manage', name: 'Manage' },
-];
 
 export default function RoleManagement() {
   const { pathname } = useLocation();
@@ -50,6 +41,14 @@ export default function RoleManagement() {
   
   
   const { user, hasPermission, token } = useAuth();
+
+  console.log("user permissions ", user);
+
+  // Check user permissions
+  const canRead = user?.permissions?.role?.includes('read') || false;
+  const canCreate = user?.permissions?.role?.includes('create') || false;
+  const canUpdate = user?.permissions?.role?.includes('update') || false;
+  const canDelete = user?.permissions?.role?.includes('delete') || false;
 
    const { get, post, put, del } = useApi(); // Use the hook
   const [rowsState, setRowsState] = React.useState({
@@ -93,6 +92,15 @@ export default function RoleManagement() {
     searchParams.get('sort') ? JSON.parse(searchParams.get('sort') ?? '') : [],
   );
 
+  // Check if user has read permission on mount
+  React.useEffect(() => {
+    if (!canRead) {
+      setError('You do not have permission to view this page');
+      // Optionally redirect to unauthorized page
+      // navigate('/unauthorized');
+    }
+  }, [canRead, navigate]);
+
   // Define role form fields
   const roleFields = [
     {
@@ -123,6 +131,53 @@ export default function RoleManagement() {
     },
     [navigate, pathname, searchParams],
   );
+
+    const fetchFeatures = React.useCallback(async () => {
+    setLoadingFeatures(true);
+    setFeaturesError(null);
+    
+    try {
+      const response = await fetch(`${BASE_URL}/api/tabs/all`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.success && data.data) {
+        // Transform API response to match our expected format
+        const formattedFeatures = data.data.map(tab => ({
+          id: tab.id,
+          name: tab.displayName || tab.name,
+          originalData: tab
+        }));
+        
+        setFeatures(formattedFeatures);
+      } else {
+        throw new Error(data.message || 'Failed to fetch features');
+      }
+    } catch (error) {
+      setFeaturesError(error.message || 'Failed to load features');
+      console.error('Error loading features:', error);
+    } finally {
+      setLoadingFeatures(false);
+    }
+  }, [token]);
+
+  // Load features when modal opens
+  React.useEffect(() => {
+    if (modalOpen) {
+      fetchFeatures();
+    }
+  }, [modalOpen, fetchFeatures]);
+
 
   const handlePermissionChange = (permissionId, isChecked) => {
     setSelectedPermissions(prev => ({
@@ -198,6 +253,8 @@ export default function RoleManagement() {
 
   // API call to fetch roles with pagination
   const loadRoles = React.useCallback(async () => {
+    if (!canRead) return; // Don't load data if user doesn't have read permission
+    
     setError(null);
     setIsLoading(true);
 
@@ -235,7 +292,7 @@ export default function RoleManagement() {
     } finally {
       setIsLoading(false);
     }
-  }, [paginationModel, get]);
+  }, [paginationModel, get, canRead]);
 
   // Load data when component mounts or pagination changes
   React.useEffect(() => {
@@ -244,21 +301,25 @@ export default function RoleManagement() {
 
   // Action handlers - updated to use modal
   const handleView = React.useCallback((roleData) => {
+    if (!canRead) return;
     setSelectedRole(roleData);
     setRolePermissions(roleData.permissions || []);
     setModalMode('view');
     setModalOpen(true);
-  }, []);
+  }, [canRead]);
 
   const handleEdit = React.useCallback((roleData) => {
+    if (!canUpdate) return;
     setSelectedRole(roleData);
     setRolePermissions(roleData.permissions || []);
     setModalMode('edit');
     setModalOpen(true);
-  }, []);
+  }, [canUpdate]);
 
   const handleDelete = React.useCallback(
     async (roleData) => {
+      if (!canDelete) return;
+      
       const confirmed = window.confirm(
         `Do you wish to delete role "${roleData.name}"?`
       );
@@ -276,20 +337,22 @@ export default function RoleManagement() {
         }
       }
     },
-    [loadRoles, del], // Add del to dependencies
+    [loadRoles, del, canDelete],
   );
+  
   const handleCreate = React.useCallback(() => {
+    if (!canCreate) return;
     setSelectedRole({});
     setRolePermissions([]);
     setModalMode('create');
     setModalOpen(true);
-  }, []);
+  }, [canCreate]);
 
   const handleRefresh = React.useCallback(() => {
-    if (!isLoading) {
+    if (!isLoading && canRead) {
       loadRoles();
     }
-  }, [isLoading, loadRoles]);
+  }, [isLoading, loadRoles, canRead]);
 
   const handleRowClick = React.useCallback(
     ({ row }) => {
@@ -369,7 +432,8 @@ export default function RoleManagement() {
     setSelectedFeature('');
     setSelectedPermissions({});
   };
-    const handleModalSubmit = async (formData) => {
+  
+  const handleModalSubmit = async (formData) => {
     if (rolePermissions.length === 0) {
       alert('Please add at least one permission');
       return;
@@ -403,6 +467,7 @@ export default function RoleManagement() {
       setIsLoading(false);
     }
   };
+  
   const PermissionManager = () => {
     const groupedPermissions = groupPermissionsByFeature(rolePermissions);
     
@@ -601,6 +666,17 @@ export default function RoleManagement() {
 
   const pageTitle = 'Role Management';
 
+  // If user doesn't have read permission, show error message
+  if (!canRead) {
+    return (
+      <PageContainer title={pageTitle} breadcrumbs={[{ title: pageTitle }]}>
+        <Alert severity="error" sx={{ mb: 2 }}>
+          You do not have permission to view this page
+        </Alert>
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer
       title={pageTitle}
@@ -634,15 +710,15 @@ export default function RoleManagement() {
         onFilterModelChange={handleFilterModelChange}
         filterMode="client"
         
-        // Actions
-        onView={handleView}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-        onCreate={handleCreate}
-        onRefresh={handleRefresh}
+        // Actions - conditionally show based on permissions
+        onView={canRead ? handleView : null}
+        onEdit={canUpdate ? handleEdit : null}
+        onDelete={canDelete ? handleDelete : null}
+        onCreate={canCreate ? handleCreate : null}
+        onRefresh={canRead ? handleRefresh : null}
         
         // Row interaction
-        onRowClick={handleRowClick}
+        onRowClick={canRead ? handleRowClick : null}
         
         // Configuration
         pageSizeOptions={[5, 10, 25, 50]}

@@ -21,6 +21,13 @@ export default function UserManagement() {
   const navigate = useNavigate();
   
   const { user, hasPermission, token } = useAuth();
+  
+  // Check user permissions
+  const canRead = user?.permissions?.user?.includes('read') || false;
+  const canCreate = user?.permissions?.user?.includes('create') || false;
+  const canUpdate = user?.permissions?.user?.includes('update') || false;
+  const canDelete = user?.permissions?.user?.includes('delete') || false;
+
   const { get, post, put, del } = useApi(); // Use the useApi hook
 
   const [rowsState, setRowsState] = React.useState({
@@ -61,6 +68,15 @@ export default function UserManagement() {
   const [sortModel, setSortModel] = React.useState(
     searchParams.get('sort') ? JSON.parse(searchParams.get('sort') ?? '') : [],
   );
+
+  // Check if user has read permission on mount
+  React.useEffect(() => {
+    if (!canRead) {
+      setError('You do not have permission to view this page');
+      // Optionally redirect to unauthorized page
+      // navigate('/unauthorized');
+    }
+  }, [canRead, navigate]);
 
   // Define user form fields
   const getUserFields = (isCreate = false, includePassword = false) => [
@@ -141,10 +157,10 @@ export default function UserManagement() {
 
   // Load roles when modal opens
   React.useEffect(() => {
-    if (modalOpen) {
+    if (modalOpen && (canCreate || canUpdate)) {
       fetchRoles();
     }
-  }, [modalOpen, fetchRoles]);
+  }, [modalOpen, fetchRoles, canCreate, canUpdate]);
 
   // Reset password change state when modal closes
   React.useEffect(() => {
@@ -204,6 +220,8 @@ export default function UserManagement() {
 
   // API call to fetch users with pagination
   const loadUsers = React.useCallback(async () => {
+    if (!canRead) return; // Don't load data if user doesn't have read permission
+    
     setError(null);
     setIsLoading(true);
 
@@ -239,7 +257,7 @@ export default function UserManagement() {
     } finally {
       setIsLoading(false);
     }
-  }, [paginationModel, token]);
+  }, [paginationModel, get, canRead]);
 
   // Load data when component mounts or pagination changes
   React.useEffect(() => {
@@ -248,21 +266,25 @@ export default function UserManagement() {
 
   // Action handlers - updated to use modal
   const handleView = React.useCallback((userData) => {
+    if (!canRead) return;
     setSelectedUser(userData);
     setModalMode('view');
     setShowPasswordChange(false);
     setModalOpen(true);
-  }, []);
+  }, [canRead]);
 
   const handleEdit = React.useCallback((userData) => {
+    if (!canUpdate) return;
     setSelectedUser(userData);
     setModalMode('edit');
     setShowPasswordChange(false);
     setModalOpen(true);
-  }, []);
+  }, [canUpdate]);
 
   const handleDelete = React.useCallback(
     async (userData) => {
+      if (!canDelete) return;
+      
       const confirmed = window.confirm(
         `Do you wish to delete user "${userData.username}"?`
       );
@@ -291,21 +313,22 @@ export default function UserManagement() {
         }
       }
     },
-    [loadUsers, token],
+    [loadUsers, token, canDelete],
   );
 
   const handleCreate = React.useCallback(() => {
+    if (!canCreate) return;
     setSelectedUser({ isActive: true }); // Default active to true for new users
     setModalMode('create');
     setShowPasswordChange(false);
     setModalOpen(true);
-  }, []);
+  }, [canCreate]);
 
   const handleRefresh = React.useCallback(() => {
-    if (!isLoading) {
+    if (!isLoading && canRead) {
       loadUsers();
     }
-  }, [isLoading, loadUsers]);
+  }, [isLoading, loadUsers, canRead]);
 
   const handleRowClick = React.useCallback(
     ({ row }) => {
@@ -448,6 +471,17 @@ export default function UserManagement() {
 
   const pageTitle = 'User Management';
 
+  // If user doesn't have read permission, show error message
+  if (!canRead) {
+    return (
+      <PageContainer title={pageTitle} breadcrumbs={[{ title: pageTitle }]}>
+        <Alert severity="error" sx={{ mb: 2 }}>
+          You do not have permission to view this page
+        </Alert>
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer
       title={pageTitle}
@@ -481,15 +515,15 @@ export default function UserManagement() {
         onFilterModelChange={handleFilterModelChange}
         filterMode="client"
         
-        // Actions
-        onView={handleView}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-        onCreate={handleCreate}
-        onRefresh={handleRefresh}
+        // Actions - conditionally show based on permissions
+        onView={canRead ? handleView : null}
+        onEdit={canUpdate ? handleEdit : null}
+        onDelete={canDelete ? handleDelete : null}
+        onCreate={canCreate ? handleCreate : null}
+        onRefresh={canRead ? handleRefresh : null}
         
         // Row interaction
-        onRowClick={handleRowClick}
+        onRowClick={canRead ? handleRowClick : null}
         
         // Configuration
         pageSizeOptions={[5, 10, 25, 50]}
