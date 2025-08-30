@@ -8,6 +8,7 @@ import DashboardLayout from '../dashboard/components/DashboardLayout';
 // import UserManagement from '../pages/UserManagement';
 import RoleManagement from '../pages/Role';
 import UserManagement from '../pages/UserManagement';
+import FeatureManagement from '../pages/Feature';
 // import Reports from '../pages/Reports';
 // import Settings from '../pages/Settings';
 
@@ -36,8 +37,9 @@ const AppRoutesContent = () => {
           </ProtectedRoute>
         }
       >
-        {/* <Route path="users" element={<UserManagement />} /> */}
-        <Route path="users" element={<RoleManagement />} />
+        <Route path="users" element={<UserManagement />} />
+        <Route path="roles" element={<RoleManagement />} />
+        {/* <Route path="users" element={<FeatureManagement />} /> */}
         <Route index element={<Navigate to="/signin" />} />
       </Route>
       

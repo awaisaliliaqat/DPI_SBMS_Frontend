@@ -11,6 +11,7 @@ import MenuContent from './MenuContent';
 import CardAlert from './CardAlert';
 import OptionsMenu from './OptionsMenu';
 import { useAuth } from '../../auth/AuthContext'; // Import your auth context
+import DynamicMenuContent from '../../components/DynamicMenuContent';
 
 const drawerWidth = 240;
 
@@ -100,7 +101,9 @@ export default function SideMenu() {
             flexDirection: 'column',
           }}
         >
-          <MenuContent />
+          <DynamicMenuContent/>
+          {/* <MenuContent /> */}
+
         </Box>
         <Stack
           direction="row"
@@ -155,7 +158,8 @@ export default function SideMenu() {
           flexDirection: 'column',
         }}
       >
-        <MenuContent />
+        {/* <MenuContent /> */}
+        <DynamicMenuContent/>
         {/* <CardAlert /> */}
       </Box>
       <Stack

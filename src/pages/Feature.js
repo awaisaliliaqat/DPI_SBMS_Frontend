@@ -5,36 +5,17 @@ import {
   Chip,
   Stack,
   Typography,
-  Grid,
-  Card,
-  CardContent,
-  Button,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  IconButton,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction,
-  Divider,
-  FormGroup,
-  Checkbox,
-  FormControlLabel,
-  CircularProgress,
 } from '@mui/material';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useAuth } from '../auth/AuthContext';
 import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
 import { BASE_URL } from "../constants/Constants";
-import { Close, Add } from '@mui/icons-material';
 
 const INITIAL_PAGE_SIZE = 10;
 
-export default function UserManagement() {
+export default function FeatureManagement() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -51,12 +32,7 @@ export default function UserManagement() {
   // Modal state
   const [modalOpen, setModalOpen] = React.useState(false);
   const [modalMode, setModalMode] = React.useState('view');
-  const [selectedUser, setSelectedUser] = React.useState(null);
-
-  // Roles state (fetched from API)
-  const [roles, setRoles] = React.useState([]);
-  const [loadingRoles, setLoadingRoles] = React.useState(false);
-  const [rolesError, setRolesError] = React.useState(null);
+  const [selectedFeature, setSelectedFeature] = React.useState(null);
 
   // Table state management
   const [paginationModel, setPaginationModel] = React.useState({
@@ -76,85 +52,31 @@ export default function UserManagement() {
     searchParams.get('sort') ? JSON.parse(searchParams.get('sort') ?? '') : [],
   );
 
-  // Define user form fields
-  const getUserFields = (isCreate = false) => [
+  // Define feature form fields
+  const featureFields = [
     {
-      name: 'username',
-      label: 'Username',
+      name: 'name',
+      label: 'Feature Name',
       type: 'text',
       required: true,
+      maxLength: 50,
     },
     {
-      name: 'email',
-      label: 'Email',
-      type: 'email',
+      name: 'displayName',
+      label: 'Display Name',
+      type: 'text',
       required: true,
-    },
-    ...(isCreate ? [{
-      name: 'password',
-      label: 'Password',
-      type: 'password',
-      required: true,
-    }] : []),
-    {
-      name: 'roleId',
-      label: 'Role',
-      type: 'select',
-      required: true,
-      options: roles.map(role => ({
-        value: role.id,
-        label: role.name
-      })),
-      loading: loadingRoles,
-      error: rolesError,
+      maxLength: 100,
     },
     {
-      name: 'isActive',
-      label: 'Active',
-      type: 'checkbox',
-      defaultValue: true,
+      name: 'description',
+      label: 'Description',
+      type: 'text',
+      multiline: true,
+      rows: 3,
+      maxLength: 1000,
     },
   ];
-
-  // API call to fetch roles
-  const fetchRoles = React.useCallback(async () => {
-    setLoadingRoles(true);
-    setRolesError(null);
-    
-    try {
-      const response = await fetch(`${BASE_URL}/api/roles/ids-and-names`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      
-      if (Array.isArray(data)) {
-        setRoles(data);
-      } else {
-        throw new Error('Invalid roles data format');
-      }
-    } catch (error) {
-      setRolesError(error.message || 'Failed to load roles');
-      console.error('Error loading roles:', error);
-    } finally {
-      setLoadingRoles(false);
-    }
-  }, [token]);
-
-  // Load roles when modal opens
-  React.useEffect(() => {
-    if (modalOpen) {
-      fetchRoles();
-    }
-  }, [modalOpen, fetchRoles]);
 
   // URL state synchronization
   const handlePaginationModelChange = React.useCallback(
@@ -205,8 +127,8 @@ export default function UserManagement() {
     [navigate, pathname, searchParams],
   );
 
-  // API call to fetch users with pagination
-  const loadUsers = React.useCallback(async () => {
+  // API call to fetch features
+  const loadFeatures = React.useCallback(async () => {
     setError(null);
     setIsLoading(true);
 
@@ -214,7 +136,7 @@ export default function UserManagement() {
       const { page, pageSize } = paginationModel;
       
       // Build API URL with pagination parameters
-      const apiUrl = `${BASE_URL}/api/users?page=${page}&size=${pageSize}`;
+      const apiUrl = `${BASE_URL}/api/tabs?page=${page}&size=${pageSize}`;
       
       const response = await fetch(apiUrl, {
         method: 'GET',
@@ -228,30 +150,22 @@ export default function UserManagement() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const userData = await response.json();
+      const responseData = await response.json();
       
-      // Handle the response structure based on your API
-      if (userData.users && Array.isArray(userData.users)) {
+      if (responseData.success) {
+        const featuresData = responseData.data.content || responseData.data;
+        
         setRowsState({
-          rows: userData.users,
-          rowCount: userData.totalCount || userData.users.length,
-        });
-      } else if (Array.isArray(userData)) {
-        // Fallback for direct array response
-        setRowsState({
-          rows: userData,
-          rowCount: userData.length,
+          rows: Array.isArray(featuresData) ? featuresData : [],
+          rowCount: responseData.data.totalElements || featuresData.length,
         });
       } else {
-        setRowsState({
-          rows: [],
-          rowCount: 0,
-        });
+        throw new Error(responseData.message || 'Failed to load features');
       }
       
     } catch (loadError) {
-      setError(loadError.message || 'Failed to load users');
-      console.error('Error loading users:', loadError);
+      setError(loadError.message || 'Failed to load features');
+      console.error('Error loading features:', loadError);
     } finally {
       setIsLoading(false);
     }
@@ -259,32 +173,32 @@ export default function UserManagement() {
 
   // Load data when component mounts or pagination changes
   React.useEffect(() => {
-    loadUsers();
-  }, [loadUsers]);
+    loadFeatures();
+  }, [loadFeatures]);
 
-  // Action handlers - updated to use modal
-  const handleView = React.useCallback((userData) => {
-    setSelectedUser(userData);
+  // Action handlers
+  const handleView = React.useCallback((featureData) => {
+    setSelectedFeature(featureData);
     setModalMode('view');
     setModalOpen(true);
   }, []);
 
-  const handleEdit = React.useCallback((userData) => {
-    setSelectedUser(userData);
+  const handleEdit = React.useCallback((featureData) => {
+    setSelectedFeature(featureData);
     setModalMode('edit');
     setModalOpen(true);
   }, []);
 
   const handleDelete = React.useCallback(
-    async (userData) => {
+    async (featureData) => {
       const confirmed = window.confirm(
-        `Do you wish to delete user "${userData.username}"?`
+        `Do you wish to delete feature "${featureData.name}"?`
       );
 
       if (confirmed) {
         setIsLoading(true);
         try {
-          const response = await fetch(`${BASE_URL}/api/users/${userData.id}`, {
+          const response = await fetch(`${BASE_URL}/api/tabs/${featureData.id}`, {
             method: 'DELETE',
             headers: {
               'Content-Type': 'application/json',
@@ -296,29 +210,35 @@ export default function UserManagement() {
             throw new Error(`HTTP error! status: ${response.status}`);
           }
 
-          alert('User deleted successfully!');
-          loadUsers();
+          const result = await response.json();
+          
+          if (result.success) {
+            alert('Feature deleted successfully!');
+            loadFeatures();
+          } else {
+            throw new Error(result.message || 'Failed to delete feature');
+          }
         } catch (deleteError) {
-          alert(`Failed to delete user: ${deleteError.message}`);
+          alert(`Failed to delete feature: ${deleteError.message}`);
         } finally {
           setIsLoading(false);
         }
       }
     },
-    [loadUsers, token],
+    [loadFeatures, token],
   );
 
   const handleCreate = React.useCallback(() => {
-    setSelectedUser({ isActive: true }); // Default active to true for new users
+    setSelectedFeature({});
     setModalMode('create');
     setModalOpen(true);
   }, []);
 
   const handleRefresh = React.useCallback(() => {
     if (!isLoading) {
-      loadUsers();
+      loadFeatures();
     }
-  }, [isLoading, loadUsers]);
+  }, [isLoading, loadFeatures]);
 
   const handleRowClick = React.useCallback(
     ({ row }) => {
@@ -331,54 +251,48 @@ export default function UserManagement() {
   const handleModalSubmit = async (formData) => {
     setIsLoading(true);
     try {
-      // Prepare submit data according to API requirements
-      const submitData = {
-        username: formData.username,
-        email: formData.email,
-        roleId: parseInt(formData.roleId),
-        isActive: formData.isActive !== undefined ? formData.isActive : true,
+      const url = modalMode === 'create' 
+        ? `${BASE_URL}/api/tabs` 
+        : `${BASE_URL}/api/tabs/${selectedFeature.id}`;
+      
+      const method = modalMode === 'create' ? 'POST' : 'PUT';
+      
+      const requestBody = {
+        name: formData.name,
+        displayName: formData.displayName,
+        description: formData.description || '',
       };
 
-      // Add password only for create mode
-      if (modalMode === 'create') {
-        submitData.password = formData.password;
-      }
-
-      let url, method;
-      
-      if (modalMode === 'create') {
-        url = `${BASE_URL}/api/users`;
-        method = 'POST';
-      } else {
-        url = `${BASE_URL}/api/users/${selectedUser.id}`;
-        method = 'PUT';
-      }
-      
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify(submitData),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
-        const errorData = await response.text();
-        throw new Error(`HTTP error! status: ${response.status}, message: ${errorData}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      alert(`User ${modalMode === 'create' ? 'created' : 'updated'} successfully!`);
-      setModalOpen(false);
-      loadUsers();
+      const result = await response.json();
+      
+      if (result.success) {
+        alert(`Feature ${modalMode === 'create' ? 'created' : 'updated'} successfully!`);
+        setModalOpen(false);
+        loadFeatures();
+      } else {
+        throw new Error(result.message || `Failed to ${modalMode} feature`);
+      }
     } catch (submitError) {
-      alert(`Failed to ${modalMode} user: ${submitError.message}`);
+      alert(`Failed to ${modalMode} feature: ${submitError.message}`);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Column definitions for users
+  // Column definitions for features
   const columns = React.useMemo(
     () => [
       { 
@@ -387,39 +301,29 @@ export default function UserManagement() {
         width: 70,
       },
       {
-        field: 'username',
-        headerName: 'Username',
-        width: 150,
+        field: 'name',
+        headerName: 'Feature Name',
+        width: 140,
       },
       {
-        field: 'email',
-        headerName: 'Email',
-        width: 200,
+        field: 'displayName',
+        headerName: 'Display Name',
+        width: 160,
       },
       {
-        field: 'roleName',
-        headerName: 'Role',
-        width: 150,
+        field: 'description',
+        headerName: 'Description',
+        width: 220,
         renderCell: (params) => (
-          <Chip 
-            label={params.value || 'No Role'} 
-            variant="outlined" 
-            size="small"
-            color={params.value ? 'primary' : 'default'}
-          />
-        ),
-      },
-      {
-        field: 'isActive',
-        headerName: 'Status',
-        width: 100,
-        renderCell: (params) => (
-          <Chip 
-            label={params.value ? 'Active' : 'Inactive'} 
-            variant="filled" 
-            size="small"
-            color={params.value ? 'success' : 'error'}
-          />
+          <Typography variant="body2" sx={{ 
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
+          }}>
+            {params.value || 'No description'}
+          </Typography>
         ),
       },
       {
@@ -455,7 +359,7 @@ export default function UserManagement() {
     [],
   );
 
-  const pageTitle = 'User Management';
+  const pageTitle = 'Feature Management';
 
   return (
     <PageContainer
@@ -463,7 +367,7 @@ export default function UserManagement() {
       breadcrumbs={[{ title: pageTitle }]}
     >
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
@@ -488,7 +392,7 @@ export default function UserManagement() {
         // Filtering
         filterModel={filterModel}
         onFilterModelChange={handleFilterModelChange}
-        filterMode="client"
+        filterMode="server"
         
         // Actions
         onView={handleView}
@@ -505,16 +409,17 @@ export default function UserManagement() {
         showToolbar={true}
       />
 
-      {/* Dynamic Modal for User CRUD */}
+      {/* Dynamic Modal */}
       <DynamicModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         mode={modalMode}
-        title={`${modalMode === 'create' ? 'Create' : modalMode === 'edit' ? 'Edit' : 'View'} User`}
-        initialData={selectedUser || {}}
-        fields={getUserFields(modalMode === 'create')}
+        title={`${modalMode === 'create' ? 'Create' : modalMode === 'edit' ? 'Edit' : 'View'} Feature`}
+        initialData={selectedFeature || {}}
+        fields={featureFields}
         onSubmit={handleModalSubmit}
         loading={isLoading}
+        readOnly={modalMode === 'view'}
       />
     </PageContainer>
   );

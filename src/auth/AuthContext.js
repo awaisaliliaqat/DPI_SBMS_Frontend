@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { NAVIGATION_CONFIG } from '../constants/NavigationConfig';
+
 
 export const SCREEN_ROUTES = {
   user: '/users',
@@ -69,26 +71,46 @@ export const AuthProvider = ({ children }) => {
   const hasRole = (roleName) => {
     return user && user.role && user.role.name === roleName;
   };
-  // Get the redirect route based on user permissions
+  // Update the getRedirectRoute function
 const getRedirectRoute = (userData = null) => {
-  // Use the passed userData or fall back to context user
   const targetUser = userData || user;
   
   if (!targetUser || !targetUser.permissions) {
     return DEFAULT_ROUTE;
   }
   
-  // Check each screen in order of priority
-  for (const screen of Object.keys(SCREEN_ROUTES)) {
-    
-    // Check if the screen exists in permissions and has at least one permission
-    if (targetUser.permissions.hasOwnProperty(screen) && 
-        Array.isArray(targetUser.permissions[screen]) && 
-        targetUser.permissions[screen].length > 0) {
-      return SCREEN_ROUTES[screen];
-    }
+  // Get available navigation items
+  const availableItems = getAvailableNavigationItems(targetUser);
+  
+  // If user has accessible modules, redirect to the first one
+  if (availableItems.length > 0) {
+    return availableItems[0].routerLink;
   }
+  
+  // Fallback to dashboard or a "no access" page
   return DEFAULT_ROUTE;
+};
+  const getAvailableNavigationItems = (userData = null) => {
+  const targetUser = userData || user;
+  
+  if (!targetUser || !targetUser.permissions) {
+    return [];
+  }
+
+  const availableItems = [];
+
+  // Check each configured navigation item
+  Object.entries(NAVIGATION_CONFIG).forEach(([tabName, navConfig]) => {
+    // Simply check if the tab name exists in permissions (regardless of permissions array content)
+    if (targetUser.permissions.hasOwnProperty(tabName)) {
+      availableItems.push({
+        key: tabName,
+        ...navConfig
+      });
+    }
+  });
+
+  return availableItems;
 };
 
 
@@ -101,6 +123,7 @@ const getRedirectRoute = (userData = null) => {
     hasAnyPermission,
     hasRole,
     getRedirectRoute,
+    getAvailableNavigationItems,
     isAuthenticated: !!token,
     loading
   };
