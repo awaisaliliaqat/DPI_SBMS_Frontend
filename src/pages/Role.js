@@ -21,8 +21,14 @@ import {
   Checkbox,
   FormControlLabel,
   CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import { useAuth } from '../auth/AuthContext';
 import { useApi } from '../hooks/useApi';
 import ReusableDataTable from '../components/ReusableData';
@@ -33,12 +39,10 @@ import { PERMISSIONS,BASE_URL } from '../constants/Constants';
 
 const INITIAL_PAGE_SIZE = 10;
 
-
 export default function RoleManagement() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  
   
   const { user, hasPermission, token } = useAuth();
 
@@ -66,7 +70,9 @@ export default function RoleManagement() {
   const [selectedFeature, setSelectedFeature] = React.useState('');
   const [selectedPermissions, setSelectedPermissions] = React.useState({});
   const [rolePermissions, setRolePermissions] = React.useState([]);
-
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
+  const [roleToDelete, setRoleToDelete] = React.useState(null);
+  
   // Features state (fetched from API)
   const [features, setFeatures] = React.useState([]);
   const [loadingFeatures, setLoadingFeatures] = React.useState(false);
@@ -94,8 +100,14 @@ export default function RoleManagement() {
   React.useEffect(() => {
     if (!canRead) {
       setError('You do not have permission to view this page');
-      // Optionally redirect to unauthorized page
-      // navigate('/unauthorized');
+      toast.error('You do not have permission to view this page', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
     }
   }, [canRead, navigate]);
 
@@ -163,6 +175,14 @@ export default function RoleManagement() {
       }
     } catch (error) {
       setFeaturesError(error.message || 'Failed to load features');
+      toast.error('Failed to load features', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
       console.error('Error loading features:', error);
     } finally {
       setLoadingFeatures(false);
@@ -286,6 +306,14 @@ export default function RoleManagement() {
       
     } catch (loadError) {
       setError(loadError.message || 'Failed to load roles');
+      toast.error('Failed to load roles', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
       console.error('Error loading roles:', loadError);
     } finally {
       setIsLoading(false);
@@ -315,28 +343,49 @@ export default function RoleManagement() {
   }, [canUpdate]);
 
   const handleDelete = React.useCallback(
-    async (roleData) => {
+    (roleData) => {
       if (!canDelete) return;
-      
-      const confirmed = window.confirm(
-        `Do you wish to delete role "${roleData.name}"?`
-      );
-
-      if (confirmed) {
-        setIsLoading(true);
-        try {
-          await del(`/api/roles/${roleData.id}`);
-          alert('Role deleted successfully!');
-          loadRoles();
-        } catch (deleteError) {
-          alert(`Failed to delete role: ${deleteError.message}`);
-        } finally {
-          setIsLoading(false);
-        }
-      }
+      setRoleToDelete(roleData);
+      setDeleteDialogOpen(true);
     },
-    [loadRoles, del, canDelete],
+    [canDelete],
   );
+
+  const confirmDelete = React.useCallback(async () => {
+    if (!roleToDelete) return;
+    
+    setIsLoading(true);
+    try {
+      await del(`/api/roles/${roleToDelete.id}`);
+      toast.success('Role deleted successfully!', {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      setDeleteDialogOpen(false);
+      setRoleToDelete(null);
+      loadRoles();
+    } catch (deleteError) {
+      toast.error(`Failed to delete role: ${deleteError.message}`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [roleToDelete, del, loadRoles]);
+
+  const cancelDelete = React.useCallback(() => {
+    setDeleteDialogOpen(false);
+    setRoleToDelete(null);
+  }, []);
   
   const handleCreate = React.useCallback(() => {
     if (!canCreate) return;
@@ -382,7 +431,14 @@ export default function RoleManagement() {
   // Handle permission selection
   const handleAddPermissions = () => {
     if (!selectedFeature) {
-      alert('Please select a feature first');
+      toast.error('Please select a feature first', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
       return;
     }
 
@@ -392,7 +448,14 @@ export default function RoleManagement() {
     );
 
     if (selectedOperations.length === 0) {
-      alert('Please select at least one permission');
+      toast.error('Please select at least one permission', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
       return;
     }
 
@@ -433,7 +496,14 @@ export default function RoleManagement() {
   
   const handleModalSubmit = async (formData) => {
     if (rolePermissions.length === 0) {
-      alert('Please add at least one permission');
+      toast.error('Please add at least one permission', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
       return;
     }
 
@@ -456,11 +526,30 @@ export default function RoleManagement() {
         response = await put(`/api/roles/${selectedRole.id}/permissions`, submitData);
       }
 
-      alert(`Role ${modalMode === 'create' ? 'created' : 'updated'} successfully!`);
+      const successMessage = modalMode === 'create' 
+        ? 'Role created successfully!' 
+        : 'Role updated successfully!';
+      
+      toast.success(successMessage, {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      
       setModalOpen(false);
       loadRoles();
     } catch (submitError) {
-      alert(`Failed to ${modalMode} role: ${submitError.message}`);
+      toast.error(`Failed to ${modalMode} role: ${submitError.message}`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
     } finally {
       setIsLoading(false);
     }
@@ -671,6 +760,24 @@ export default function RoleManagement() {
         <Alert severity="error" sx={{ mb: 2 }}>
           You do not have permission to view this page
         </Alert>
+        
+        {/* Toast Container */}
+        <ToastContainer
+          position="top-right"
+          autoClose={5000}
+          hideProgressBar={false}
+          newestOnTop={false}
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+          theme="light"
+          toastStyle={{
+            backgroundColor: '#ffffff',
+            color: '#333333',
+          }}
+        />
       </PageContainer>
     );
   }
@@ -734,6 +841,91 @@ export default function RoleManagement() {
         onSubmit={handleModalSubmit}
         loading={isLoading}
         customContent={<PermissionManager />}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={cancelDelete}
+        aria-labelledby="delete-dialog-title"
+        aria-describedby="delete-dialog-description"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '400px',
+          }
+        }}
+      >
+        <DialogTitle 
+          id="delete-dialog-title"
+          sx={{ 
+            color: '#d32f2f',
+            fontWeight: 'bold',
+          }}
+        >
+          Confirm Delete
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#333', mb: 2 }}>
+            Are you sure you want to delete the role <strong>"{roleToDelete?.name}"</strong>?
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#666' }}>
+            This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button 
+            onClick={cancelDelete}
+            variant="outlined"
+            sx={{ 
+              color: '#666',
+              borderColor: '#ddd',
+              '&:hover': {
+                borderColor: '#999',
+                backgroundColor: '#f5f5f5',
+              }
+            }}
+            disabled={isLoading}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={confirmDelete}
+            variant="contained"
+            sx={{
+              backgroundColor: '#d32f2f',
+              color: '#ffffff',
+              '&:hover': {
+                backgroundColor: '#c62828',
+              },
+              '&:disabled': {
+                backgroundColor: '#ffcdd2',
+                color: '#ffffff',
+              }
+            }}
+            disabled={isLoading}
+          >
+            {isLoading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* React Toastify Container */}
+      <ToastContainer
+        position="top-right"
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
+        toastStyle={{
+          backgroundColor: '#ffffff',
+          color: '#333333',
+        }}
       />
     </PageContainer>
   );

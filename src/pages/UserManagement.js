@@ -3,15 +3,21 @@ import {
   Alert,
   Chip,
   Typography,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
 } from '@mui/material';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import { useAuth } from '../auth/AuthContext';
 import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
 import { BASE_URL } from "../constants/Constants";
 import { useApi } from '../hooks/useApi';
-
 
 const INITIAL_PAGE_SIZE = 10;
 
@@ -46,6 +52,10 @@ export default function UserManagement() {
   // Password change state
   const [showPasswordChange, setShowPasswordChange] = React.useState(false);
 
+  // Delete confirmation dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
+  const [userToDelete, setUserToDelete] = React.useState(null);
+
   // Roles state (fetched from API)
   const [roles, setRoles] = React.useState([]);
   const [loadingRoles, setLoadingRoles] = React.useState(false);
@@ -73,75 +83,84 @@ export default function UserManagement() {
   React.useEffect(() => {
     if (!canRead) {
       setError('You do not have permission to view this page');
+      toast.error('You do not have permission to view this page', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
       // Optionally redirect to unauthorized page
       // navigate('/unauthorized');
     }
   }, [canRead, navigate]);
 
-// Update your getUserFields function to use a different field name for view mode
-const getUserFields = (isCreate = false, includePassword = false, isViewMode = false) => [
-  {
-    name: 'username',
-    label: 'Username',
-    type: 'text',
-    required: true,
-    readOnly: isViewMode,
-  },
-  {
-    name: 'email',
-    label: 'Email',
-    type: 'email',
-    required: true,
-    readOnly: isViewMode,
-  },
-  ...(isCreate ? [{
-    name: 'password',
-    label: 'Password',
-    type: 'password',
-    required: true,
-  }] : []),
-  ...(includePassword && !isCreate ? [
+  // Update your getUserFields function to use a different field name for view mode
+  const getUserFields = (isCreate = false, includePassword = false, isViewMode = false) => [
     {
-      name: 'password',
-      label: 'New Password',
-      type: 'password',
+      name: 'username',
+      label: 'Username',
+      type: 'text',
       required: true,
-      placeholder: 'Enter new password',
+      readOnly: isViewMode,
     },
     {
-      name: 'confirmPassword',
-      label: 'Confirm New Password',
+      name: 'email',
+      label: 'Email',
+      type: 'email',
+      required: true,
+      readOnly: isViewMode,
+    },
+    ...(isCreate ? [{
+      name: 'password',
+      label: 'Password',
       type: 'password',
       required: true,
-      placeholder: 'Confirm new password',
-    }
-  ] : []),
-  // For view mode, use a different field name to display roleName
-  isViewMode ? {
-    name: 'roleName', // Use roleName field instead of roleId
-    label: 'Role',
-    type: 'text',
-    readOnly: true,
-  } : {
-    name: 'roleId',
-    label: 'Role',
-    type: 'select',
-    required: true,
-    options: roles.map(role => ({
-      value: role.id,
-      label: role.name
-    })),
-    loading: loadingRoles,
-    error: rolesError,
-  },
-  {
-    name: 'isActive',
-    label: 'Active',
-    type: 'checkbox',
-    defaultValue: true,
-    readOnly: isViewMode,
-  },
-];
+    }] : []),
+    ...(includePassword && !isCreate ? [
+      {
+        name: 'password',
+        label: 'New Password',
+        type: 'password',
+        required: true,
+        placeholder: 'Enter new password',
+      },
+      {
+        name: 'confirmPassword',
+        label: 'Confirm New Password',
+        type: 'password',
+        required: true,
+        placeholder: 'Confirm new password',
+      }
+    ] : []),
+    // For view mode, use a different field name to display roleName
+    isViewMode ? {
+      name: 'roleName', // Use roleName field instead of roleId
+      label: 'Role',
+      type: 'text',
+      readOnly: true,
+    } : {
+      name: 'roleId',
+      label: 'Role',
+      type: 'select',
+      required: true,
+      options: roles.map(role => ({
+        value: role.id,
+        label: role.name
+      })),
+      loading: loadingRoles,
+      error: rolesError,
+    },
+    {
+      name: 'isActive',
+      label: 'Active',
+      type: 'checkbox',
+      defaultValue: true,
+      readOnly: isViewMode,
+    },
+  ];
+
   // API call to fetch roles
   const fetchRoles = React.useCallback(async () => {
     setLoadingRoles(true);
@@ -157,6 +176,14 @@ const getUserFields = (isCreate = false, includePassword = false, isViewMode = f
       }
     } catch (error) {
       setRolesError(error.message || 'Failed to load roles');
+      toast.error('Failed to load roles', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
       console.error('Error loading roles:', error);
     } finally {
       setLoadingRoles(false);
@@ -261,6 +288,14 @@ const getUserFields = (isCreate = false, includePassword = false, isViewMode = f
       
     } catch (loadError) {
       setError(loadError.message || 'Failed to load users');
+      toast.error('Failed to load users', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
       console.error('Error loading users:', loadError);
     } finally {
       setIsLoading(false);
@@ -289,40 +324,65 @@ const getUserFields = (isCreate = false, includePassword = false, isViewMode = f
     setModalOpen(true);
   }, [canUpdate]);
 
-  const handleDelete = React.useCallback(
-    async (userData) => {
-      if (!canDelete) return;
-      
-      const confirmed = window.confirm(
-        `Do you wish to delete user "${userData.username}"?`
-      );
+  const handleDelete = React.useCallback((userData) => {
+    if (!canDelete) return;
+    setUserToDelete(userData);
+    setDeleteDialogOpen(true);
+  }, [canDelete]);
 
-      if (confirmed) {
-        setIsLoading(true);
-        try {
-          const response = await fetch(`${BASE_URL}/api/users/${userData.id}`, {
-            method: 'DELETE',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`,
-            },
-          });
+  // Confirm delete function
+  const confirmDelete = async () => {
+    if (!userToDelete) return;
+    
+    setIsLoading(true);
+    setDeleteDialogOpen(false);
+    
+    try {
+      const response = await fetch(`${BASE_URL}/api/users/${userToDelete.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
 
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
+      const responseData = await response.json(); // Parse the response
 
-          alert('User deleted successfully!');
-          loadUsers();
-        } catch (deleteError) {
-          alert(`Failed to delete user: ${deleteError.message}`);
-        } finally {
-          setIsLoading(false);
-        }
+      if (!response.ok) {
+        // Check if there's a specific error message from the server
+        const errorMessage = responseData.message || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
       }
-    },
-    [loadUsers, token, canDelete],
-  );
+
+      toast.success(`User "${userToDelete.username}" deleted successfully!`, {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      
+      loadUsers();
+    } catch (deleteError) {
+      toast.error(`Failed to delete user: ${deleteError.message}`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setIsLoading(false);
+      setUserToDelete(null);
+    }
+  };
+  // Cancel delete function
+  const cancelDelete = () => {
+    setDeleteDialogOpen(false);
+    setUserToDelete(null);
+  };
 
   const handleCreate = React.useCallback(() => {
     if (!canCreate) return;
@@ -350,12 +410,26 @@ const getUserFields = (isCreate = false, includePassword = false, isViewMode = f
     // Validate password confirmation if password change is enabled
     if (showPasswordChange && modalMode === 'edit') {
       if (formData.password !== formData.confirmPassword) {
-        alert('Passwords do not match!');
+        toast.error('Passwords do not match!', {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
         return;
       }
       
       if (!formData.password || formData.password.trim().length < 6) {
-        alert('Password must be at least 6 characters long!');
+        toast.error('Password must be at least 6 characters long!', {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
         return;
       }
     }
@@ -395,12 +469,27 @@ const getUserFields = (isCreate = false, includePassword = false, isViewMode = f
           ? 'User updated and password changed successfully!'
           : 'User updated successfully!';
       
-      alert(successMessage);
+      toast.success(successMessage, {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      
       setModalOpen(false);
       setShowPasswordChange(false);
       loadUsers();
     } catch (submitError) {
-      alert(`Failed to ${modalMode} user: ${submitError.message}`);
+      toast.error(`Failed to ${modalMode} user: ${submitError.message}`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
     } finally {
       setIsLoading(false);
     }
@@ -492,6 +581,24 @@ const getUserFields = (isCreate = false, includePassword = false, isViewMode = f
         <Alert severity="error" sx={{ mb: 2 }}>
           You do not have permission to view this page
         </Alert>
+        
+        {/* Toast Container */}
+        <ToastContainer
+          position="top-right"
+          autoClose={5000}
+          hideProgressBar={false}
+          newestOnTop={false}
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+          theme="light"
+          toastStyle={{
+            backgroundColor: '#ffffff',
+            color: '#333333',
+          }}
+        />
       </PageContainer>
     );
   }
@@ -564,6 +671,91 @@ const getUserFields = (isCreate = false, includePassword = false, isViewMode = f
         showPasswordChange={showPasswordChange}
         onTogglePasswordChange={() => setShowPasswordChange(!showPasswordChange)}
         isEditMode={modalMode === 'edit'}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={cancelDelete}
+        aria-labelledby="delete-dialog-title"
+        aria-describedby="delete-dialog-description"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '400px',
+          }
+        }}
+      >
+        <DialogTitle 
+          id="delete-dialog-title"
+          sx={{ 
+            color: '#d32f2f',
+            fontWeight: 'bold',
+          }}
+        >
+          Confirm Delete
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#333', mb: 2 }}>
+            Are you sure you want to delete the user <strong>"{userToDelete?.username}"</strong>?
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#666' }}>
+            This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button 
+            onClick={cancelDelete}
+            variant="outlined"
+            sx={{ 
+              color: '#666',
+              borderColor: '#ddd',
+              '&:hover': {
+                borderColor: '#999',
+                backgroundColor: '#f5f5f5',
+              }
+            }}
+            disabled={isLoading}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={confirmDelete}
+            variant="contained"
+            sx={{
+              backgroundColor: '#d32f2f',
+              color: '#ffffff',
+              '&:hover': {
+                backgroundColor: '#c62828',
+              },
+              '&:disabled': {
+                backgroundColor: '#ffcdd2',
+                color: '#ffffff',
+              }
+            }}
+            disabled={isLoading}
+          >
+            {isLoading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* React Toastify Container */}
+      <ToastContainer
+        position="top-right"
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
+        toastStyle={{
+          backgroundColor: '#ffffff',
+          color: '#333333',
+        }}
       />
     </PageContainer>
   );

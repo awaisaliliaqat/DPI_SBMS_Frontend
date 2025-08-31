@@ -13,13 +13,14 @@ import Typography from '@mui/material/Typography';
 import Stack from '@mui/material/Stack';
 import MuiCard from '@mui/material/Card';
 import { styled } from '@mui/material/styles';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import ForgotPassword from './components/ForgotPassword';
 import AppTheme from './shared-theme/AppTheme';
 import ColorModeSelect from './shared-theme/ColorModeSelect';
-import {  SitemarkIcon } from './components/Customicon';
+import { SitemarkIcon } from './components/Customicon';
 import { useAuth } from './auth/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Alert, Snackbar } from '@mui/material';
 import { useApi } from './hooks/useApi';
 
 const Card = styled(MuiCard)(({ theme }) => ({
@@ -30,12 +31,14 @@ const Card = styled(MuiCard)(({ theme }) => ({
   padding: theme.spacing(4),
   gap: theme.spacing(2),
   margin: 'auto',
+  backgroundColor: '#ffffff', // Ensure card background is white
   [theme.breakpoints.up('sm')]: {
     maxWidth: '450px',
   },
   boxShadow:
     'hsla(220, 30%, 5%, 0.05) 0px 5px 15px 0px, hsla(220, 25%, 10%, 0.05) 0px 15px 35px -5px',
   ...theme.applyStyles('dark', {
+    backgroundColor: '#ffffff', // Force white background even in dark mode
     boxShadow:
       'hsla(220, 30%, 5%, 0.5) 0px 5px 15px 0px, hsla(220, 25%, 10%, 0.08) 0px 15px 35px -5px',
   }),
@@ -45,6 +48,7 @@ const SignInContainer = styled(Stack)(({ theme }) => ({
   height: 'calc((1 - var(--template-frame-height, 0)) * 100dvh)',
   minHeight: '100%',
   padding: theme.spacing(2),
+  backgroundColor: '#ffffff', // White background
   [theme.breakpoints.up('sm')]: {
     padding: theme.spacing(4),
   },
@@ -54,13 +58,25 @@ const SignInContainer = styled(Stack)(({ theme }) => ({
     position: 'absolute',
     zIndex: -1,
     inset: 0,
-    backgroundImage:
-      'radial-gradient(ellipse at 50% 50%, hsl(210, 100%, 97%), hsl(0, 0%, 100%))',
+    backgroundColor: '#ffffff', // White background
+    backgroundImage: 'none', // Remove gradient
     backgroundRepeat: 'no-repeat',
     ...theme.applyStyles('dark', {
-      backgroundImage:
-        'radial-gradient(at 50% 50%, hsla(210, 100%, 16%, 0.5), hsl(220, 30%, 5%))',
+      backgroundColor: '#ffffff', // Force white background in dark mode too
+      backgroundImage: 'none',
     }),
+  },
+}));
+
+const BlueButton = styled(Button)(({ theme }) => ({
+  backgroundColor: '#1976d2', // Blue color
+  color: '#ffffff',
+  '&:hover': {
+    backgroundColor: '#1565c0', // Darker blue on hover
+  },
+  '&:disabled': {
+    backgroundColor: '#bbdefb', // Light blue when disabled
+    color: '#ffffff',
   },
 }));
 
@@ -71,7 +87,6 @@ export default function SignIn(props) {
   const [passwordErrorMessage, setPasswordErrorMessage] = React.useState('');
   const [open, setOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
-  const [snackbar, setSnackbar] = React.useState({ open: false, message: '', severity: 'error' });
   const [validatingToken, setValidatingToken] = React.useState(true);
 
   const { login, getRedirectRoute, logout, token: existingToken } = useAuth();
@@ -137,21 +152,40 @@ export default function SignIn(props) {
       const data = await post('/api/auth/signin', payload, { requiresAuth: false });
       
       if (data.success) {
+        toast.success('Login successful! Redirecting...', {
+          position: "top-right",
+          autoClose: 2000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+        
         login(data.token, data.data);
         const redirectRoute = getRedirectRoute(data.data);
-        navigate(redirectRoute);
+        
+        // Small delay to show the success message
+        setTimeout(() => {
+          navigate(redirectRoute);
+        }, 1000);
       } else {
-        setSnackbar({
-          open: true,
-          message: data.message || 'Login failed',
-          severity: 'error'
+        toast.error(data.message || 'Login failed', {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
         });
       }
     } catch (err) {
-      setSnackbar({
-        open: true,
-        message: 'An error occurred during login. Please try again.',
-        severity: 'error'
+      toast.error('An error occurred during login. Please try again.', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
       });
     } finally {
       setIsLoading(false);
@@ -185,10 +219,6 @@ export default function SignIn(props) {
     return isValid;
   };
 
-  const handleCloseSnackbar = () => {
-    setSnackbar({ ...snackbar, open: false });
-  };
-
   // Show loading state while validating token
   if (validatingToken) {
     return (
@@ -199,7 +229,7 @@ export default function SignIn(props) {
           justifyContent="center" 
           alignItems="center"
         >
-          <Typography variant="h6">Checking authentication...</Typography>
+          <Typography variant="h6" sx={{ color: '#333' }}>Checking authentication...</Typography>
         </SignInContainer>
       </AppTheme>
     );
@@ -215,7 +245,11 @@ export default function SignIn(props) {
           <Typography
             component="h1"
             variant="h4"
-            sx={{ width: '100%', fontSize: 'clamp(2rem, 10vw, 2.15rem)' }}
+            sx={{ 
+              width: '100%', 
+              fontSize: 'clamp(2rem, 10vw, 2.15rem)',
+              color: '#333' // Dark text for contrast on white background
+            }}
           >
             Sign in
           </Typography>
@@ -231,7 +265,7 @@ export default function SignIn(props) {
             }}
           >
             <FormControl>
-              <FormLabel htmlFor="email">Email or Username</FormLabel>
+              <FormLabel htmlFor="email" sx={{ color: '#333' }}>Email or Username</FormLabel>
               <TextField
                 error={emailError}
                 helperText={emailErrorMessage}
@@ -246,10 +280,15 @@ export default function SignIn(props) {
                 variant="outlined"
                 color={emailError ? 'error' : 'primary'}
                 disabled={isLoading}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: '#ffffff',
+                  }
+                }}
               />
             </FormControl>
             <FormControl>
-              <FormLabel htmlFor="password">Password</FormLabel>
+              <FormLabel htmlFor="password" sx={{ color: '#333' }}>Password</FormLabel>
               <TextField
                 error={passwordError}
                 helperText={passwordErrorMessage}
@@ -263,45 +302,59 @@ export default function SignIn(props) {
                 variant="outlined"
                 color={passwordError ? 'error' : 'primary'}
                 disabled={isLoading}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: '#ffffff',
+                  }
+                }}
               />
             </FormControl>
             <ForgotPassword open={open} handleClose={handleClose} />
-            <Button
+            <BlueButton
               type="submit"
               fullWidth
               variant="contained"
               disabled={isLoading}
             >
               {isLoading ? 'Signing in...' : 'Sign in'}
-            </Button>
+            </BlueButton>
             <Link
               component="button"
               type="button"
               onClick={handleClickOpen}
               variant="body2"
-              sx={{ alignSelf: 'center' }}
+              sx={{ 
+                alignSelf: 'center',
+                color: '#1976d2', // Blue color for link
+                '&:hover': {
+                  color: '#1565c0'
+                }
+              }}
               disabled={isLoading}
             >
               Forgot your password?
             </Link>
           </Box>
-          <Divider>Diamond Paints</Divider>
+          <Divider sx={{ color: '#666' }}>Diamond Paints</Divider>
         </Card>
         
-        <Snackbar 
-          open={snackbar.open} 
-          autoHideDuration={6000} 
-          onClose={handleCloseSnackbar}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        >
-          <Alert 
-            onClose={handleCloseSnackbar} 
-            severity={snackbar.severity} 
-            sx={{ width: '100%' }}
-          >
-            {snackbar.message}
-          </Alert>
-        </Snackbar>
+        {/* React Toastify Container */}
+        <ToastContainer
+          position="top-right"
+          autoClose={5000}
+          hideProgressBar={false}
+          newestOnTop={false}
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+          theme="light"
+          toastStyle={{
+            backgroundColor: '#ffffff',
+            color: '#333333',
+          }}
+        />
       </SignInContainer>
     </AppTheme>
   );
