@@ -72,10 +72,43 @@ export default function SignIn(props) {
   const [open, setOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [snackbar, setSnackbar] = React.useState({ open: false, message: '', severity: 'error' });
+  const [validatingToken, setValidatingToken] = React.useState(true);
 
-  const { login, getRedirectRoute } = useAuth();
-  const { post } = useApi();
+  const { login, getRedirectRoute, logout, token: existingToken } = useAuth();
+  const { post, get } = useApi();
   const navigate = useNavigate();
+
+  // Check for existing token on component mount
+  React.useEffect(() => {
+    const validateExistingToken = async () => {
+      const storedToken = localStorage.getItem('authToken');
+      
+      if (storedToken) {
+        try {
+          // Validate the token with the backend
+          const response = await get('/api/auth/validate', { requiresAuth: true });
+          
+          if (response.valid) {
+            // Token is valid, redirect to appropriate page
+            const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+            const redirectRoute = getRedirectRoute(userData);
+            navigate(redirectRoute);
+          } else {
+            // Token is invalid, remove it and proceed with normal flow
+            logout();
+          }
+        } catch (error) {
+          console.error('Token validation failed:', error);
+          // If validation fails, remove the token and proceed
+          logout();
+        }
+      }
+      
+      setValidatingToken(false);
+    };
+
+    validateExistingToken();
+  }, [get, navigate, getRedirectRoute, logout]);
 
   const handleClickOpen = () => {
     setOpen(true);
@@ -101,12 +134,12 @@ export default function SignIn(props) {
         password: formData.get('password')
       };
       
-     const data = await post('/api/auth/signin', payload, { requiresAuth: false });
+      const data = await post('/api/auth/signin', payload, { requiresAuth: false });
       
       if (data.success) {
-      login(data.token, data.data);
+        login(data.token, data.data);
         const redirectRoute = getRedirectRoute(data.data);
-      navigate(redirectRoute);
+        navigate(redirectRoute);
       } else {
         setSnackbar({
           open: true,
@@ -155,6 +188,22 @@ export default function SignIn(props) {
   const handleCloseSnackbar = () => {
     setSnackbar({ ...snackbar, open: false });
   };
+
+  // Show loading state while validating token
+  if (validatingToken) {
+    return (
+      <AppTheme {...props}>
+        <CssBaseline enableColorScheme />
+        <SignInContainer 
+          direction="column" 
+          justifyContent="center" 
+          alignItems="center"
+        >
+          <Typography variant="h6">Checking authentication...</Typography>
+        </SignInContainer>
+      </AppTheme>
+    );
+  }
 
   return (
     <AppTheme {...props}>
