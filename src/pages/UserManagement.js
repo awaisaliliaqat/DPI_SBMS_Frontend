@@ -8,6 +8,7 @@ import {
   DialogContent,
   DialogActions,
   Button,
+  Tooltip,
 } from '@mui/material';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast, ToastContainer } from 'react-toastify';
@@ -96,6 +97,33 @@ export default function UserManagement() {
     }
   }, [canRead, navigate]);
 
+  // Validation functions
+  const validateUsername = (username) => {
+    if (!username) return 'Username is required';
+    if (username.length < 5) return 'Username must be at least 5 characters';
+    if (!/^[a-zA-Z]/.test(username)) return 'Username must start with an alphabet';
+    if (!/^[a-zA-Z0-9]+$/.test(username)) return 'Username can only contain letters and numbers';
+    return '';
+  };
+
+  const validateEmail = (email) => {
+    if (!email) return 'Email is required';
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) return 'Please enter a valid email address';
+    return '';
+  };
+
+  const validatePassword = (password) => {
+    if (!password) return 'Password is required';
+    if (password.length < 5) return 'Password must be at least 5 characters';
+    return '';
+  };
+
+  const validateRole = (roleId) => {
+    if (!roleId) return 'Role is required';
+    return '';
+  };
+
   // Update your getUserFields function to use a different field name for view mode
   const getUserFields = (isCreate = false, includePassword = false, isViewMode = false) => [
     {
@@ -104,6 +132,8 @@ export default function UserManagement() {
       type: 'text',
       required: true,
       readOnly: isViewMode,
+      validate: validateUsername,
+      tooltip: 'Must be at least 5 characters and start with a letter',
     },
     {
       name: 'email',
@@ -111,12 +141,16 @@ export default function UserManagement() {
       type: 'email',
       required: true,
       readOnly: isViewMode,
+      validate: validateEmail,
+      tooltip: 'Must be a valid email address'
     },
     ...(isCreate ? [{
       name: 'password',
       label: 'Password',
       type: 'password',
       required: true,
+      validate: validatePassword,
+      tooltip: 'Must be at least 5 characters'
     }] : []),
     ...(includePassword && !isCreate ? [
       {
@@ -125,6 +159,8 @@ export default function UserManagement() {
         type: 'password',
         required: true,
         placeholder: 'Enter new password',
+        validate: validatePassword,
+        tooltip: 'Must be at least 5 characters'
       },
       {
         name: 'confirmPassword',
@@ -132,6 +168,11 @@ export default function UserManagement() {
         type: 'password',
         required: true,
         placeholder: 'Confirm new password',
+        validate: (value, formData) => {
+          if (value !== formData.password) return 'Passwords do not match';
+          return '';
+        },
+        tooltip: 'Must match the password above'
       }
     ] : []),
     // For view mode, use a different field name to display roleName
@@ -145,6 +186,8 @@ export default function UserManagement() {
       label: 'Role',
       type: 'select',
       required: true,
+      validate: validateRole,
+      tooltip: 'Please select a role',
       options: roles.map(role => ({
         value: role.id,
         label: role.name
@@ -421,8 +464,8 @@ export default function UserManagement() {
         return;
       }
       
-      if (!formData.password || formData.password.trim().length < 6) {
-        toast.error('Password must be at least 6 characters long!', {
+      if (!formData.password || formData.password.trim().length < 5) {
+        toast.error('Password must be at least 5 characters long!', {
           position: "top-right",
           autoClose: 5000,
           hideProgressBar: false,
@@ -482,7 +525,34 @@ export default function UserManagement() {
       setShowPasswordChange(false);
       loadUsers();
     } catch (submitError) {
-      toast.error(`Failed to ${modalMode} user: ${submitError.message}`, {
+      console.log("error ", submitError);
+
+      // toast.error(`Failed to ${modalMode} user: ${submitError.message}`, {
+      //   position: "top-right",
+      //   autoClose: 5000,
+      //   hideProgressBar: false,
+      //   closeOnClick: true,
+      //   pauseOnHover: true,
+      //   draggable: true,
+      // });
+      let errorMessage = `Failed to ${modalMode} user`;
+      
+      if (submitError.response && submitError.response.data) {
+        const serverError = submitError.response.data;
+        
+        // Check if the server returned a specific error message
+        if (serverError.message) {
+          errorMessage = serverError.message;
+        } else if (typeof serverError === 'string') {
+          errorMessage = serverError;
+        } else if (serverError.error) {
+          errorMessage = serverError.error;
+        }
+      } else if (submitError.message) {
+        errorMessage = submitError.message;
+      }
+      
+      toast.error(errorMessage, {
         position: "top-right",
         autoClose: 5000,
         hideProgressBar: false,
@@ -490,6 +560,7 @@ export default function UserManagement() {
         pauseOnHover: true,
         draggable: true,
       });
+   
     } finally {
       setIsLoading(false);
     }

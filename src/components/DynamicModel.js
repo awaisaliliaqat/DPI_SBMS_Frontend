@@ -19,6 +19,7 @@ import {
   FormControlLabel,
   Divider,
   Alert,
+  Tooltip,
 } from '@mui/material';
 import { Close, Edit, Visibility, VpnKey, Cancel } from '@mui/icons-material';
 
@@ -38,30 +39,55 @@ const DynamicModal = ({
 }) => {
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
+  const [touched, setTouched] = useState({});
 
   // Initialize form data when modal opens or initialData changes
   useEffect(() => {
     if (open) {
       setFormData(initialData);
       setErrors({});
+      setTouched({});
     }
   }, [open, initialData]);
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     
-    // Clear error when field is updated
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
+    // Validate field if it's been touched
+    if (touched[field]) {
+      validateField(field, value);
     }
   };
 
-  const handleSubmit = () => {
-    // Basic validation
+  const handleBlur = (field) => {
+    setTouched(prev => ({ ...prev, [field]: true }));
+    validateField(field, formData[field]);
+  };
+
+  const validateField = (fieldName, value) => {
+    const field = fields.find(f => f.name === fieldName);
+    if (field && field.validate) {
+      const error = field.validate(value, formData);
+      setErrors(prev => ({ ...prev, [fieldName]: error }));
+      return error;
+    }
+    return '';
+  };
+
+  const validateForm = () => {
     const newErrors = {};
+    let isValid = true;
+    
     fields.forEach(field => {
       if (field.required && !formData[field.name]) {
         newErrors[field.name] = `${field.label} is required`;
+        isValid = false;
+      } else if (field.validate) {
+        const error = field.validate(formData[field.name], formData);
+        if (error) {
+          newErrors[field.name] = error;
+          isValid = false;
+        }
       }
     });
 
@@ -69,33 +95,52 @@ const DynamicModal = ({
     if (isEditMode && showPasswordChange) {
       if (formData.password !== formData.confirmPassword) {
         newErrors.confirmPassword = 'Passwords do not match';
-      }
-      if (formData.password && formData.password.length < 6) {
-        newErrors.password = 'Password must be at least 6 characters long';
+        isValid = false;
       }
     }
 
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      return;
-    }
+    setErrors(newErrors);
+    return isValid;
+  };
 
-    onSubmit(formData);
+  const handleSubmit = () => {
+    // Mark all fields as touched
+    const allTouched = {};
+    fields.forEach(field => {
+      allTouched[field.name] = true;
+    });
+    setTouched(allTouched);
+    
+    if (validateForm()) {
+      onSubmit(formData);
+    }
   };
 
   const renderField = (field) => {
-    const { name, label, type, options, required, disabled, multiline, rows, placeholder } = field;
+    const { 
+      name, 
+      label, 
+      type, 
+      options, 
+      required, 
+      disabled, 
+      multiline, 
+      rows, 
+      placeholder,
+      tooltip,
+      inputProps = {},
+      validate,
+      ...otherProps
+    } = field;
+    
     const value = formData[name] || '';
     const error = errors[name] || '';
     const isViewMode = mode === 'view';
     const isDisabled = isViewMode || disabled;
 
-    switch (type) {
-      case 'text':
-      case 'email':
-      case 'password':
-      case 'number':
-        return (
+    const fieldElement = (
+      <>
+        {type === 'text' || type === 'email' || type === 'password' || type === 'number' ? (
           <TextField
             key={name}
             fullWidth
@@ -103,6 +148,7 @@ const DynamicModal = ({
             label={label}
             value={value}
             onChange={(e) => handleChange(name, e.target.value)}
+            onBlur={() => handleBlur(name)}
             error={!!error}
             helperText={error}
             required={required}
@@ -112,14 +158,13 @@ const DynamicModal = ({
             margin="normal"
             variant={isViewMode ? "filled" : "outlined"}
             placeholder={placeholder}
+            inputProps={inputProps}
             InputProps={{
               readOnly: isViewMode,
+              ...otherProps.inputProps,
             }}
           />
-        );
-
-      case 'select':
-        return (
+        ) : type === 'select' ? (
           <FormControl 
             key={name} 
             fullWidth 
@@ -132,6 +177,7 @@ const DynamicModal = ({
               value={value}
               label={label}
               onChange={(e) => handleChange(name, e.target.value)}
+              onBlur={() => handleBlur(name)}
               variant={isViewMode ? "filled" : "outlined"}
               readOnly={isViewMode}
             >
@@ -143,10 +189,7 @@ const DynamicModal = ({
             </Select>
             {error && <FormHelperText>{error}</FormHelperText>}
           </FormControl>
-        );
-
-      case 'checkbox':
-        return (
+        ) : type === 'checkbox' ? (
           <FormControlLabel
             key={name}
             control={
@@ -160,13 +203,9 @@ const DynamicModal = ({
             label={label}
             sx={{ mt: 2 }}
           />
-        );
-
-      case 'custom':
-        return field.render ? field.render(value, (val) => handleChange(name, val), isViewMode) : null;
-
-      default:
-        return isViewMode ? (
+        ) : type === 'custom' ? (
+          field.render ? field.render(value, (val) => handleChange(name, val), isViewMode) : null
+        ) : isViewMode ? (
           <Box key={name} sx={{ mt: 2 }}>
             <Typography variant="body2" color="textSecondary">
               {label}
@@ -182,14 +221,22 @@ const DynamicModal = ({
             label={label}
             value={value}
             onChange={(e) => handleChange(name, e.target.value)}
+            onBlur={() => handleBlur(name)}
             error={!!error}
             helperText={error}
             required={required}
             disabled={isDisabled}
             margin="normal"
           />
-        );
-    }
+        )}
+      </>
+    );
+
+    return tooltip ? (
+      <Tooltip key={name} title={tooltip} placement="top-start" arrow>
+        {fieldElement}
+      </Tooltip>
+    ) : fieldElement;
   };
 
   // Separate fields into sections
@@ -263,7 +310,7 @@ const DynamicModal = ({
                 <Box>
                   <Alert severity="info" sx={{ mb: 2 }}>
                     <Typography variant="body2">
-                      Leave password fields empty to keep the current password unchanged.
+                      Password must be at least 5 characters long.
                     </Typography>
                   </Alert>
                   

@@ -25,6 +25,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Tooltip,
 } from '@mui/material';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast, ToastContainer } from 'react-toastify';
@@ -96,6 +97,18 @@ export default function RoleManagement() {
     searchParams.get('sort') ? JSON.parse(searchParams.get('sort') ?? '') : [],
   );
 
+  // Validation functions
+  const validateRoleName = (name) => {
+    if (!name) return 'Role name is required';
+    if (name.length < 5) return 'Role name must be at least 5 characters';
+    return '';
+  };
+
+  const validateDescription = (description) => {
+    if (description && description.length < 10) return 'Description must be at least 10 characters';
+    return '';
+  };
+
   // Check if user has read permission on mount
   React.useEffect(() => {
     if (!canRead) {
@@ -118,6 +131,8 @@ export default function RoleManagement() {
       label: 'Role Name',
       type: 'text',
       required: true,
+      validate: validateRoleName,
+      tooltip: 'Must be at least 5 characters',
     },
     {
       name: 'description',
@@ -125,6 +140,8 @@ export default function RoleManagement() {
       type: 'text',
       multiline: true,
       rows: 3,
+      validate: validateDescription,
+      tooltip: 'Must be at least 10 characters if provided',
     },
   ];
 
@@ -377,6 +394,8 @@ export default function RoleManagement() {
         pauseOnHover: true,
         draggable: true,
       });
+
+     setDeleteDialogOpen(false);
     } finally {
       setIsLoading(false);
     }
@@ -495,6 +514,34 @@ export default function RoleManagement() {
   };
   
   const handleModalSubmit = async (formData) => {
+    // Validate form data before submission
+    const nameError = validateRoleName(formData.name);
+    const descriptionError = validateDescription(formData.description);
+    
+    if (nameError) {
+      toast.error(nameError, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+    
+    if (descriptionError) {
+      toast.error(descriptionError, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+
     if (rolePermissions.length === 0) {
       toast.error('Please add at least one permission', {
         position: "top-right",
@@ -542,7 +589,25 @@ export default function RoleManagement() {
       setModalOpen(false);
       loadRoles();
     } catch (submitError) {
-      toast.error(`Failed to ${modalMode} role: ${submitError.message}`, {
+      // Extract user-friendly error message from server response
+      let errorMessage = `Failed to ${modalMode} role`;
+      
+      if (submitError.response && submitError.response.data) {
+        const serverError = submitError.response.data;
+        
+        // Check if the server returned a specific error message
+        if (serverError.message) {
+          errorMessage = serverError.message;
+        } else if (typeof serverError === 'string') {
+          errorMessage = serverError;
+        } else if (serverError.error) {
+          errorMessage = serverError.error;
+        }
+      } else if (submitError.message) {
+        errorMessage = submitError.message;
+      }
+      
+      toast.error(errorMessage, {
         position: "top-right",
         autoClose: 5000,
         hideProgressBar: false,
