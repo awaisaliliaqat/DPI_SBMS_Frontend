@@ -12,6 +12,18 @@ export const NAVIGATION_CONFIG = {
     icon: '📊',
     requiredPermission: 'view' // or whatever permission you want
   },
+  shopboardRequest: {
+    displayName: 'Area Head Requests',
+    routerLink: '/area-head-requests',
+    icon: '📋',
+    requiredPermission: 'read'
+  },
+  vendorRequests: {
+    displayName: 'Vendor Requests',
+    routerLink: '/vendor-requests',
+    icon: '🏪',
+    requiredPermission: 'read'
+  },
   dashboard: {
     displayName: 'Dashboard',
     routerLink: '/dashboard',

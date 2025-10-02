@@ -179,7 +179,24 @@ export default function SignIn(props) {
         });
       }
     } catch (err) {
-      toast.error('An error occurred during login. Please try again.', {
+      console.error('Login error:', err);
+      
+      let errorMessage = 'An error occurred during login. Please try again.';
+      
+      // Try to parse the error message from the API response
+      try {
+        const errorData = JSON.parse(err.message);
+        if (errorData.message) {
+          errorMessage = errorData.message;
+        }
+      } catch (parseError) {
+        // If parsing fails, use the original error message or default
+        if (err.message && !err.message.includes('HTTP')) {
+          errorMessage = err.message;
+        }
+      }
+      
+      toast.error(errorMessage, {
         position: "top-right",
         autoClose: 5000,
         hideProgressBar: false,

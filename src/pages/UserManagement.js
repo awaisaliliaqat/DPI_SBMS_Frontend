@@ -62,6 +62,11 @@ export default function UserManagement() {
   const [loadingRoles, setLoadingRoles] = React.useState(false);
   const [rolesError, setRolesError] = React.useState(null);
 
+  // Regions state (fetched from API)
+  const [regions, setRegions] = React.useState([]);
+  const [loadingRegions, setLoadingRegions] = React.useState(false);
+  const [regionsError, setRegionsError] = React.useState(null);
+
   // Table state management
   const [paginationModel, setPaginationModel] = React.useState({
     page: searchParams.get('page') ? Number(searchParams.get('page')) : 0,
@@ -121,6 +126,11 @@ export default function UserManagement() {
 
   const validateRole = (roleId) => {
     if (!roleId) return 'Role is required';
+    return '';
+  };
+
+  const validateRegion = (regionId) => {
+    // Region is optional, so no validation needed
     return '';
   };
 
@@ -195,6 +205,29 @@ export default function UserManagement() {
       loading: loadingRoles,
       error: rolesError,
     },
+    // For view mode, use a different field name to display regionName
+    isViewMode ? {
+      name: 'regionName', // Use regionName field instead of regionId
+      label: 'Region',
+      type: 'text',
+      readOnly: true,
+    } : {
+      name: 'regionId',
+      label: 'Region',
+      type: 'select',
+      required: false,
+      validate: validateRegion,
+      tooltip: 'Please select a region (optional)',
+      options: [
+        { value: '', label: 'No Region' },
+        ...regions.map(region => ({
+          value: region.id,
+          label: `${region.name} (${region.code})`
+        }))
+      ],
+      loading: loadingRegions,
+      error: regionsError,
+    },
     {
       name: 'isActive',
       label: 'Active',
@@ -233,12 +266,44 @@ export default function UserManagement() {
     }
   }, [get]);
 
-  // Load roles when modal opens for create/edit modes only
-  React.useEffect(() => {
-    if (modalOpen && (modalMode === 'create' || modalMode === 'edit')) {
-      fetchRoles();
+  // API call to fetch regions
+  const fetchRegions = React.useCallback(async () => {
+    setLoadingRegions(true);
+    setRegionsError(null);
+    
+    try {
+      const response = await get('/api/regions');
+      
+      if (response.success && Array.isArray(response.data)) {
+        setRegions(response.data);
+      } else {
+        throw new Error('Invalid regions data format');
+      }
+    } catch (error) {
+      setRegionsError(error.message || 'Failed to load regions');
+      toast.error('Failed to load regions', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      console.error('Error loading regions:', error);
+    } finally {
+      setLoadingRegions(false);
     }
-  }, [modalOpen, modalMode, fetchRoles]);
+  }, [get]);
+
+  // Load roles and regions when modal opens for create/edit/view modes
+  React.useEffect(() => {
+    if (modalOpen && (modalMode === 'create' || modalMode === 'edit' || modalMode === 'view')) {
+      if (modalMode === 'create' || modalMode === 'edit') {
+        fetchRoles();
+      }
+      fetchRegions();
+    }
+  }, [modalOpen, modalMode, fetchRoles, fetchRegions]);
 
   // Reset password change state when modal closes
   React.useEffect(() => {
@@ -353,7 +418,14 @@ export default function UserManagement() {
   // Action handlers - updated to use modal
   const handleView = React.useCallback((userData) => {
     if (!canRead) return;
-    setSelectedUser(userData);
+    
+    // Transform user data for view mode
+    const transformedUserData = {
+      ...userData,
+      regionName: userData.region ? `${userData.region.name} (${userData.region.code})` : 'No Region'
+    };
+    
+    setSelectedUser(transformedUserData);
     setModalMode('view');
     setShowPasswordChange(false);
     setModalOpen(true);
@@ -361,7 +433,14 @@ export default function UserManagement() {
 
   const handleEdit = React.useCallback((userData) => {
     if (!canUpdate) return;
-    setSelectedUser(userData);
+    
+    // Transform user data for edit mode
+    const transformedUserData = {
+      ...userData,
+      regionId: userData.region ? userData.region.id : ''
+    };
+    
+    setSelectedUser(transformedUserData);
     setModalMode('edit');
     setShowPasswordChange(false);
     setModalOpen(true);
@@ -489,8 +568,9 @@ export default function UserManagement() {
       const submitData = {
         username: formData.username,
         email: formData.email,
-        roleId: parseInt(formData.roleId),
-        isActive: formData.isActive !== undefined ? formData.isActive : true,
+        role_id: parseInt(formData.roleId),
+        region_id: formData.regionId ? parseInt(formData.regionId) : null,
+        is_active: formData.isActive !== undefined ? formData.isActive : true,
       };
 
       // Add password for create mode or edit mode with password change
@@ -596,6 +676,32 @@ export default function UserManagement() {
             color={params.value ? 'primary' : 'default'}
           />
         ),
+      },
+      {
+        field: 'region',
+        headerName: 'Region',
+        width: 150,
+        renderCell: (params) => {
+          const region = params.value;
+          if (!region) {
+            return (
+              <Chip 
+                label="No Region" 
+                variant="outlined" 
+                size="small"
+                color="default"
+              />
+            );
+          }
+          return (
+            <Chip 
+              label={`${region.name} (${region.code})`} 
+              variant="outlined" 
+              size="small"
+              color="secondary"
+            />
+          );
+        },
       },
       {
         field: 'isActive',

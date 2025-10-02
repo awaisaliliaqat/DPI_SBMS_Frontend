@@ -130,10 +130,12 @@ const DynamicModal = ({
       tooltip,
       inputProps = {},
       validate,
+      valueFormatter,
       ...otherProps
     } = field;
     
-    const value = formData[name] || '';
+    const rawValue = formData[name] || '';
+    const value = valueFormatter ? valueFormatter(rawValue) : rawValue;
     const error = errors[name] || '';
     const isViewMode = mode === 'view';
     const isDisabled = isViewMode || disabled;

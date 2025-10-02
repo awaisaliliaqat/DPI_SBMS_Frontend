@@ -41,16 +41,28 @@ class ApiService {
     try {
       const response = await fetch(`${this.baseURL}${endpoint}`, config);
       
-      // Handle unauthorized responses
-      if (response.status === 401 || response.status === 403) {
-        this.handleUnauthorized();
-        throw new Error('Authentication required');
-      }
-
-      // Handle other error responses
+      // Handle error responses
       if (!response.ok) {
-        const errorData = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorData}`);
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch {
+          errorData = await response.text();
+        }
+
+        // For login endpoint, don't handle 401 as unauthorized - let the component handle it
+        if (endpoint.includes('/auth/signin') && response.status === 401) {
+          throw new Error(JSON.stringify(errorData));
+        }
+
+        // Handle unauthorized responses for other endpoints
+        if (response.status === 401 || response.status === 403) {
+          this.handleUnauthorized();
+          throw new Error('Authentication required');
+        }
+
+        // Handle other error responses
+        throw new Error(JSON.stringify(errorData));
       }
 
       // Parse successful response

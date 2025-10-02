@@ -60,7 +60,7 @@ export const AuthProvider = ({ children }) => {
     // Check if user has manage permission for all screens
     if (user.permissions['*']?.includes('manage')) return true;
     
-    // Check specific screen permissions
+    // Check specific screen permissions (web permissions)
     return user.permissions[screen]?.includes(permission) || false;
   };
 
