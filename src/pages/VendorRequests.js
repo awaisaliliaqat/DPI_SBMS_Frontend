@@ -142,16 +142,30 @@ export default function VendorRequests() {
   }, [canRead, navigate]);
 
   // Load dropdown data for edit form
-  const loadDropdownData = React.useCallback(async () => {
+  const loadDropdownData = React.useCallback(async (dealerCode = null) => {
     setLoadingDropdowns(true);
     try {
+      // If we have a dealer code, fetch that specific dealer
+      // Otherwise, fetch the first page of dealers
+      const dealerPromise = dealerCode 
+        ? get(`/api/dealers/code/${dealerCode}`)
+        : get('/api/dealers');
+      
       const [dealersRes, requestTypesRes, warrantyStatusesRes] = await Promise.all([
-        get('/api/dealers'),
+        dealerPromise,
         get('/api/request-types'),
         get('/api/warranty-statuses')
       ]);
 
-      if (dealersRes.success) setDealers(dealersRes.data);
+      // Handle dealer response - could be single dealer or list
+      if (dealersRes.success) {
+        if (Array.isArray(dealersRes.data)) {
+          setDealers(dealersRes.data);
+        } else {
+          // Single dealer returned - put it in an array
+          setDealers([dealersRes.data]);
+        }
+      }
       if (requestTypesRes.success) setRequestTypes(requestTypesRes.data);
       if (warrantyStatusesRes.success) setWarrantyStatuses(warrantyStatusesRes.data);
     } catch (error) {
@@ -171,10 +185,12 @@ export default function VendorRequests() {
 
   // Load dropdown data when edit modal opens
   React.useEffect(() => {
-    if (editModalOpen) {
-      loadDropdownData();
+    if (editModalOpen && editingRequest) {
+      // Pass the dealer code to load that specific dealer
+      const dealerCode = editingRequest.dealer?.code || editFormData.dealer_id;
+      loadDropdownData(dealerCode);
     }
-  }, [editModalOpen, loadDropdownData]);
+  }, [editModalOpen, editingRequest, editFormData.dealer_id, loadDropdownData]);
 
   // URL state synchronization
   const handlePaginationModelChange = React.useCallback(
@@ -318,8 +334,12 @@ export default function VendorRequests() {
       };
     });
     
+    // Store the dealer_id - it could be the dealer's code from SAP B1
+    // We'll use the dealer object's code if available, otherwise fall back to dealer_id
+    const dealerIdToStore = requestData.dealer?.code || requestData.dealer_id;
+    
     setEditFormData({
-      dealer_id: requestData.dealer_id,
+      dealer_id: dealerIdToStore,
       request_items: processedItems,
       warranty_status_id: requestData.warranty_status_id,
       reason_for_replacement: requestData.reason_for_replacement || '',
@@ -409,7 +429,33 @@ export default function VendorRequests() {
           const db = b.changed_at ? new Date(b.changed_at).getTime() : 0;
           return db - da;
         });
-        setRequestHistory(sorted);
+        
+        // Fetch dealer names for logs that have dealer_id
+        const logsWithDealerNames = await Promise.all(
+          sorted.map(async (log) => {
+            if (log.main_changes?.dealer_id && !log.main_changes?.dealer_name) {
+              try {
+                // Fetch dealer by code
+                const dealerResponse = await get(`/api/dealers/code/${log.main_changes.dealer_id}`);
+                if (dealerResponse.success && dealerResponse.data) {
+                  // Add dealer_name and dealer_code to main_changes
+                  return {
+                    ...log,
+                    main_changes: {
+                      ...log.main_changes,
+                      dealer_name: `${dealerResponse.data.name} (${dealerResponse.data.code})`
+                    }
+                  };
+                }
+              } catch (dealerError) {
+                console.error(`Error fetching dealer ${log.main_changes.dealer_id}:`, dealerError);
+              }
+            }
+            return log;
+          })
+        );
+        
+        setRequestHistory(logsWithDealerNames);
       } else {
         setRequestHistory([]);
       }
@@ -563,8 +609,8 @@ export default function VendorRequests() {
 
   const resolveDealerName = React.useCallback((dealerId) => {
     if (!dealerId) return null;
-    const d = dealers.find(x => x.id === dealerId);
-    return d?.name || null;
+    const d = dealers.find(x => String(x.id) === String(dealerId) || String(x.code) === String(dealerId));
+    return d ? `${d.name} (${d.code})` : dealerId;
   }, [dealers]);
 
   const resolveVendorName = React.useCallback((vendorId) => {
@@ -622,12 +668,20 @@ export default function VendorRequests() {
               </Typography>
             );
           }
+          if (key === 'vendor_name') {
+            return null; // Skip this field as vendor_id already shows the name
+          }
           if (key === 'dealer_id') {
+            // Use dealer_name if already fetched and available in main_changes
+            const dealerDisplay = mc.dealer_name || resolveDealerName(value) || value;
             return (
               <Typography key={`${key}-${idx}`} variant="body2" sx={{ color: '#333', mb: 0.5 }}>
-                Dealer: {resolveDealerName(value) || value}
+                Dealer: {dealerDisplay}
               </Typography>
             );
+          }
+          if (key === 'dealer_name') {
+            return null; // Skip this field as dealer_id already shows the name
           }
           if (key === 'warranty_status_id') {
             return (
@@ -1108,6 +1162,14 @@ export default function VendorRequests() {
                     disabled
                     helperText="Read-only"
                   />
+                    <TextField
+                      label="Phone"
+                      value={selectedRequest.dealer?.phone || 'N/A'}
+                      variant="outlined"
+                      fullWidth
+                      disabled
+                      helperText="Read-only"
+                    />
                 </Box>
                 <TextField
                   label="Address"
@@ -1371,7 +1433,7 @@ export default function VendorRequests() {
                 <Autocomplete
                   options={dealers}
                   getOptionLabel={(option) => option.name || ''}
-                  value={dealers.find(d => d.id === editFormData.dealer_id) || null}
+                  value={dealers.find(d => String(d.id) === String(editFormData.dealer_id) || String(d.code) === String(editFormData.dealer_id)) || null}
                   onChange={(event, newValue) => {
                     handleEditFormChange('dealer_id', newValue?.id || '');
                   }}
