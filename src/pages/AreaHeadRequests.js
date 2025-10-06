@@ -754,11 +754,11 @@ export default function AreaHeadRequests() {
     
     try {
       const response = await patch(`/api/shopboard-requests/${requestToAction.id}`, {
-        status: 'completed',
+        status: 'under_review',
         updated_by: user.id
       });
 
-      toast.success(`Request #${requestToAction.id} sent to CEO successfully!`, {
+      toast.success(`Request #${requestToAction.id} sent to Marketing Head successfully!`, {
         position: "top-right",
         autoClose: 3000,
         hideProgressBar: false,
@@ -769,7 +769,7 @@ export default function AreaHeadRequests() {
       
       loadRequests();
     } catch (sendError) {
-      toast.error(`Failed to send request to CEO: ${sendError.message}`, {
+      toast.error(`Failed to send request to Marketing Head: ${sendError.message}`, {
         position: "top-right",
         autoClose: 5000,
         hideProgressBar: false,
@@ -1412,8 +1412,8 @@ export default function AreaHeadRequests() {
             actions.push(
               <GridActionsCellItem
                 key="sendToCEO"
-                icon={<Tooltip title="Send Request to CEO"><SendToCEOIcon /></Tooltip>}
-                label="Send Request to CEO"
+                icon={<Tooltip title="Send Request to Marketing Head"><SendToCEOIcon /></Tooltip>}
+                label="Send Request to Marketing Head"
                 onClick={() => handleSendToCEO(row)}
                 color="success"
               />
@@ -2532,14 +2532,14 @@ export default function AreaHeadRequests() {
             fontWeight: 'bold',
           }}
         >
-          Send Request to CEO
+          Send Request to Marketing Head
         </DialogTitle>
         <DialogContent>
           <Typography sx={{ color: '#333', mb: 2 }}>
-            Are you sure you want to send request <strong>#{requestToAction?.id}</strong> to CEO?
+            Are you sure you want to send request <strong>#{requestToAction?.id}</strong> to Marketing Head?
           </Typography>
           <Typography variant="body2" sx={{ color: '#666' }}>
-            This action will mark the request as completed and send it to CEO for final approval.
+            This action will mark the request as completed and send it to Marketing Head for final approval.
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2, gap: 1 }}>
@@ -2564,7 +2564,7 @@ export default function AreaHeadRequests() {
             color="success"
             disabled={isLoading}
           >
-            {isLoading ? 'Sending...' : 'Send to CEO'}
+            {isLoading ? 'Sending...' : 'Send to Marketing Head'}
           </Button>
         </DialogActions>
       </Dialog>
