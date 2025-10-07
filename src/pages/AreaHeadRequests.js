@@ -56,6 +56,7 @@ export default function AreaHeadRequests() {
   const canApprove = canUpdate; // Approve is an update operation
   const canReject = canUpdate; // Reject is an update operation
   const canAssign = canUpdate; // Assign is an update operation
+  const canApprovalAction = user?.permissions?.shopboardRequest?.includes('approvals') || false;
 
   const { get, post, put, patch, del } = useApi();
 
@@ -610,6 +611,44 @@ export default function AreaHeadRequests() {
     }
   };
 
+  // Approve under_review by current user (Approvals permission)
+  const confirmApprovalForUnderReview = async (reqRow) => {
+    const target = reqRow || requestToAction;
+    if (!target) return;
+
+    setIsLoading(true);
+    setApproveDialogOpen(false);
+
+    try {
+      await post(`/api/shopboard-requests/${target.id}/approvals/approve`, {
+        request_id: target.id
+      });
+
+      toast.success(`Your approval for request #${target.id} has been recorded!`, {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+
+      loadRequests();
+    } catch (approveError) {
+      toast.error(`Failed to approve: ${approveError.message}`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setIsLoading(false);
+      setRequestToAction(null);
+    }
+  };
+
   // Confirm reject function
   const confirmReject = async () => {
     if (!requestToAction) return;
@@ -956,6 +995,18 @@ export default function AreaHeadRequests() {
               <Typography key={`${key}-${idx}`} variant="body2" sx={{ color: '#333', mb: 0.5 }}>
                 Reason: {String(value)}
               </Typography>
+            );
+          }
+          if (key === 'approvals') {
+            return (
+              <Box key={`${key}-${idx}`} sx={{ mb: 1 }}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>Approvals:</Typography>
+                {value.map((message, msgIndex) => (
+                  <Typography key={`approval-${msgIndex}`} variant="body2" sx={{ color: '#1976d2', mb: 0.5, fontWeight: 'bold' }}>
+                    {message}
+                  </Typography>
+                ))}
+              </Box>
             );
           }
           return (
@@ -1328,8 +1379,13 @@ export default function AreaHeadRequests() {
             />
           );
           
-          // Show edit action only for quotation sent status
-          if (canUpdate && row.status === 'quotation sent') {
+          // Compute whether current user is part of active approvals for this row
+          const isUserInActiveApprovals = Array.isArray(row.activeApprovals)
+            ? row.activeApprovals.some(ap => String(ap.user_id) === String(user?.id))
+            : false;
+
+          // Show edit action for quotation sent OR (under_review and user is an active approver)
+          if (canUpdate && (row.status === 'quotation sent' || (row.status === 'under_review' && isUserInActiveApprovals))) {
             actions.push(
               <GridActionsCellItem
                 key="edit"
@@ -1337,6 +1393,18 @@ export default function AreaHeadRequests() {
                 label="Edit Request"
                 onClick={() => handleEdit(row)}
                 color="info"
+              />
+            );
+          }
+          // Show Approve action only if status is under_review AND current user is in activeApprovals
+          if (row.status === 'under_review' && isUserInActiveApprovals) {
+            actions.push(
+              <GridActionsCellItem
+                key="approveUnderReview"
+                icon={<Tooltip title="Approve"><ApproveIcon /></Tooltip>}
+                label="Approve"
+                onClick={() => confirmApprovalForUnderReview(row)}
+                color="success"
               />
             );
           }

@@ -732,6 +732,18 @@ export default function VendorRequests() {
               </Typography>
             );
           }
+          if (key === 'approvals') {
+            return (
+              <Box key={`${key}-${idx}`} sx={{ mb: 1 }}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>Approvals:</Typography>
+                {value.map((message, msgIndex) => (
+                  <Typography key={`approval-${msgIndex}`} variant="body2" sx={{ color: '#1976d2', mb: 0.5, fontWeight: 'bold' }}>
+                    {message}
+                  </Typography>
+                ))}
+              </Box>
+            );
+          }
           // Fallback for any other simple field
           return (
             <Typography key={`${key}-${idx}`} variant="body2" sx={{ color: '#333', mb: 0.5 }}>

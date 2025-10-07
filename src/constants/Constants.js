@@ -6,4 +6,5 @@ export const PERMISSIONS = [
   { id: 'read', name: 'Read' },
   { id: 'update', name: 'Update' },
   { id: 'delete', name: 'Delete' },
+  { id: 'approvals', name: 'Approvals' },
 ];
