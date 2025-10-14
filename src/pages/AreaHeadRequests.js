@@ -29,6 +29,9 @@ import {
   Comment as CommentIcon,
   Send as SendToCEOIcon,
   History as HistoryIcon,
+  Visibility as VisibilityIcon,
+  Print as PrintIcon,
+  Gavel as ManualApprovalIcon,
 } from '@mui/icons-material';
 import { GridActionsCellItem } from '@mui/x-data-grid';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -40,6 +43,7 @@ import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
 import { BASE_URL } from "../constants/Constants";
 import { useApi } from '../hooks/useApi';
+import jsPDF from 'jspdf';
 
 const INITIAL_PAGE_SIZE = 10;
 
@@ -57,6 +61,9 @@ export default function AreaHeadRequests() {
   const canReject = canUpdate; // Reject is an update operation
   const canAssign = canUpdate; // Assign is an update operation
   const canApprovalAction = user?.permissions?.shopboardRequest?.includes('approvals') || false;
+  const canAddComment = user?.permissions?.shopboardRequest?.includes('add_comment') || false;
+  const canPrint = user?.permissions?.shopboardRequest?.includes('print') || false;
+  const canManualApproval = user?.permissions?.shopboardRequest?.includes('manual_approval') || false;
 
   const { get, post, put, patch, del } = useApi();
 
@@ -72,10 +79,20 @@ export default function AreaHeadRequests() {
   const [modalOpen, setModalOpen] = React.useState(false);
   const [selectedRequest, setSelectedRequest] = React.useState(null);
   
+  // Modal state for detailed view
+  const [detailedViewModalOpen, setDetailedViewModalOpen] = React.useState(false);
+  const [selectedDetailedRequest, setSelectedDetailedRequest] = React.useState(null);
+  
   // Edit modal state
   const [editModalOpen, setEditModalOpen] = React.useState(false);
   const [editingRequest, setEditingRequest] = React.useState(null);
   const [editFormData, setEditFormData] = React.useState({});
+
+  // Manual approval modal state
+  const [manualApprovalModalOpen, setManualApprovalModalOpen] = React.useState(false);
+  const [manualApprovalReason, setManualApprovalReason] = React.useState('');
+  const [manualApprovalFile, setManualApprovalFile] = React.useState(null);
+  const [manualApprovalLoading, setManualApprovalLoading] = React.useState(false);
   
   // File upload state for edit modal
   const [sitePhotos, setSitePhotos] = React.useState([]);
@@ -90,14 +107,23 @@ export default function AreaHeadRequests() {
   const [reviewAgainDialogOpen, setReviewAgainDialogOpen] = React.useState(false);
   const [commentsDialogOpen, setCommentsDialogOpen] = React.useState(false);
   const [sendToCEODialogOpen, setSendToCEODialogOpen] = React.useState(false);
+  const [addCommentDialogOpen, setAddCommentDialogOpen] = React.useState(false);
   const [requestToAction, setRequestToAction] = React.useState(null);
   
   // Comment state for rejection
   const [rejectionComment, setRejectionComment] = React.useState('');
   
+  // Comment state for adding comments
+  const [newComment, setNewComment] = React.useState('');
+  
   // Comments state for viewing vendor rejection comments
   const [requestComments, setRequestComments] = React.useState([]);
   const [loadingComments, setLoadingComments] = React.useState(false);
+  
+  // Marketing comments state for ceo_pending requests
+  const [marketingComments, setMarketingComments] = React.useState([]);
+  const [loadingMarketingComments, setLoadingMarketingComments] = React.useState(false);
+  const [marketingCommentsDialogOpen, setMarketingCommentsDialogOpen] = React.useState(false);
   
   // History state for viewing request history
   const [historyDialogOpen, setHistoryDialogOpen] = React.useState(false);
@@ -357,6 +383,11 @@ export default function AreaHeadRequests() {
     setModalOpen(true);
   }, [canRead]);
 
+  const handleViewDetails = React.useCallback((requestData) => {
+    setSelectedDetailedRequest(requestData);
+    setDetailedViewModalOpen(true);
+  }, []);
+
   const handleEdit = React.useCallback((requestData) => {
     if (!canUpdate) return;
     
@@ -485,6 +516,85 @@ export default function AreaHeadRequests() {
     setSendToCEODialogOpen(true);
   }, [canUpdate]);
 
+  const handleAddComment = React.useCallback((requestData) => {
+    if (!canAddComment) return;
+    
+    setRequestToAction(requestData);
+    setNewComment(''); // Clear previous comment
+    setAddCommentDialogOpen(true);
+  }, [canAddComment]);
+
+  const handleViewMarketingComments = React.useCallback((requestData) => {
+    if (!canRead) return;
+    
+    setRequestToAction(requestData);
+    setMarketingCommentsDialogOpen(true);
+    fetchMarketingComments(requestData.id);
+  }, [canRead]);
+
+  const handleViewAndSendMessages = React.useCallback((requestData) => {
+    if (!canAddComment) return;
+    
+    setRequestToAction(requestData);
+    setMarketingCommentsDialogOpen(true);
+    fetchMarketingComments(requestData.id);
+  }, [canAddComment]);
+
+  const handlePrint = React.useCallback((requestData) => {
+    if (!canPrint) return;
+    
+    generatePDF(requestData);
+  }, [canPrint]);
+
+  const handleManualApproval = React.useCallback((requestData) => {
+    if (!canManualApproval) return;
+    
+    setSelectedRequest(requestData);
+    setManualApprovalModalOpen(true);
+  }, [canManualApproval]);
+
+  const handleManualApprovalSubmit = React.useCallback(async () => {
+    if (!selectedRequest) return;
+    
+    setManualApprovalLoading(true);
+    try {
+      // TODO: Add API call here when ready
+      console.log('Manual approval submitted:', {
+        requestId: selectedRequest.id,
+        reason: manualApprovalReason,
+        file: manualApprovalFile
+      });
+      
+      toast.success('Manual approval submitted successfully!', {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      
+      // Close modal and reset form
+      setManualApprovalModalOpen(false);
+      setManualApprovalReason('');
+      setManualApprovalFile(null);
+      setSelectedRequest(null);
+      
+    } catch (error) {
+      console.error('Error submitting manual approval:', error);
+      toast.error('Failed to submit manual approval. Please try again.', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setManualApprovalLoading(false);
+    }
+  }, [selectedRequest, manualApprovalReason, manualApprovalFile]);
+
   // Fetch comments for a specific request
   const fetchRequestComments = React.useCallback(async (requestId) => {
     setLoadingComments(true);
@@ -508,6 +618,32 @@ export default function AreaHeadRequests() {
       setRequestComments([]);
     } finally {
       setLoadingComments(false);
+    }
+  }, [get]);
+
+  // Fetch marketing comments for a specific request
+  const fetchMarketingComments = React.useCallback(async (requestId) => {
+    setLoadingMarketingComments(true);
+    try {
+      const response = await get(`/api/comments/marketing/${requestId}`);
+      if (response.success && response.data) {
+        setMarketingComments(response.data);
+      } else {
+        setMarketingComments([]);
+      }
+    } catch (error) {
+      console.error('Error fetching marketing comments:', error);
+      toast.error('Failed to load marketing comments', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      setMarketingComments([]);
+    } finally {
+      setLoadingMarketingComments(false);
     }
   }, [get]);
 
@@ -822,6 +958,48 @@ export default function AreaHeadRequests() {
     }
   };
 
+  // Confirm add comment function
+  const confirmAddComment = async () => {
+    if (!requestToAction || !newComment.trim()) return;
+    
+    setIsLoading(true);
+    setAddCommentDialogOpen(false);
+    
+    try {
+      const response = await post(`/api/comments/add`, {
+        shopboard_request_id: requestToAction.id,
+        comment: newComment.trim(),
+        comment_type: 'marketing'
+      });
+
+      toast.success(`Message sent to request #${requestToAction.id} successfully!`, {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      
+      // Refresh the comments in the dialog
+      fetchMarketingComments(requestToAction.id);
+      setNewComment(''); // Clear the input field
+    } catch (commentError) {
+      toast.error(`Failed to send message: ${commentError.message}`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setIsLoading(false);
+      setRequestToAction(null);
+      setNewComment('');
+    }
+  };
+
   // Cancel functions
   const cancelApprove = () => {
     setApproveDialogOpen(false);
@@ -1001,11 +1179,90 @@ export default function AreaHeadRequests() {
             return (
               <Box key={`${key}-${idx}`} sx={{ mb: 1 }}>
                 <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>Approvals:</Typography>
-                {value.map((message, msgIndex) => (
-                  <Typography key={`approval-${msgIndex}`} variant="body2" sx={{ color: '#1976d2', mb: 0.5, fontWeight: 'bold' }}>
-                    {message}
-                  </Typography>
-                ))}
+                {value.map((message, msgIndex) => {
+                  // Check if it's "Approval needed from" message
+                  if (message.includes('Approval needed from:')) {
+                    const usernames = message.replace('Approval needed from: ', '').split(', ');
+                    const emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+                    
+                    return (
+                      <Box key={`approval-${msgIndex}`} sx={{ mb: 1 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5, color: '#1976d2' }}>
+                          Approval sequence:
+                        </Typography>
+                        <Box sx={{ 
+                          display: 'flex', 
+                          flexWrap: 'wrap', 
+                          gap: 1, 
+                          alignItems: 'center',
+                          p: 1,
+                          backgroundColor: '#f0f7ff',
+                          borderRadius: 1,
+                          border: '1px solid #d0e6ff'
+                        }}>
+                          {usernames.map((username, userIndex) => (
+                            <Box key={userIndex} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <Typography variant="body2" sx={{ fontSize: '1.1rem' }}>
+                                {emojis[userIndex] || `${userIndex + 1}.`}
+                              </Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#1976d2' }}>
+                                {username.trim()}
+                              </Typography>
+                              {userIndex < usernames.length - 1 && (
+                                <Typography variant="body2" sx={{ color: '#666', mx: 0.5 }}>
+                                  →
+                                </Typography>
+                              )}
+                            </Box>
+                          ))}
+                        </Box>
+                      </Box>
+                    );
+                  }
+                  
+                  // For "Approved by" messages, display simply without numbering
+                  if (message.includes('Approved by:')) {
+                    return (
+                      <Box key={`approval-${msgIndex}`} sx={{ mb: 1 }}>
+                        <Typography variant="body2" sx={{ 
+                          color: '#2e7d32', 
+                          fontWeight: 'bold',
+                          backgroundColor: '#e8f5e8',
+                          p: 1,
+                          borderRadius: 1,
+                          border: '1px solid #c8e6c9'
+                        }}>
+                          ✅ {message}
+                        </Typography>
+                      </Box>
+                    );
+                  }
+                  
+                  // For "Rejected by" messages
+                  if (message.includes('Rejected by:')) {
+                    return (
+                      <Box key={`approval-${msgIndex}`} sx={{ mb: 1 }}>
+                        <Typography variant="body2" sx={{ 
+                          color: '#d32f2f', 
+                          fontWeight: 'bold',
+                          backgroundColor: '#ffebee',
+                          p: 1,
+                          borderRadius: 1,
+                          border: '1px solid #ffcdd2'
+                        }}>
+                          ❌ {message}
+                        </Typography>
+                      </Box>
+                    );
+                  }
+                  
+                  // Default display for other approval messages
+                  return (
+                    <Typography key={`approval-${msgIndex}`} variant="body2" sx={{ color: '#1976d2', mb: 0.5, fontWeight: 'bold' }}>
+                      {message}
+                    </Typography>
+                  );
+                })}
               </Box>
             );
           }
@@ -1037,6 +1294,18 @@ export default function AreaHeadRequests() {
   const cancelSendToCEO = () => {
     setSendToCEODialogOpen(false);
     setRequestToAction(null);
+  };
+
+  const cancelAddComment = () => {
+    setAddCommentDialogOpen(false);
+    setRequestToAction(null);
+    setNewComment('');
+  };
+
+  const cancelMarketingComments = () => {
+    setMarketingCommentsDialogOpen(false);
+    setRequestToAction(null);
+    setMarketingComments([]);
   };
 
   // Edit form handlers
@@ -1158,7 +1427,992 @@ export default function AreaHeadRequests() {
     }
   }, [isLoading, loadRequests, canRead]);
 
-  const handleRowClick = React.useCallback(
+//   const generatePDF = React.useCallback((requestData) => {
+//     try {
+//       // Open the template in a new window
+//       const templateWindow = window.open('', '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
+      
+//       if (!templateWindow) {
+//         toast.error('Please allow popups for this site to generate the PDF.', {
+//           position: "top-right",
+//           autoClose: 5000,
+//           hideProgressBar: false,
+//           closeOnClick: true,
+//           pauseOnHover: true,
+//           draggable: true,
+//         });
+//         return;
+//       }
+
+//       // Embedded template HTML
+//       const templateHtml = `<!DOCTYPE html>
+// <html lang="en">
+// <head>
+//     <meta charset="UTF-8">
+//     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+//     <title>Request Details Report</title>
+//     <style>
+//         * {
+//             margin: 0;
+//             padding: 0;
+//             box-sizing: border-box;
+//         }
+
+//         @media print {
+//             body {
+//                 margin: 0;
+//                 padding: 20px;
+//             }
+//             .no-print {
+//                 display: none;
+//             }
+//             @page {
+//                 margin: 15mm;
+//             }
+//         }
+
+//         body {
+//             font-family: 'Arial', sans-serif;
+//             line-height: 1.4;
+//             color: #333;
+//             background: #f5f5f5;
+//             padding: 20px;
+//         }
+
+//         .container {
+//             max-width: 210mm;
+//             margin: 0 auto;
+//             background: white;
+//             padding: 30px;
+//             box-shadow: 0 0 10px rgba(0,0,0,0.1);
+//         }
+
+//         .header {
+//             text-align: center;
+//             margin-bottom: 30px;
+//             padding-bottom: 15px;
+//             border-bottom: 3px solid #2c3e50;
+//         }
+
+//         .header h1 {
+//             font-size: 28px;
+//             color: #2c3e50;
+//             margin-bottom: 5px;
+//             letter-spacing: 2px;
+//         }
+
+//         .header h2 {
+//             font-size: 16px;
+//             color: #7f8c8d;
+//             font-weight: normal;
+//         }
+
+//         .section {
+//             margin-bottom: 25px;
+//         }
+
+//         .section-title {
+//             font-size: 14px;
+//             font-weight: bold;
+//             color: #2c3e50;
+//             text-transform: uppercase;
+//             padding-bottom: 8px;
+//             margin-bottom: 15px;
+//             border-bottom: 2px solid #3498db;
+//             letter-spacing: 0.5px;
+//         }
+
+//         .fields-row {
+//             display: grid;
+//             grid-template-columns: 1fr 1fr;
+//             gap: 20px;
+//             margin-bottom: 15px;
+//         }
+
+//         .field {
+//             margin-bottom: 12px;
+//         }
+
+//         .field-label {
+//             font-size: 10px;
+//             font-weight: bold;
+//             color: #555;
+//             margin-bottom: 3px;
+//         }
+
+//         .field-value {
+//             font-size: 11px;
+//             color: #333;
+//             padding-bottom: 4px;
+//             border-bottom: 1px solid #ddd;
+//             min-height: 16px;
+//         }
+
+//         .item-card {
+//             background: #f8f9fa;
+//             padding: 15px;
+//             margin-bottom: 15px;
+//             border-radius: 5px;
+//             border-left: 4px solid #3498db;
+//         }
+
+//         .item-header {
+//             font-size: 12px;
+//             font-weight: bold;
+//             color: #2c3e50;
+//             margin-bottom: 12px;
+//         }
+
+//         .full-width {
+//             grid-column: 1 / -1;
+//         }
+
+//         .reason-box {
+//             background: #f8f9fa;
+//             padding: 12px;
+//             border-radius: 5px;
+//             margin-top: 10px;
+//         }
+
+//         .reason-label {
+//             font-size: 10px;
+//             font-weight: bold;
+//             color: #555;
+//             margin-bottom: 5px;
+//         }
+
+//         .reason-text {
+//             font-size: 11px;
+//             color: #333;
+//             line-height: 1.5;
+//         }
+
+//         .total-box {
+//             background: #3498db;
+//             color: white;
+//             padding: 15px;
+//             border-radius: 5px;
+//             margin: 20px 0;
+//             text-align: center;
+//         }
+
+//         .total-label {
+//             font-size: 11px;
+//             margin-bottom: 5px;
+//             opacity: 0.9;
+//         }
+
+//         .total-amount {
+//             font-size: 20px;
+//             font-weight: bold;
+//         }
+
+//         .footer {
+//             margin-top: 40px;
+//             padding-top: 15px;
+//             border-top: 1px solid #ddd;
+//             display: flex;
+//             justify-content: space-between;
+//             font-size: 9px;
+//             color: #7f8c8d;
+//         }
+
+//         .print-button {
+//             position: fixed;
+//             top: 20px;
+//             right: 20px;
+//             background: #3498db;
+//             color: white;
+//             border: none;
+//             padding: 12px 24px;
+//             border-radius: 5px;
+//             cursor: pointer;
+//             font-size: 14px;
+//             font-weight: bold;
+//             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+//             transition: background 0.3s;
+//         }
+
+//         .print-button:hover {
+//             background: #2980b9;
+//         }
+
+//         .status-badge {
+//             display: inline-block;
+//             padding: 4px 10px;
+//             border-radius: 3px;
+//             font-size: 10px;
+//             font-weight: bold;
+//         }
+
+//         .status-pending {
+//             background: #fff3cd;
+//             color: #856404;
+//         }
+
+//         .status-approved {
+//             background: #d4edda;
+//             color: #155724;
+//         }
+
+//         .status-rejected {
+//             background: #f8d7da;
+//             color: #721c24;
+//         }
+
+//         .status-ceo-pending {
+//             background: #d1ecf1;
+//             color: #0c5460;
+//         }
+//     </style>
+// </head>
+// <body>
+//     <button class="print-button no-print" onclick="window.print()">Print / Save as PDF</button>
+
+//     <div class="container">
+//         <!-- Header -->
+//         <div class="header">
+//             <h1>DIAMOND PAINTS</h1>
+//             <h2>Request Details Report</h2>
+//         </div>
+
+//         <!-- Dealer Information -->
+//         <div class="section">
+//             <div class="section-title">Dealer Information</div>
+//             <div class="fields-row">
+//                 <div class="field">
+//                     <div class="field-label">Dealer Name:</div>
+//                     <div class="field-value" id="dealer-name">-</div>
+//                 </div>
+//                 <div class="field">
+//                     <div class="field-label">Dealer Code:</div>
+//                     <div class="field-value" id="dealer-code">-</div>
+//                 </div>
+//             </div>
+//             <div class="fields-row">
+//                 <div class="field">
+//                     <div class="field-label">Phone:</div>
+//                     <div class="field-value" id="dealer-phone">-</div>
+//                 </div>
+//                 <div class="field">
+//                     <div class="field-label">Dealer Type:</div>
+//                     <div class="field-value" id="dealer-type">-</div>
+//                 </div>
+//             </div>
+//             <div class="fields-row">
+//                 <div class="field full-width">
+//                     <div class="field-label">Address:</div>
+//                     <div class="field-value" id="dealer-address">-</div>
+//                 </div>
+//             </div>
+//         </div>
+
+//         <!-- Request Items -->
+//         <div class="section">
+//             <div class="section-title">Request Items & Dimensions</div>
+//             <div id="request-items">
+//                 <!-- Items will be populated here -->
+//             </div>
+//             <div class="total-box">
+//                 <div class="total-label">Total Cost (All Items)</div>
+//                 <div class="total-amount" id="total-cost">Rs. 0.00</div>
+//             </div>
+//         </div>
+
+//         <!-- Warranty & Installation -->
+//         <div class="section">
+//             <div class="section-title">Warranty & Installation Information</div>
+//             <div class="fields-row">
+//                 <div class="field">
+//                     <div class="field-label">Warranty Status:</div>
+//                     <div class="field-value" id="warranty-status">-</div>
+//                 </div>
+//                 <div class="field">
+//                     <div class="field-label">Last Installation Date:</div>
+//                     <div class="field-value" id="last-installation-date">-</div>
+//                 </div>
+//             </div>
+//             <div class="reason-box">
+//                 <div class="reason-label">Reason for Replacement:</div>
+//                 <div class="reason-text" id="replacement-reason">No reason provided</div>
+//             </div>
+//         </div>
+
+//         <!-- Request Status & Vendor -->
+//         <div class="section">
+//             <div class="section-title">Request Status & Vendor Information</div>
+//             <div class="fields-row">
+//                 <div class="field">
+//                     <div class="field-label">Assigned Vendor:</div>
+//                     <div class="field-value" id="assigned-vendor">-</div>
+//                 </div>
+//                 <div class="field">
+//                     <div class="field-label">Survey Date:</div>
+//                     <div class="field-value" id="survey-date">-</div>
+//                 </div>
+//             </div>
+//         </div>
+
+//         <!-- Footer -->
+//         <div class="footer">
+//             <div>Generated on: <span id="generation-date">-</span></div>
+//             <div>Diamond Paints - Request Details Report</div>
+//         </div>
+//     </div>
+
+//     <script>
+//         // Function to populate the template with data
+//         function populateTemplate(data) {
+//             // Helper functions
+//             const cleanText = (text) => {
+//                 if (!text) return 'N/A';
+//                 return String(text).replace(/[^\\x20-\\x7E\\u00A0-\\u00FF]/g, '').trim();
+//             };
+
+//             const formatStatus = (status) => {
+//                 if (!status) return 'Not Decided';
+//                 const statusMap = {
+//                     'pending': 'Pending',
+//                     'ceo_pending': 'CEO Pending',
+//                     'approved': 'Approved',
+//                     'rejected': 'Rejected',
+//                     'completed': 'Completed',
+//                     'in_progress': 'In Progress'
+//                 };
+//                 return statusMap[status] || status.replace(/_/g, ' ').replace(/\\b\\w/g, l => l.toUpperCase());
+//             };
+
+//             const formatPhone = (phone) => {
+//                 if (!phone) return 'N/A';
+//                 const phoneStr = String(phone).replace(/\\D/g, '');
+//                 if (phoneStr.startsWith('92')) {
+//                     return \`+92 \${phoneStr.slice(2, 5)} \${phoneStr.slice(5)}\`;
+//                 }
+//                 return phoneStr;
+//             };
+
+//             const formatDate = (date) => {
+//                 if (!date) return 'N/A';
+//                 return new Date(date).toLocaleDateString('en-GB');
+//             };
+
+//             const getStatusBadge = (status) => {
+//                 const statusClass = status === 'ceo_pending' ? 'status-ceo-pending' : 
+//                                   status === 'approved' ? 'status-approved' :
+//                                   status === 'rejected' ? 'status-rejected' : 'status-pending';
+//                 return \`<span class="status-badge \${statusClass}">\${formatStatus(status)}</span>\`;
+//             };
+
+//             // Populate dealer information
+//             document.getElementById('dealer-name').textContent = cleanText(data.dealer?.name || data.dealerName || 'N/A');
+//             document.getElementById('dealer-code').textContent = cleanText(data.dealer?.code || data.dealerCode || 'N/A');
+//             document.getElementById('dealer-phone').textContent = formatPhone(data.dealer?.phone || data.dealerPhone);
+//             document.getElementById('dealer-address').textContent = cleanText(
+//                 data.dealer?.address || data.dealerAddress || 
+//                 \`\${data.dealer?.city || ''} \${data.dealer?.area || ''}\`.trim() || 'N/A'
+//             );
+//             document.getElementById('dealer-type').textContent = data.dealer_type === 'new' ? 'New Dealer' : 'Existing Dealer';
+
+//             // Populate request items
+//             const itemsContainer = document.getElementById('request-items');
+//             const items = data.requestItems || data.request_items || [];
+//             let totalCost = 0;
+
+//             if (items.length > 0) {
+//                 items.forEach((item, index) => {
+//                     const totalArea = (parseFloat(item.width) || 0) * (parseFloat(item.height) || 0);
+//                     const itemCost = parseFloat(item.price) || 0;
+//                     totalCost += itemCost;
+
+//                     const itemDiv = document.createElement('div');
+//                     itemDiv.className = 'item-card';
+//                     itemDiv.innerHTML = \`
+//                         <div class="item-header">Item \${index + 1}:</div>
+//                         <div class="fields-row">
+//                             <div class="field">
+//                                 <div class="field-label">Request Type:</div>
+//                                 <div class="field-value">\${cleanText(item.requestType?.name || item.request_type || 'N/A')}</div>
+//                             </div>
+//                             <div class="field">
+//                                 <div class="field-label">Width (ft):</div>
+//                                 <div class="field-value">\${cleanText(item.width || 'N/A')}</div>
+//                             </div>
+//                         </div>
+//                         <div class="fields-row">
+//                             <div class="field">
+//                                 <div class="field-label">Height (ft):</div>
+//                                 <div class="field-value">\${cleanText(item.height || 'N/A')}</div>
+//                             </div>
+//                             <div class="field">
+//                                 <div class="field-label">Price per ft²:</div>
+//                                 <div class="field-value">\${item.price_per_sqft || item.pricePerSqft ? \`Rs. \${parseFloat(item.price_per_sqft || item.pricePerSqft).toFixed(2)}\` : 'N/A'}</div>
+//                             </div>
+//                         </div>
+//                         <div class="fields-row">
+//                             <div class="field">
+//                                 <div class="field-label">Total Area (ft²):</div>
+//                                 <div class="field-value">\${totalArea > 0 ? totalArea.toFixed(2) : 'N/A'}</div>
+//                             </div>
+//                             <div class="field">
+//                                 <div class="field-label">Total Cost:</div>
+//                                 <div class="field-value">\${item.price ? \`Rs. \${parseFloat(item.price).toFixed(2)}\` : 'N/A'}</div>
+//                             </div>
+//                         </div>
+//                     \`;
+//                     itemsContainer.appendChild(itemDiv);
+//                 });
+//             } else {
+//                 itemsContainer.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">No request items found</div>';
+//             }
+
+//             // Update total cost
+//             document.getElementById('total-cost').textContent = \`Rs. \${totalCost.toFixed(2)}\`;
+
+//             // Populate warranty information
+//             document.getElementById('warranty-status').textContent = cleanText(data.warrantyStatus?.name || data.warranty_status || 'N/A');
+//             document.getElementById('last-installation-date').textContent = formatDate(data.last_installation_date || data.lastInstallationDate);
+//             document.getElementById('replacement-reason').textContent = cleanText(data.reason_for_replacement || data.reasonForReplacement || 'No reason provided');
+
+//             // Populate vendor information
+//             document.getElementById('assigned-vendor').textContent = cleanText(data.vendor?.name || data.vendorName || 'Not assigned');
+            
+//             const surveyDate = data.survey_date || data.surveyDate;
+//             document.getElementById('survey-date').textContent = formatDate(surveyDate) || new Date().toLocaleDateString('en-GB');
+
+//             // Update generation date
+//             document.getElementById('generation-date').textContent = new Date().toLocaleDateString('en-GB');
+//         }
+
+//         // Export function for use in React component
+//         window.populateRequestTemplate = populateTemplate;
+//     </script>
+// </body>
+// </html>`;
+
+//       // Write the template to the new window
+//       templateWindow.document.write(templateHtml);
+//       templateWindow.document.close();
+      
+//       // Wait for the template to load, then populate it with data
+//       templateWindow.onload = () => {
+//         if (templateWindow.populateRequestTemplate) {
+//           templateWindow.populateRequestTemplate(requestData);
+//         } else {
+//           // Fallback: populate manually if the function isn't available
+//           setTimeout(() => {
+//             if (templateWindow.populateRequestTemplate) {
+//               templateWindow.populateRequestTemplate(requestData);
+//             }
+//           }, 100);
+//         }
+//       };
+
+//       toast.success('PDF template opened in new window. Use the Print button to save as PDF.', {
+//         position: "top-right",
+//         autoClose: 3000,
+//         hideProgressBar: false,
+//         closeOnClick: true,
+//         pauseOnHover: true,
+//         draggable: true,
+//       });
+  
+//     } catch (error) {
+//       console.error('Error generating PDF:', error);
+//       toast.error('Failed to generate PDF. Please try again.', {
+//         position: "top-right",
+//         autoClose: 5000,
+//         hideProgressBar: false,
+//         closeOnClick: true,
+//         pauseOnHover: true,
+//         draggable: true,
+//       });
+//     }
+//   }, []);
+  
+const generatePDF = React.useCallback((requestData) => {
+  try {
+    // Create a hidden iframe for PDF generation
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.top = '-10000px';
+    iframe.style.left = '-10000px';
+    iframe.style.width = '210mm';
+    iframe.style.height = '297mm';
+    document.body.appendChild(iframe);
+
+    const iframeDoc = iframe.contentWindow.document;
+
+    // Embedded template HTML with auto-print
+    const templateHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Request Details Report - ${requestData.id}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        @page {
+            size: A4;
+            margin: 10mm;
+        }
+
+        @media print {
+            body {
+                margin: 0;
+                padding: 0;
+                width: 210mm;
+                height: 297mm;
+            }
+            .container {
+                box-shadow: none;
+                padding: 15px;
+            }
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            line-height: 1.3;
+            color: #333;
+            background: white;
+            width: 210mm;
+            height: 297mm;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .container {
+            width: 100%;
+            min-height: calc(100% - 40px);
+            background: white;
+            padding: 15px;
+            padding-bottom: 50px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #2c3e50;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            color: #2c3e50;
+            margin-bottom: 3px;
+            letter-spacing: 1.5px;
+        }
+
+        .header h2 {
+            font-size: 14px;
+            color: #7f8c8d;
+            font-weight: normal;
+        }
+
+        .section {
+            margin-bottom: 12px;
+        }
+
+        .section-title {
+            font-size: 12px;
+            font-weight: bold;
+            color: #2c3e50;
+            text-transform: uppercase;
+            padding-bottom: 4px;
+            margin-bottom: 8px;
+            border-bottom: 1.5px solid #3498db;
+            letter-spacing: 0.3px;
+        }
+
+        .fields-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 8px;
+        }
+
+        .field {
+            margin-bottom: 6px;
+        }
+
+        .field-label {
+            font-size: 9.5px;
+            font-weight: bold;
+            color: #555;
+            margin-bottom: 2px;
+        }
+
+        .field-value {
+            font-size: 10.5px;
+            color: #333;
+            padding-bottom: 2px;
+            border-bottom: 0.5px solid #ddd;
+            min-height: 14px;
+        }
+
+        .item-card {
+            background: #f8f9fa;
+            padding: 8px;
+            margin-bottom: 8px;
+            border-radius: 3px;
+            border-left: 3px solid #3498db;
+        }
+
+        .item-header {
+            font-size: 11px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 6px;
+        }
+
+        .full-width {
+            grid-column: 1 / -1;
+        }
+
+        .reason-box {
+            background: #f8f9fa;
+            padding: 8px;
+            border-radius: 3px;
+            margin-top: 6px;
+        }
+
+        .reason-label {
+            font-size: 9.5px;
+            font-weight: bold;
+            color: #555;
+            margin-bottom: 3px;
+        }
+
+        .reason-text {
+            font-size: 10px;
+            color: #333;
+            line-height: 1.4;
+        }
+
+        .total-box {
+            background: #3498db;
+            color: white;
+            padding: 8px;
+            border-radius: 3px;
+            margin: 10px 0;
+            text-align: center;
+        }
+
+        .total-label {
+            font-size: 10px;
+            margin-bottom: 3px;
+            opacity: 0.9;
+        }
+
+        .total-amount {
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .footer {
+            position: fixed;
+            bottom: 10mm;
+            left: 15px;
+            right: 15px;
+            padding-top: 8px;
+            border-top: 0.5px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            font-size: 9px;
+            color: #7f8c8d;
+            background: white;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 2px;
+            font-size: 9.5px;
+            font-weight: bold;
+        }
+
+        .status-pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-approved {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-rejected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-ceo-pending {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>DIAMOND PAINTS</h1>
+            <h2>Request Details Report</h2>
+        </div>
+
+        <!-- Dealer Information -->
+        <div class="section">
+            <div class="section-title">Dealer Information</div>
+            <div class="fields-row">
+                <div class="field">
+                    <div class="field-label">Dealer Name:</div>
+                    <div class="field-value" id="dealer-name">-</div>
+                </div>
+                <div class="field">
+                    <div class="field-label">Dealer Code:</div>
+                    <div class="field-value" id="dealer-code">-</div>
+                </div>
+            </div>
+            <div class="fields-row">
+                <div class="field">
+                    <div class="field-label">Phone:</div>
+                    <div class="field-value" id="dealer-phone">-</div>
+                </div>
+                <div class="field">
+                    <div class="field-label">Dealer Type:</div>
+                    <div class="field-value" id="dealer-type">-</div>
+                </div>
+            </div>
+            <div class="fields-row">
+                <div class="field full-width">
+                    <div class="field-label">Address:</div>
+                    <div class="field-value" id="dealer-address">-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Request Items -->
+        <div class="section">
+            <div class="section-title">Request Items & Dimensions</div>
+            <div id="request-items">
+                <!-- Items will be populated here -->
+            </div>
+            <div class="total-box">
+                <div class="total-label">Total Cost (All Items)</div>
+                <div class="total-amount" id="total-cost">Rs. 0.00</div>
+            </div>
+        </div>
+
+        <!-- Warranty & Installation -->
+        <div class="section">
+            <div class="section-title">Warranty & Installation Information</div>
+            <div class="fields-row">
+                <div class="field">
+                    <div class="field-label">Warranty Status:</div>
+                    <div class="field-value" id="warranty-status">-</div>
+                </div>
+                <div class="field">
+                    <div class="field-label">Last Installation Date:</div>
+                    <div class="field-value" id="last-installation-date">-</div>
+                </div>
+            </div>
+            <div class="reason-box">
+                <div class="reason-label">Reason for Replacement:</div>
+                <div class="reason-text" id="replacement-reason">No reason provided</div>
+            </div>
+        </div>
+
+        <!-- Request Status & Vendor -->
+        <div class="section">
+            <div class="section-title">Request Status & Vendor Information</div>
+            <div class="fields-row">
+                <div class="field">
+                    <div class="field-label">Assigned Vendor:</div>
+                    <div class="field-value" id="assigned-vendor">-</div>
+                </div>
+                <div class="field">
+                    <div class="field-label">Survey Date:</div>
+                    <div class="field-value" id="survey-date">-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div>Generated on: <span id="generation-date">-</span></div>
+            <div>Diamond Paints - Request Details Report</div>
+        </div>
+    </div>
+
+    <script>
+        function populateTemplate(data) {
+            const cleanText = (text) => {
+                if (!text) return 'N/A';
+                return String(text).replace(/[^\\x20-\\x7E\\u00A0-\\u00FF]/g, '').trim();
+            };
+
+            const formatStatus = (status) => {
+                if (!status) return 'Not Decided';
+                const statusMap = {
+                    'pending': 'Pending',
+                    'ceo_pending': 'CEO Pending',
+                    'approved': 'Approved',
+                    'rejected': 'Rejected',
+                    'completed': 'Completed',
+                    'in_progress': 'In Progress'
+                };
+                return statusMap[status] || status.replace(/_/g, ' ').replace(/\\b\\w/g, l => l.toUpperCase());
+            };
+
+            const formatPhone = (phone) => {
+                if (!phone) return 'N/A';
+                const phoneStr = String(phone).replace(/\\D/g, '');
+                if (phoneStr.startsWith('92')) {
+                    return \`+92 \${phoneStr.slice(2, 5)} \${phoneStr.slice(5)}\`;
+                }
+                return phoneStr;
+            };
+
+            const formatDate = (date) => {
+                if (!date) return 'N/A';
+                return new Date(date).toLocaleDateString('en-GB');
+            };
+
+            // Populate dealer information
+            document.getElementById('dealer-name').textContent = cleanText(data.dealer?.name || data.dealerName || 'N/A');
+            document.getElementById('dealer-code').textContent = cleanText(data.dealer?.code || data.dealerCode || 'N/A');
+            document.getElementById('dealer-phone').textContent = formatPhone(data.dealer?.phone || data.dealerPhone);
+            document.getElementById('dealer-address').textContent = cleanText(
+                data.dealer?.address || data.dealerAddress || 
+                \`\${data.dealer?.city || ''} \${data.dealer?.area || ''}\`.trim() || 'N/A'
+            );
+            document.getElementById('dealer-type').textContent = data.dealer_type === 'new' ? 'New Dealer' : 'Existing Dealer';
+
+            // Populate request items
+            const itemsContainer = document.getElementById('request-items');
+            const items = data.requestItems || data.request_items || [];
+            let totalCost = 0;
+
+            if (items.length > 0) {
+                items.forEach((item, index) => {
+                    const totalArea = (parseFloat(item.width) || 0) * (parseFloat(item.height) || 0);
+                    const itemCost = parseFloat(item.price) || 0;
+                    totalCost += itemCost;
+
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'item-card';
+                    itemDiv.innerHTML = \`
+                        <div class="item-header">Item \${index + 1}:</div>
+                        <div class="fields-row">
+                            <div class="field">
+                                <div class="field-label">Request Type:</div>
+                                <div class="field-value">\${cleanText(item.requestType?.name || item.request_type || 'N/A')}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Width (ft):</div>
+                                <div class="field-value">\${cleanText(item.width || 'N/A')}</div>
+                            </div>
+                        </div>
+                        <div class="fields-row">
+                            <div class="field">
+                                <div class="field-label">Height (ft):</div>
+                                <div class="field-value">\${cleanText(item.height || 'N/A')}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Price per ft²:</div>
+                                <div class="field-value">\${item.price_per_sqft || item.pricePerSqft ? \`Rs. \${parseFloat(item.price_per_sqft || item.pricePerSqft).toFixed(2)}\` : 'N/A'}</div>
+                            </div>
+                        </div>
+                        <div class="fields-row">
+                            <div class="field">
+                                <div class="field-label">Total Area (ft²):</div>
+                                <div class="field-value">\${totalArea > 0 ? totalArea.toFixed(2) : 'N/A'}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Total Cost:</div>
+                                <div class="field-value">\${item.price ? \`Rs. \${parseFloat(item.price).toFixed(2)}\` : 'N/A'}</div>
+                            </div>
+                        </div>
+                    \`;
+                    itemsContainer.appendChild(itemDiv);
+                });
+            } else {
+                itemsContainer.innerHTML = '<div style="text-align: center; color: #666; padding: 10px; font-size: 9px;">No request items found</div>';
+            }
+
+            document.getElementById('total-cost').textContent = \`Rs. \${totalCost.toFixed(2)}\`;
+
+            // Populate warranty information
+            document.getElementById('warranty-status').textContent = cleanText(data.warrantyStatus?.name || data.warranty_status || 'N/A');
+            document.getElementById('last-installation-date').textContent = formatDate(data.last_installation_date || data.lastInstallationDate);
+            document.getElementById('replacement-reason').textContent = cleanText(data.reason_for_replacement || data.reasonForReplacement || 'No reason provided');
+
+            // Populate vendor information
+            document.getElementById('assigned-vendor').textContent = cleanText(data.vendor?.name || data.vendorName || 'Not assigned');
+            
+            const surveyDate = data.survey_date || data.surveyDate;
+            document.getElementById('survey-date').textContent = formatDate(surveyDate) || new Date().toLocaleDateString('en-GB');
+
+            // Update generation date
+            document.getElementById('generation-date').textContent = new Date().toLocaleDateString('en-GB');
+
+            // Auto-trigger print dialog after a short delay
+            setTimeout(() => {
+                window.print();
+            }, 500);
+        }
+
+        window.populateRequestTemplate = populateTemplate;
+    </script>
+</body>
+</html>`;
+
+    // Write the template to the iframe
+    iframeDoc.open();
+    iframeDoc.write(templateHtml);
+    iframeDoc.close();
+
+    // Wait for iframe to load, then populate and trigger print
+    iframe.onload = () => {
+      setTimeout(() => {
+        if (iframe.contentWindow.populateRequestTemplate) {
+          iframe.contentWindow.populateRequestTemplate(requestData);
+          
+          // Clean up iframe after print dialog is closed
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+          }, 1000);
+        }
+      }, 100);
+    };
+
+    toast.success('PDF generation initiated. Please use the print dialog to save as PDF.', {
+      position: "top-right",
+      autoClose: 3000,
+      hideProgressBar: false,
+      closeOnClick: true,
+      pauseOnHover: true,
+      draggable: true,
+    });
+
+  } catch (error) {
+    console.error('Error generating PDF:', error);
+    toast.error('Failed to generate PDF. Please try again.', {
+      position: "top-right",
+      autoClose: 5000,
+      hideProgressBar: false,
+      closeOnClick: true,
+      pauseOnHover: true,
+      draggable: true,
+    });
+  }
+}, []);
+
+const handleRowClick = React.useCallback(
     ({ row }) => {
       handleView(row);
     },
@@ -1379,6 +2633,19 @@ export default function AreaHeadRequests() {
             />
           );
           
+          // Show detailed view for all statuses except "not decided" and "Rfq"
+          if (row.status !== 'not decided' && row.status !== 'Rfq' && row.status !== null && row.status !== undefined && row.status !== '') {
+            actions.push(
+              <GridActionsCellItem
+                key="viewDetails"
+                icon={<Tooltip title="View Details"><VisibilityIcon /></Tooltip>}
+                label="View Details"
+                onClick={() => handleViewDetails(row)}
+                color="info"
+              />
+            );
+          }
+          
           // Compute whether current user is part of active approvals for this row
           const isUserInActiveApprovals = Array.isArray(row.activeApprovals)
             ? row.activeApprovals.some(ap => String(ap.user_id) === String(user?.id))
@@ -1488,6 +2755,45 @@ export default function AreaHeadRequests() {
             );
           }
           
+          // Show combined view & send messages for ceo_pending status with add_comment permission
+          if (row.status === 'ceo_pending' && canAddComment) {
+            actions.push(
+              <GridActionsCellItem
+                key="viewAndSendMessages"
+                icon={<Tooltip title="View & Send Messages"><CommentIcon /></Tooltip>}
+                label="View & Send Messages"
+                onClick={() => handleViewAndSendMessages(row)}
+                color="info"
+              />
+            );
+          }
+
+          // Show print button for ceo_pending status with print permission
+          if (row.status === 'ceo_pending' && canPrint) {
+            actions.push(
+              <GridActionsCellItem
+                key="print"
+                icon={<Tooltip title="Print PDF"><PrintIcon /></Tooltip>}
+                label="Print PDF"
+                onClick={() => handlePrint(row)}
+                color="secondary"
+              />
+            );
+          }
+
+          // Show manual approval button for ceo_pending status with manual_approval permission
+          if (row.status === 'ceo_pending' && canManualApproval) {
+            actions.push(
+              <GridActionsCellItem
+                key="manualApproval"
+                icon={<Tooltip title="Manual Approval"><ManualApprovalIcon /></Tooltip>}
+                label="Manual Approval"
+                onClick={() => handleManualApproval(row)}
+                color="warning"
+              />
+            );
+          }
+
           // Show history action for all requests
           if (canRead) {
             actions.push(
@@ -1505,7 +2811,7 @@ export default function AreaHeadRequests() {
         },
       },
     ],
-    [canApprove, canReject, canAssign, canUpdate, canRead, handleView, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory],
+    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint],
   );
 
   const pageTitle = 'Area Head Requests';
@@ -2842,6 +4148,719 @@ export default function AreaHeadRequests() {
             }}
           >
             Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add Comment Dialog */}
+      <Dialog
+        open={addCommentDialogOpen}
+        onClose={cancelAddComment}
+        aria-labelledby="add-comment-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '500px',
+            maxWidth: '700px',
+          }
+        }}
+      >
+        <DialogTitle 
+          id="add-comment-dialog-title"
+          sx={{ 
+            color: 'secondary.main',
+            fontWeight: 'bold',
+          }}
+        >
+          Add Comment - Request #{requestToAction?.id}
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#333', mb: 2 }}>
+            Add a comment for request <strong>#{requestToAction?.id}</strong>:
+          </Typography>
+          
+          <TextField
+            fullWidth
+            multiline
+            rows={4}
+            label="Comment"
+            placeholder="Enter your comment here..."
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            variant="outlined"
+            disabled={isLoading}
+            sx={{ mt: 2 }}
+            helperText="This comment will be associated with the request"
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button 
+            onClick={cancelAddComment}
+            variant="outlined"
+            sx={{ 
+              color: '#666',
+              borderColor: '#ddd',
+              '&:hover': {
+                borderColor: '#999',
+                backgroundColor: '#f5f5f5',
+              }
+            }}
+            disabled={isLoading}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={confirmAddComment}
+            variant="contained"
+            color="secondary"
+            disabled={isLoading || !newComment.trim()}
+            sx={{
+              minWidth: '120px'
+            }}
+          >
+            {isLoading ? 'Adding...' : 'Add Comment'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Marketing Comments Dialog */}
+      <Dialog
+        open={marketingCommentsDialogOpen}
+        onClose={cancelMarketingComments}
+        aria-labelledby="marketing-comments-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '700px',
+            maxWidth: '900px',
+            maxHeight: '85vh',
+            display: 'flex',
+            flexDirection: 'column',
+          }
+        }}
+      >
+        <DialogTitle 
+          id="marketing-comments-dialog-title"
+          sx={{ 
+            color: 'info.main',
+            fontWeight: 'bold',
+          }}
+        >
+          View & Send Messages - Request #{requestToAction?.id}
+        </DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+          {/* Messages Section */}
+          <Box sx={{ flex: 1, overflow: 'auto', mb: 2 }}>
+            {loadingMarketingComments ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                <Typography>Loading messages...</Typography>
+              </Box>
+            ) : marketingComments.length === 0 ? (
+              <Box sx={{ textAlign: 'center', p: 4 }}>
+                <Typography variant="body1" sx={{ color: '#666' }}>
+                  No messages found for this request.
+                </Typography>
+              </Box>
+            ) : (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {marketingComments.map((comment, index) => (
+                  <Box 
+                    key={index} 
+                    sx={{ 
+                      p: 2, 
+                      border: '1px solid #e0e0e0', 
+                      borderRadius: 2, 
+                      backgroundColor: '#f9f9f9',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                        {comment.user ? comment.user.username : 'Unknown User'}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#666' }}>
+                        {comment.created_at ? new Date(comment.created_at).toLocaleString() : 'Unknown Date'}
+                      </Typography>
+                    </Box>
+                    <Typography variant="body2" sx={{ color: '#333', mb: 1 }}>
+                      {comment.comment}
+                    </Typography>
+                    <Chip 
+                      label={comment.comment_type || 'Unknown'} 
+                      size="small" 
+                      color={
+                        comment.comment_type === 'Area Head' ? 'primary' : 
+                        comment.comment_type === 'Vendor Manager' ? 'secondary' : 
+                        comment.comment_type === 'Auditor' ? 'warning' : 
+                        comment.comment_type === 'Super Admin' ? 'error' :
+                        comment.comment_type === 'CEO' ? 'success' :
+                        'info'
+                      } 
+                      variant="outlined"
+                    />
+                  </Box>
+                ))}
+              </Box>
+            )}
+          </Box>
+          
+          {/* Send Message Section - Always Visible */}
+          {canAddComment && (
+            <Box sx={{ 
+              p: 3, 
+              border: '2px solid #e3f2fd', 
+              borderRadius: 2, 
+              backgroundColor: '#f8f9ff',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+              flexShrink: 0
+            }}>
+              <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'info.main' }}>
+                💬 Send New Message
+              </Typography>
+              <TextField
+                fullWidth
+                multiline
+                rows={3}
+                label="Your Message"
+                placeholder="Type your message here..."
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                variant="outlined"
+                disabled={isLoading}
+                sx={{ 
+                  mb: 2,
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: '#ffffff',
+                    borderRadius: 2
+                  }
+                }}
+                helperText="This message will be sent to the conversation"
+              />
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+                <Button 
+                  onClick={() => setNewComment('')}
+                  variant="outlined"
+                  disabled={isLoading || !newComment.trim()}
+                  sx={{ borderRadius: 2 }}
+                >
+                  Clear
+                </Button>
+                <Button 
+                  onClick={confirmAddComment}
+                  variant="contained"
+                  color="info"
+                  disabled={isLoading || !newComment.trim()}
+                  sx={{ 
+                    borderRadius: 2,
+                    px: 3,
+                    fontWeight: 'bold'
+                  }}
+                >
+                  {isLoading ? 'Sending...' : '📤 Send Message'}
+                </Button>
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 3, gap: 2, backgroundColor: '#f8f9fa', borderTop: '1px solid #e0e0e0' }}>
+          <Button 
+            onClick={cancelMarketingComments}
+            variant="outlined"
+            sx={{ 
+              color: '#666',
+              borderColor: '#ddd',
+              borderRadius: 2,
+              px: 3,
+              '&:hover': {
+                borderColor: '#999',
+                backgroundColor: '#f5f5f5',
+              }
+            }}
+          >
+            ✖️ Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Detailed View Modal */}
+      <Dialog
+        open={detailedViewModalOpen}
+        onClose={() => setDetailedViewModalOpen(false)}
+        aria-labelledby="detailed-view-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '800px',
+            maxWidth: '1200px',
+            maxHeight: '90vh',
+            overflow: 'auto',
+            borderRadius: 2,
+            boxShadow: 6,
+          }
+        }}
+      >
+        <DialogTitle 
+          id="detailed-view-dialog-title"
+          sx={{ 
+            color: 'info.main',
+            fontWeight: 'bold',
+            borderBottom: '1px solid #eaeaea',
+            mb: 1,
+          }}
+        >
+          Request Details - #{selectedDetailedRequest?.id}
+        </DialogTitle>
+        <DialogContent>
+          {selectedDetailedRequest && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 2 }}>
+              {/* Dealer Information */}
+              <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                  🏢 Dealer Information
+                </Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Dealer Name
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.dealer?.name || 'N/A'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Dealer Code
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.dealer?.code || 'N/A'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Phone
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.dealer?.phone || 'N/A'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Address
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.dealer?.city || 'N/A'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Dealer Type
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.dealer_type === 'new' ? 'New' : 'Old'}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Paper>
+
+              {/* Request Items */}
+              <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                  📋 Request Items & Dimensions
+                </Typography>
+                {selectedDetailedRequest.requestItems && selectedDetailedRequest.requestItems.length > 0 ? (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {selectedDetailedRequest.requestItems.map((item, index) => (
+                      <Paper key={index} variant="outlined" sx={{ p: 2, borderRadius: 2, backgroundColor: '#ffffff' }}>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 2, alignItems: 'center' }}>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                              Request Type
+                            </Typography>
+                            <Typography variant="body2">
+                              {item.requestType?.name || 'N/A'}
+                            </Typography>
+                          </Box>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                              Width (ft)
+                            </Typography>
+                            <Typography variant="body2">
+                              {item.width || 'N/A'}
+                            </Typography>
+                          </Box>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                              Height (ft)
+                            </Typography>
+                            <Typography variant="body2">
+                              {item.height || 'N/A'}
+                            </Typography>
+                          </Box>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                              Price per ft²
+                            </Typography>
+                            <Typography variant="body2">
+                              {item.price_per_sqft ? `₨${parseFloat(item.price_per_sqft).toFixed(2)}` : 'N/A'}
+                            </Typography>
+                          </Box>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                              Total Cost
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                              {item.price ? `₨${parseFloat(item.price).toFixed(2)}` : 'N/A'}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </Paper>
+                    ))}
+                    <Box sx={{ mt: 2, p: 2, backgroundColor: '#e3f2fd', borderRadius: 2, border: '1px solid #bbdefb' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                          Total Cost (All Items)
+                        </Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                          ₨{(() => {
+                            if (!selectedDetailedRequest.requestItems || !Array.isArray(selectedDetailedRequest.requestItems)) return '0.00';
+                            const total = selectedDetailedRequest.requestItems.reduce((sum, item) => {
+                              const price = parseFloat(item.price) || 0;
+                              return sum + price;
+                            }, 0);
+                            return total.toFixed(2);
+                          })()}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Box>
+                ) : (
+                  <Typography variant="body1" sx={{ color: '#666', fontStyle: 'italic' }}>
+                    No request items found
+                  </Typography>
+                )}
+              </Paper>
+
+              {/* Warranty & Installation Info */}
+              <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                  🔧 Warranty & Installation Information
+                </Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Warranty Status
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.warrantyStatus?.name || 'N/A'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Last Installation Date
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.last_installation_date ? 
+                        new Date(selectedDetailedRequest.last_installation_date).toLocaleDateString() : 'N/A'}
+                    </Typography>
+                  </Box>
+                </Box>
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                    Reason for Replacement
+                  </Typography>
+                  <Typography variant="body1" sx={{ 
+                    p: 2, 
+                    backgroundColor: '#ffffff', 
+                    borderRadius: 1, 
+                    border: '1px solid #e0e0e0',
+                    minHeight: '60px'
+                  }}>
+                    {selectedDetailedRequest.reason_for_replacement || 'No reason provided'}
+                  </Typography>
+                </Box>
+              </Paper>
+
+              {/* Attachments */}
+              <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                  📎 Attachments
+                </Typography>
+                
+                {/* Site Photos */}
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                    Site Photos
+                  </Typography>
+                  {selectedDetailedRequest.site_photo_attachement && selectedDetailedRequest.site_photo_attachement.length > 0 ? (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {selectedDetailedRequest.site_photo_attachement.map((file, index) => (
+                        <Chip
+                          key={`site-${index}`}
+                          label={file.split('/').pop()}
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                          onClick={() => {
+                            const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/site_photos/${file}`;
+                            window.open(fileUrl, '_blank');
+                          }}
+                          sx={{ 
+                            cursor: 'pointer',
+                            '&:hover': {
+                              backgroundColor: '#e3f2fd',
+                              transform: 'scale(1.05)'
+                            }
+                          }}
+                        />
+                      ))}
+                    </Box>
+                  ) : (
+                    <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
+                      No site photos uploaded
+                    </Typography>
+                  )}
+                </Box>
+
+                {/* Old Board Photos */}
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                    Old Board Photos
+                  </Typography>
+                  {selectedDetailedRequest.old_board_photo_attachment && selectedDetailedRequest.old_board_photo_attachment.length > 0 ? (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {selectedDetailedRequest.old_board_photo_attachment.map((file, index) => (
+                        <Chip
+                          key={`old-${index}`}
+                          label={file.split('/').pop()}
+                          size="small"
+                          color="secondary"
+                          variant="outlined"
+                          onClick={() => {
+                            const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/old_board_photos/${file}`;
+                            window.open(fileUrl, '_blank');
+                          }}
+                          sx={{ 
+                            cursor: 'pointer',
+                            '&:hover': {
+                              backgroundColor: '#f3e5f5',
+                              transform: 'scale(1.05)'
+                            }
+                          }}
+                        />
+                      ))}
+                    </Box>
+                  ) : (
+                    <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
+                      No old board photos uploaded
+                    </Typography>
+                  )}
+                </Box>
+
+                {/* Survey Forms */}
+                <Box>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                    Survey Forms
+                  </Typography>
+                  {selectedDetailedRequest.survey_form_attachments && selectedDetailedRequest.survey_form_attachments.length > 0 ? (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {selectedDetailedRequest.survey_form_attachments.map((file, index) => (
+                        <Chip
+                          key={`survey-${index}`}
+                          label={file.split('/').pop()}
+                          size="small"
+                          color="success"
+                          variant="outlined"
+                          onClick={() => {
+                            const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/survey_forms/${file}`;
+                            window.open(fileUrl, '_blank');
+                          }}
+                          sx={{ 
+                            cursor: 'pointer',
+                            '&:hover': {
+                              backgroundColor: '#e8f5e8',
+                              transform: 'scale(1.05)'
+                            }
+                          }}
+                        />
+                      ))}
+                    </Box>
+                  ) : (
+                    <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
+                      No survey forms uploaded
+                    </Typography>
+                  )}
+                </Box>
+              </Paper>
+
+              {/* Request Status & Vendor Info */}
+              <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                  📊 Request Status & Vendor Information
+                </Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Current Status
+                    </Typography>
+                    <Chip 
+                      label={selectedDetailedRequest.status || 'Not Decided'} 
+                      variant="filled" 
+                      size="small"
+                      color={
+                        selectedDetailedRequest.status === 'processing' ? 'success' :
+                        selectedDetailedRequest.status === 'review requested' ? 'error' :
+                        selectedDetailedRequest.status === 'rfq not accepted' ? 'error' :
+                        selectedDetailedRequest.status === 'Rfq' ? 'info' :
+                        selectedDetailedRequest.status === 'quotation sent' ? 'secondary' :
+                        selectedDetailedRequest.status === 'ceo_pending' ? 'warning' :
+                        selectedDetailedRequest.status === 'under_review' ? 'info' :
+                        'default'
+                      }
+                    />
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Assigned Vendor
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.vendor?.name || 'Not assigned'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Total Cost
+                    </Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                      {selectedDetailedRequest.total_cost ? `₨${parseFloat(selectedDetailedRequest.total_cost).toFixed(2)}` : 'N/A'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Survey Date
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.survey_date ? 
+                        new Date(selectedDetailedRequest.survey_date).toLocaleDateString() : 
+                        new Date().toLocaleDateString()}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Paper>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 3, gap: 2, backgroundColor: '#f8f9fa', borderTop: '1px solid #e0e0e0' }}>
+          <Button 
+            onClick={() => setDetailedViewModalOpen(false)}
+            variant="outlined"
+            sx={{ 
+              color: '#666',
+              borderColor: '#ddd',
+              borderRadius: 2,
+              px: 3,
+              '&:hover': {
+                borderColor: '#999',
+                backgroundColor: '#f5f5f5',
+              }
+            }}
+          >
+            ✖️ Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Manual Approval Modal */}
+      <Dialog
+        open={manualApprovalModalOpen}
+        onClose={() => setManualApprovalModalOpen(false)}
+        aria-labelledby="manual-approval-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '500px',
+            maxWidth: '600px',
+            borderRadius: 2,
+            boxShadow: 6,
+          }
+        }}
+      >
+        <DialogTitle 
+          id="manual-approval-dialog-title"
+          sx={{ 
+            color: 'success.main',
+            fontWeight: 'bold',
+            borderBottom: '1px solid #eaeaea',
+            padding: '20px 24px 16px 24px'
+          }}
+        >
+          Manual Approval
+        </DialogTitle>
+        
+        <DialogContent sx={{ padding: '20px 24px' }}>
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Request ID: {selectedRequest?.id}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Dealer: {selectedRequest?.dealer?.name || selectedRequest?.dealerName || 'N/A'}
+            </Typography>
+          </Box>
+
+          <TextField
+            fullWidth
+            multiline
+            rows={4}
+            label="Reason for Manual Approval (Optional)"
+            value={manualApprovalReason}
+            onChange={(e) => setManualApprovalReason(e.target.value)}
+            placeholder="Enter the reason for manual approval..."
+            sx={{ mb: 3 }}
+          />
+
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
+              Upload File (Optional)
+            </Typography>
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+              onChange={(e) => setManualApprovalFile(e.target.files[0] || null)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                fontSize: '14px'
+              }}
+            />
+            {manualApprovalFile && (
+              <Typography variant="caption" color="success.main" sx={{ mt: 1, display: 'block' }}>
+                File selected: {manualApprovalFile.name}
+              </Typography>
+            )}
+          </Box>
+        </DialogContent>
+        
+        <DialogActions sx={{ padding: '16px 24px 20px 24px', gap: 1 }}>
+          <Button
+            onClick={() => setManualApprovalModalOpen(false)}
+            variant="outlined"
+            color="secondary"
+            disabled={manualApprovalLoading}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleManualApprovalSubmit}
+            variant="contained"
+            color="success"
+            disabled={manualApprovalLoading}
+            sx={{
+              minWidth: '120px',
+              fontWeight: 'bold'
+            }}
+          >
+            {manualApprovalLoading ? 'Approving...' : 'Approve'}
           </Button>
         </DialogActions>
       </Dialog>

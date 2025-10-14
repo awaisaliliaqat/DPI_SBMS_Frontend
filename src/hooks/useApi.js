@@ -4,19 +4,28 @@ import { useAuth } from '../auth/AuthContext';
 import { apiService } from '../services/apiService';
 
 export const useApi = () => {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
 
   // Enhanced request method with auth context integration
   const request = useCallback(async (endpoint, options = {}) => {
     try {
-      return await apiService.request(endpoint, options);
+      // Add user permissions to headers if available
+      const enhancedOptions = {
+        ...options,
+        headers: {
+          ...options.headers,
+          ...(user?.permissions && { 'X-User-Permissions': JSON.stringify(user.permissions) })
+        }
+      };
+      
+      return await apiService.request(endpoint, enhancedOptions);
     } catch (error) {
       if (error.message === 'Authentication required') {
         logout(); // Use auth context logout
       }
       throw error;
     }
-  }, [logout]);
+  }, [logout, user]);
 
   // Enhanced HTTP methods
   const get = useCallback((endpoint, options = {}) => 
