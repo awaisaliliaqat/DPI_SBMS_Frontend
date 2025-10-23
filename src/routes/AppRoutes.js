@@ -11,6 +11,7 @@ import UserManagement from '../pages/UserManagement';
 import FeatureManagement from '../pages/Feature';
 import AreaHeadRequests from '../pages/AreaHeadRequests';
 import VendorRequests from '../pages/VendorRequests';
+import RequestItemsAdjustment from '../pages/RequestItemsAdjustment';
 // import Reports from '../pages/Reports';
 // import Settings from '../pages/Settings';
 
@@ -43,6 +44,7 @@ const AppRoutesContent = () => {
         <Route path="roles" element={<RoleManagement />} />
         <Route path="area-head-requests" element={<AreaHeadRequests />} />
         <Route path="vendor-requests" element={<VendorRequests />} />
+        <Route path="request-items-adjustment" element={<RequestItemsAdjustment />} />
         {/* <Route path="users" element={<FeatureManagement />} /> */}
         <Route index element={<Navigate to="/signin" />} />
       </Route>

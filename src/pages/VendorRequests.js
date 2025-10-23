@@ -16,6 +16,8 @@ import {
   Divider,
   InputAdornment,
   Paper,
+  FormControlLabel,
+  Checkbox,
 } from '@mui/material';
 import {
   CheckCircle as ApproveIcon,
@@ -27,6 +29,8 @@ import {
   Delete as DeleteIcon,
   Comment as CommentIcon,
   History as HistoryIcon,
+  Visibility as ViewIcon,
+  Receipt as InvoiceIcon,
 } from '@mui/icons-material';
 import { GridActionsCellItem } from '@mui/x-data-grid';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -70,6 +74,16 @@ export default function VendorRequests() {
   const [modalOpen, setModalOpen] = React.useState(false);
   const [selectedRequest, setSelectedRequest] = React.useState(null);
   
+  // Modal state for detailed view
+  const [detailedViewModalOpen, setDetailedViewModalOpen] = React.useState(false);
+  const [selectedDetailedRequest, setSelectedDetailedRequest] = React.useState(null);
+  
+  // Invoice upload modal state
+  const [invoiceModalOpen, setInvoiceModalOpen] = React.useState(false);
+  const [selectedInvoiceRequest, setSelectedInvoiceRequest] = React.useState(null);
+  const [invoiceFile, setInvoiceFile] = React.useState(null);
+  const [invoiceLoading, setInvoiceLoading] = React.useState(false);
+  
   // Edit modal state
   const [editModalOpen, setEditModalOpen] = React.useState(false);
   const [editingRequest, setEditingRequest] = React.useState(null);
@@ -80,6 +94,10 @@ export default function VendorRequests() {
   const [oldBoardPhotos, setOldBoardPhotos] = React.useState([]);
   const [existingSitePhotos, setExistingSitePhotos] = React.useState([]);
   const [existingOldBoardPhotos, setExistingOldBoardPhotos] = React.useState([]);
+
+  // Suggested pricing state
+  const [suggestedPricing, setSuggestedPricing] = React.useState({});
+  const [loadingSuggestedPricing, setLoadingSuggestedPricing] = React.useState({});
 
   // Action confirmation dialogs
   const [approveDialogOpen, setApproveDialogOpen] = React.useState(false);
@@ -191,6 +209,37 @@ export default function VendorRequests() {
       loadDropdownData(dealerCode);
     }
   }, [editModalOpen, editingRequest, editFormData.dealer_id, loadDropdownData]);
+
+  // Function to fetch suggested pricing for a vendor and request type
+  const fetchSuggestedPricing = React.useCallback(async (vendorCode, requestTypeId, itemIndex) => {
+    if (!vendorCode || !requestTypeId) return;
+    
+    setLoadingSuggestedPricing(prev => ({ ...prev, [itemIndex]: true }));
+    
+    try {
+      const response = await get(`/api/vendor-request-pricing/suggested?vendor_id=${encodeURIComponent(vendorCode)}&request_type_id=${requestTypeId}`);
+      
+      if (response.success && response.data) {
+        setSuggestedPricing(prev => ({
+          ...prev,
+          [itemIndex]: response.data.lump_sum_price || 0
+        }));
+      } else {
+        setSuggestedPricing(prev => ({
+          ...prev,
+          [itemIndex]: 0
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching suggested pricing:', error);
+      setSuggestedPricing(prev => ({
+        ...prev,
+        [itemIndex]: 0
+      }));
+    } finally {
+      setLoadingSuggestedPricing(prev => ({ ...prev, [itemIndex]: false }));
+    }
+  }, [get]);
 
   // URL state synchronization
   const handlePaginationModelChange = React.useCallback(
@@ -309,6 +358,39 @@ export default function VendorRequests() {
     setModalOpen(true);
   }, [canRead]);
 
+  const handleViewDetails = React.useCallback((requestData) => {
+    setSelectedDetailedRequest(requestData);
+    setDetailedViewModalOpen(true);
+  }, []);
+
+  const handleShareInvoice = React.useCallback((requestData) => {
+    setSelectedInvoiceRequest(requestData);
+    setInvoiceModalOpen(true);
+  }, []);
+
+  const handleInvoiceSubmit = React.useCallback(() => {
+    if (!selectedInvoiceRequest || !invoiceFile) return;
+    
+    setInvoiceLoading(true);
+    
+    // Simple success message
+    setTimeout(() => {
+      toast.success('Invoice upload functionality ready!', {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      
+      setInvoiceModalOpen(false);
+      setSelectedInvoiceRequest(null);
+      setInvoiceFile(null);
+      setInvoiceLoading(false);
+    }, 1000);
+  }, [selectedInvoiceRequest, invoiceFile]);
+
   const handleEdit = React.useCallback((requestData) => {
     if (!canUpdate) return;
     
@@ -330,7 +412,8 @@ export default function VendorRequests() {
         width: item.width,
         height: item.height,
         price: item.price,
-        price_per_sqft: price_per_sqft
+        price_per_sqft: price_per_sqft,
+        use_suggested_pricing: false // Default to manual pricing
       };
     });
     
@@ -661,15 +744,17 @@ export default function VendorRequests() {
           }
 
           // Special mappings
-          if (key === 'vendor_id') {
+          if (key === 'vendor_code') {
+            // Use vendor_name if already fetched and available in main_changes
+            const vendorDisplay = mc.vendor_name || resolveVendorName(value) || value;
             return (
               <Typography key={`${key}-${idx}`} variant="body2" sx={{ color: '#333', mb: 0.5 }}>
-                Vendor: {resolveVendorName(value) || value}
+                Vendor: {vendorDisplay}
               </Typography>
             );
           }
           if (key === 'vendor_name') {
-            return null; // Skip this field as vendor_id already shows the name
+            return null; // Skip this field as vendor_code already shows the name
           }
           if (key === 'dealer_id') {
             // Use dealer_name if already fetched and available in main_changes
@@ -886,6 +971,8 @@ export default function VendorRequests() {
     setOldBoardPhotos([]);
     setExistingSitePhotos([]);
     setExistingOldBoardPhotos([]);
+    setSuggestedPricing({});
+    setLoadingSuggestedPricing({});
   };
 
   const handleRefresh = React.useCallback(() => {
@@ -975,16 +1062,18 @@ export default function VendorRequests() {
           
           const actions = [];
           
-          // Always show request view action with tooltip
-          actions.push(
-            <GridActionsCellItem
-              key="view"
-              icon={<Tooltip title="Request"><RequestIcon /></Tooltip>}
-              label="Request"
-              onClick={() => handleView(row)}
-              color="primary"
-            />
-          );
+          // Show view action if user has read permission
+          if (canRead) {
+            actions.push(
+              <GridActionsCellItem
+                key="view"
+                icon={<Tooltip title="View Details"><ViewIcon /></Tooltip>}
+                label="View Details"
+                onClick={() => handleViewDetails(row)}
+                color="primary"
+              />
+            );
+          }
           
           // Show edit action for Rfq status
           if (canUpdate && isRfqStatus) {
@@ -1040,11 +1129,24 @@ export default function VendorRequests() {
             }
           }
           
+          // Show share invoice button for ceo_approval status
+          if (row.status === 'ceo_approval' && canRead) {
+            actions.push(
+              <GridActionsCellItem
+                key="shareInvoice"
+                icon={<Tooltip title="Share Invoice"><InvoiceIcon /></Tooltip>}
+                label="Share Invoice"
+                onClick={() => handleShareInvoice(row)}
+                color="primary"
+              />
+            );
+          }
+          
           return actions;
         },
       },
     ],
-    [canApprove, canReject, canUpdate, canRead, handleView, handleEdit, handleApprove, handleReject, handleViewComments, handleViewHistory],
+    [canApprove, canReject, canUpdate, canRead, handleViewDetails, handleEdit, handleApprove, handleReject, handleViewComments, handleViewHistory, handleShareInvoice],
   );
 
   const pageTitle = 'Vendor Requests';
@@ -1483,6 +1585,11 @@ export default function VendorRequests() {
                         const newItems = [...editFormData.request_items];
                         newItems[index] = { ...newItems[index], request_type_id: newValue?.id || '' };
                         handleEditFormChange('request_items', newItems);
+                        
+                        // Fetch suggested pricing when request type is selected
+                        if (newValue?.id && editingRequest?.vendor_code) {
+                          fetchSuggestedPricing(editingRequest.vendor_code, newValue.id, index);
+                        }
                       }}
                       renderInput={(params) => (
                         <TextField
@@ -1496,102 +1603,206 @@ export default function VendorRequests() {
                       disabled={isLoading}
                       sx={{ mb: 1.5 }}
                     />
-                    <TextField
-                      label="Width (ft)"
-                      type="number"
-                      value={item.width || ''}
-                      onChange={(e) => {
-                        const newItems = [...editFormData.request_items];
-                        newItems[index] = { ...newItems[index], width: e.target.value };
-                        const widthFt = parseFloat(newItems[index].width) || 0;
-                        const heightFt = parseFloat(newItems[index].height) || 0;
-                        const areaSqft = widthFt * heightFt;
-                        const pricePerSqft = parseFloat(newItems[index].price_per_sqft) || 0;
-                        const total = areaSqft * pricePerSqft;
-                        newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
-                        handleEditFormChange('request_items', newItems);
-                      }}
-                      variant="outlined"
-                      disabled={isLoading}
-                      sx={{ mr: 1.5, minWidth: 140 }}
-                      inputProps={{ step: '0.01', min: '0' }}
-                    />
-                    <TextField
-                      label="Height (ft)"
-                      type="number"
-                      value={item.height || ''}
-                      onChange={(e) => {
-                        const newItems = [...editFormData.request_items];
-                        newItems[index] = { ...newItems[index], height: e.target.value };
-                        const widthFt = parseFloat(newItems[index].width) || 0;
-                        const heightFt = parseFloat(newItems[index].height) || 0;
-                        const areaSqft = widthFt * heightFt;
-                        const pricePerSqft = parseFloat(newItems[index].price_per_sqft) || 0;
-                        const total = areaSqft * pricePerSqft;
-                        newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
-                        handleEditFormChange('request_items', newItems);
-                      }}
-                      variant="outlined"
-                      disabled={isLoading}
-                      sx={{ mr: 1.5, minWidth: 140 }}
-                      inputProps={{ step: '0.01', min: '0' }}
-                    />
-                    <TextField
-                      label="Area (ft²)"
-                      type="number"
-                      value={(() => {
-                        const widthFt = parseFloat(item.width) || 0;
-                        const heightFt = parseFloat(item.height) || 0;
-                        const areaSqft = widthFt * heightFt;
-                        return areaSqft > 0 ? areaSqft.toFixed(2) : '';
-                      })()}
-                      variant="outlined"
-                      disabled
-                      sx={{ mr: 1.5, minWidth: 160 }}
-                      helperText="Auto"
-                    />
-                    <TextField
-                      label="Price per ft² *"
-                      type="number"
-                      value={item.price_per_sqft || ''}
-                      onChange={(e) => {
-                        const newItems = [...editFormData.request_items];
-                        newItems[index] = { ...newItems[index], price_per_sqft: e.target.value };
-                        const widthFt = parseFloat(newItems[index].width) || 0;
-                        const heightFt = parseFloat(newItems[index].height) || 0;
-                        const areaSqft = widthFt * heightFt;
-                        const pricePerSqft = parseFloat(e.target.value) || 0;
-                        const total = areaSqft * pricePerSqft;
-                        newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
-                        handleEditFormChange('request_items', newItems);
-                      }}
-                      variant="outlined"
-                      disabled={isLoading}
-                      sx={{ mr: 1.5, minWidth: 180 }}
-                      inputProps={{
-                        step: "0.01",
-                        min: "0"
-                      }}
-                      InputProps={{ startAdornment: <InputAdornment position="start">₨</InputAdornment> }}
-                      helperText="per square foot"
-                    />
+                    
+                    {/* Suggested Price Checkbox */}
+                    {item.request_type_id && (
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={item.use_suggested_pricing || false}
+                            onChange={(e) => {
+                              const newItems = [...editFormData.request_items];
+                              newItems[index] = { ...newItems[index], use_suggested_pricing: e.target.checked };
+                              
+                              // If switching to suggested pricing, set width/height to 0 and use suggested price
+                              if (e.target.checked) {
+                                newItems[index].width = '0';
+                                newItems[index].height = '0';
+                                newItems[index].price_per_sqft = '';
+                                newItems[index].price = suggestedPricing[index] || 0;
+                              }
+                              
+                              handleEditFormChange('request_items', newItems);
+                            }}
+                            disabled={isLoading}
+                          />
+                        }
+                        label={
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="body2">Suggested Price</Typography>
+                            {loadingSuggestedPricing[index] && (
+                              <Typography variant="caption" sx={{ color: '#666' }}>
+                                (Loading...)
+                              </Typography>
+                            )}
+                            {!loadingSuggestedPricing[index] && suggestedPricing[index] !== undefined && (
+                              <Typography variant="caption" sx={{ color: suggestedPricing[index] > 0 ? 'success.main' : 'error.main' }}>
+                                ({suggestedPricing[index] > 0 ? `₨${suggestedPricing[index]}` : 'No price available'})
+                              </Typography>
+                            )}
+                          </Box>
+                        }
+                        sx={{ mb: 1.5 }}
+                      />
+                    )}
+                    
+                    {/* Manual Pricing Fields - Only show when not using suggested pricing */}
+                    {!item.use_suggested_pricing && (
+                      <>
+                        <TextField
+                          label="Width (ft)"
+                          type="number"
+                          value={item.width || ''}
+                          onChange={(e) => {
+                            const newItems = [...editFormData.request_items];
+                            newItems[index] = { ...newItems[index], width: e.target.value };
+                            const widthFt = parseFloat(newItems[index].width) || 0;
+                            const heightFt = parseFloat(newItems[index].height) || 0;
+                            const areaSqft = widthFt * heightFt;
+                            const pricePerSqft = parseFloat(newItems[index].price_per_sqft) || 0;
+                            const total = areaSqft * pricePerSqft;
+                            newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
+                            handleEditFormChange('request_items', newItems);
+                          }}
+                          variant="outlined"
+                          disabled={isLoading}
+                          sx={{ mr: 1.5, minWidth: 140 }}
+                          inputProps={{ step: '0.01', min: '0' }}
+                        />
+                        <TextField
+                          label="Height (ft)"
+                          type="number"
+                          value={item.height || ''}
+                          onChange={(e) => {
+                            const newItems = [...editFormData.request_items];
+                            newItems[index] = { ...newItems[index], height: e.target.value };
+                            const widthFt = parseFloat(newItems[index].width) || 0;
+                            const heightFt = parseFloat(newItems[index].height) || 0;
+                            const areaSqft = widthFt * heightFt;
+                            const pricePerSqft = parseFloat(newItems[index].price_per_sqft) || 0;
+                            const total = areaSqft * pricePerSqft;
+                            newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
+                            handleEditFormChange('request_items', newItems);
+                          }}
+                          variant="outlined"
+                          disabled={isLoading}
+                          sx={{ mr: 1.5, minWidth: 140 }}
+                          inputProps={{ step: '0.01', min: '0' }}
+                        />
+                        <TextField
+                          label="Area (ft²)"
+                          type="number"
+                          value={(() => {
+                            const widthFt = parseFloat(item.width) || 0;
+                            const heightFt = parseFloat(item.height) || 0;
+                            const areaSqft = widthFt * heightFt;
+                            return areaSqft > 0 ? areaSqft.toFixed(2) : '';
+                          })()}
+                          variant="outlined"
+                          disabled
+                          sx={{ mr: 1.5, minWidth: 160 }}
+                          helperText="Auto"
+                        />
+                        <TextField
+                          label="Price per ft² *"
+                          type="number"
+                          value={item.price_per_sqft || ''}
+                          onChange={(e) => {
+                            const newItems = [...editFormData.request_items];
+                            newItems[index] = { ...newItems[index], price_per_sqft: e.target.value };
+                            const widthFt = parseFloat(newItems[index].width) || 0;
+                            const heightFt = parseFloat(newItems[index].height) || 0;
+                            const areaSqft = widthFt * heightFt;
+                            const pricePerSqft = parseFloat(e.target.value) || 0;
+                            const total = areaSqft * pricePerSqft;
+                            newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
+                            handleEditFormChange('request_items', newItems);
+                          }}
+                          variant="outlined"
+                          disabled={isLoading}
+                          sx={{ mr: 1.5, minWidth: 180 }}
+                          inputProps={{
+                            step: "0.01",
+                            min: "0"
+                          }}
+                          InputProps={{ startAdornment: <InputAdornment position="start">₨</InputAdornment> }}
+                          helperText="per square foot"
+                        />
+                      </>
+                    )}
+                    
+                    {/* Suggested Pricing Fields - Only show when using suggested pricing */}
+                    {item.use_suggested_pricing && (
+                      <>
+                        <TextField
+                          label="Width (ft)"
+                          type="number"
+                          value="0"
+                          variant="outlined"
+                          disabled
+                          sx={{ mr: 1.5, minWidth: 140 }}
+                          helperText="Auto (Suggested)"
+                        />
+                        <TextField
+                          label="Height (ft)"
+                          type="number"
+                          value="0"
+                          variant="outlined"
+                          disabled
+                          sx={{ mr: 1.5, minWidth: 140 }}
+                          helperText="Auto (Suggested)"
+                        />
+                        <TextField
+                          label="Area (ft²)"
+                          type="number"
+                          value="0"
+                          variant="outlined"
+                          disabled
+                          sx={{ mr: 1.5, minWidth: 160 }}
+                          helperText="Auto (Suggested)"
+                        />
+                        <TextField
+                          label="Price per ft²"
+                          type="text"
+                          value="N/A"
+                          variant="outlined"
+                          disabled
+                          sx={{ mr: 1.5, minWidth: 180 }}
+                          helperText="Suggested pricing"
+                        />
+                      </>
+                    )}
+                    
+                    {/* Total Cost Field - Always shown, editable when using suggested pricing */}
                     <TextField
                       label="Total Cost"
                       type="number"
                       value={(() => {
-                        const widthFt = parseFloat(item.width) || 0;
-                        const heightFt = parseFloat(item.height) || 0;
-                        const areaSqft = widthFt * heightFt;
-                        const pricePerSqft = parseFloat(item.price_per_sqft) || 0;
-                        const total = areaSqft * pricePerSqft;
-                        return total > 0 ? total.toFixed(2) : '';
+                        if (item.use_suggested_pricing) {
+                          return item.price || suggestedPricing[index] || 0;
+                        } else {
+                          const widthFt = parseFloat(item.width) || 0;
+                          const heightFt = parseFloat(item.height) || 0;
+                          const areaSqft = widthFt * heightFt;
+                          const pricePerSqft = parseFloat(item.price_per_sqft) || 0;
+                          const total = areaSqft * pricePerSqft;
+                          return total > 0 ? total.toFixed(2) : '';
+                        }
                       })()}
+                      onChange={(e) => {
+                        if (item.use_suggested_pricing) {
+                          const newItems = [...editFormData.request_items];
+                          newItems[index] = { ...newItems[index], price: e.target.value };
+                          handleEditFormChange('request_items', newItems);
+                        }
+                      }}
                       variant="outlined"
-                      disabled
+                      disabled={isLoading || !item.use_suggested_pricing}
                       sx={{ minWidth: 180 }}
                       InputProps={{ startAdornment: <InputAdornment position="start">₨</InputAdornment> }}
-                      helperText="Area × price"
+                      helperText={item.use_suggested_pricing ? "Editable (Suggested)" : "Area × price"}
                     />
+                    
                     <IconButton
                       onClick={() => {
                         const newItems = editFormData.request_items.filter((_, i) => i !== index);
@@ -1607,7 +1818,7 @@ export default function VendorRequests() {
                 <Button
                   variant="outlined"
                   onClick={() => {
-                    const newItems = [...(editFormData.request_items || []), { request_type_id: '', width: '', height: '', price: '', price_per_sqft: '' }];
+                    const newItems = [...(editFormData.request_items || []), { request_type_id: '', width: '', height: '', price: '', price_per_sqft: '', use_suggested_pricing: false }];
                     handleEditFormChange('request_items', newItems);
                   }}
                   disabled={isLoading}
@@ -1626,12 +1837,18 @@ export default function VendorRequests() {
                       value={(() => {
                         if (!editFormData.request_items || !Array.isArray(editFormData.request_items)) return '0.00';
                         const total = editFormData.request_items.reduce((sum, it) => {
-                          const widthFt = parseFloat(it.width) || 0;
-                          const heightFt = parseFloat(it.height) || 0;
-                          const areaSqft = widthFt * heightFt;
-                          const pricePerSqft = parseFloat(it.price_per_sqft) || 0;
-                          const itemTotal = areaSqft * pricePerSqft;
-                          return sum + (isNaN(itemTotal) ? 0 : itemTotal);
+                          if (it.use_suggested_pricing) {
+                            // For suggested pricing, use the price field directly
+                            return sum + (parseFloat(it.price) || 0);
+                          } else {
+                            // For manual pricing, calculate area × price_per_sqft
+                            const widthFt = parseFloat(it.width) || 0;
+                            const heightFt = parseFloat(it.height) || 0;
+                            const areaSqft = widthFt * heightFt;
+                            const pricePerSqft = parseFloat(it.price_per_sqft) || 0;
+                            const itemTotal = areaSqft * pricePerSqft;
+                            return sum + (isNaN(itemTotal) ? 0 : itemTotal);
+                          }
                         }, 0);
                         return total.toFixed(2);
                       })()}
@@ -2106,6 +2323,481 @@ export default function VendorRequests() {
             }}
           >
             Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Detailed View Modal */}
+      <Dialog
+        open={detailedViewModalOpen}
+        onClose={() => setDetailedViewModalOpen(false)}
+        aria-labelledby="detailed-view-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '800px',
+            maxWidth: '1200px',
+            maxHeight: '90vh',
+            overflow: 'auto',
+            borderRadius: 2,
+            boxShadow: 6,
+          }
+        }}
+      >
+        <DialogTitle 
+          id="detailed-view-dialog-title"
+          sx={{ 
+            color: 'info.main',
+            fontWeight: 'bold',
+            borderBottom: '1px solid #eaeaea',
+            mb: 1,
+          }}
+        >
+          Request Details - #{selectedDetailedRequest?.id}
+        </DialogTitle>
+        <DialogContent>
+          {selectedDetailedRequest && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 2 }}>
+              {/* Dealer Information */}
+              <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                  🏢 Dealer Information
+                </Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Dealer Name
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.dealer?.name || 'N/A'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Dealer Code
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.dealer?.code || 'N/A'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Phone
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.dealer?.phone || 'N/A'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Address
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.dealer?.city || 'N/A'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Dealer Type
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.dealer_type === 'new' ? 'New' : 'Old'}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Paper>
+
+              {/* Request Items */}
+              <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                  📋 Request Items & Dimensions
+                </Typography>
+                {selectedDetailedRequest.requestItems && selectedDetailedRequest.requestItems.length > 0 ? (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {selectedDetailedRequest.requestItems.map((item, index) => (
+                      <Paper key={index} variant="outlined" sx={{ p: 2, borderRadius: 2, backgroundColor: '#ffffff' }}>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 2, alignItems: 'center' }}>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                              Request Type
+                            </Typography>
+                            <Typography variant="body2">
+                              {item.requestType?.name || 'N/A'}
+                            </Typography>
+                          </Box>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                              Width (ft)
+                            </Typography>
+                            <Typography variant="body2">
+                              {item.width || 'N/A'}
+                            </Typography>
+                          </Box>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                              Height (ft)
+                            </Typography>
+                            <Typography variant="body2">
+                              {item.height || 'N/A'}
+                            </Typography>
+                          </Box>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                              Price per ft²
+                            </Typography>
+                            <Typography variant="body2">
+                              {item.price_per_sqft ? `₨${parseFloat(item.price_per_sqft).toFixed(2)}` : 'N/A'}
+                            </Typography>
+                          </Box>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                              Total Cost
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                              {item.price ? `₨${parseFloat(item.price).toFixed(2)}` : 'N/A'}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </Paper>
+                    ))}
+                    <Box sx={{ mt: 2, p: 2, backgroundColor: '#e3f2fd', borderRadius: 2, border: '1px solid #bbdefb' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                          Total Cost (All Items)
+                        </Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                          ₨{(() => {
+                            if (!selectedDetailedRequest.requestItems || !Array.isArray(selectedDetailedRequest.requestItems)) return '0.00';
+                            const total = selectedDetailedRequest.requestItems.reduce((sum, item) => {
+                              const price = parseFloat(item.price) || 0;
+                              return sum + price;
+                            }, 0);
+                            return total.toFixed(2);
+                          })()}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Box>
+                ) : (
+                  <Typography variant="body1" sx={{ color: '#666', fontStyle: 'italic' }}>
+                    No request items found
+                  </Typography>
+                )}
+              </Paper>
+
+              {/* Warranty & Installation Info */}
+              <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                  🔧 Warranty & Installation Information
+                </Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Warranty Status
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.warrantyStatus?.name || 'N/A'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Last Installation Date
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.last_installation_date ? 
+                        new Date(selectedDetailedRequest.last_installation_date).toLocaleDateString() : 'N/A'}
+                    </Typography>
+                  </Box>
+                </Box>
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                    Reason for Replacement
+                  </Typography>
+                  <Typography variant="body1" sx={{ 
+                    p: 2, 
+                    backgroundColor: '#ffffff', 
+                    borderRadius: 1, 
+                    border: '1px solid #e0e0e0',
+                    minHeight: '60px'
+                  }}>
+                    {selectedDetailedRequest.reason_for_replacement || 'No reason provided'}
+                  </Typography>
+                </Box>
+              </Paper>
+
+              {/* Attachments */}
+              <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                  📎 Attachments
+                </Typography>
+                
+                {/* Site Photos */}
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                    Site Photos
+                  </Typography>
+                  {selectedDetailedRequest.site_photo_attachement && selectedDetailedRequest.site_photo_attachement.length > 0 ? (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {selectedDetailedRequest.site_photo_attachement.map((file, index) => (
+                        <Chip
+                          key={`site-${index}`}
+                          label={file.split('/').pop()}
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                          onClick={() => {
+                            const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/site_photos/${file}`;
+                            window.open(fileUrl, '_blank');
+                          }}
+                          sx={{ 
+                            cursor: 'pointer',
+                            '&:hover': {
+                              backgroundColor: '#e3f2fd',
+                              transform: 'scale(1.05)'
+                            }
+                          }}
+                        />
+                      ))}
+                    </Box>
+                  ) : (
+                    <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
+                      No site photos uploaded
+                    </Typography>
+                  )}
+                </Box>
+
+                {/* Old Board Photos */}
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                    Old Board Photos
+                  </Typography>
+                  {selectedDetailedRequest.old_board_photo_attachment && selectedDetailedRequest.old_board_photo_attachment.length > 0 ? (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {selectedDetailedRequest.old_board_photo_attachment.map((file, index) => (
+                        <Chip
+                          key={`old-${index}`}
+                          label={file.split('/').pop()}
+                          size="small"
+                          color="secondary"
+                          variant="outlined"
+                          onClick={() => {
+                            const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/old_board_photos/${file}`;
+                            window.open(fileUrl, '_blank');
+                          }}
+                          sx={{ 
+                            cursor: 'pointer',
+                            '&:hover': {
+                              backgroundColor: '#f3e5f5',
+                              transform: 'scale(1.05)'
+                            }
+                          }}
+                        />
+                      ))}
+                    </Box>
+                  ) : (
+                    <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
+                      No old board photos uploaded
+                    </Typography>
+                  )}
+                </Box>
+
+                {/* Survey Forms */}
+                <Box>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                    Survey Forms
+                  </Typography>
+                  {selectedDetailedRequest.survey_form_attachments && selectedDetailedRequest.survey_form_attachments.length > 0 ? (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {selectedDetailedRequest.survey_form_attachments.map((file, index) => (
+                        <Chip
+                          key={`survey-${index}`}
+                          label={file.split('/').pop()}
+                          size="small"
+                          color="success"
+                          variant="outlined"
+                          onClick={() => {
+                            const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/survey_forms/${file}`;
+                            window.open(fileUrl, '_blank');
+                          }}
+                          sx={{ 
+                            cursor: 'pointer',
+                            '&:hover': {
+                              backgroundColor: '#e8f5e8',
+                              transform: 'scale(1.05)'
+                            }
+                          }}
+                        />
+                      ))}
+                    </Box>
+                  ) : (
+                    <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
+                      No survey forms uploaded
+                    </Typography>
+                  )}
+                </Box>
+              </Paper>
+
+              {/* Request Status & Vendor Info */}
+              <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                  📊 Request Status & Vendor Information
+                </Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Current Status
+                    </Typography>
+                    <Chip 
+                      label={selectedDetailedRequest.status || 'Not Decided'} 
+                      variant="filled" 
+                      size="small"
+                      color={
+                        selectedDetailedRequest.status === 'processing' ? 'success' :
+                        selectedDetailedRequest.status === 'review requested' ? 'error' :
+                        selectedDetailedRequest.status === 'rfq not accepted' ? 'error' :
+                        selectedDetailedRequest.status === 'Rfq' ? 'info' :
+                        selectedDetailedRequest.status === 'quotation sent' ? 'secondary' :
+                        selectedDetailedRequest.status === 'ceo_pending' ? 'warning' :
+                        selectedDetailedRequest.status === 'under_review' ? 'info' :
+                        'default'
+                      }
+                    />
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Assigned Vendor
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.vendor?.name || 'Not assigned'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Total Cost
+                    </Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                      {selectedDetailedRequest.total_cost ? `₨${parseFloat(selectedDetailedRequest.total_cost).toFixed(2)}` : 'N/A'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Survey Date
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.survey_date ? 
+                        new Date(selectedDetailedRequest.survey_date).toLocaleDateString() : 
+                        new Date().toLocaleDateString()}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Paper>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 3, gap: 2, backgroundColor: '#f8f9fa', borderTop: '1px solid #e0e0e0' }}>
+          <Button 
+            onClick={() => setDetailedViewModalOpen(false)}
+            variant="outlined"
+            sx={{ 
+              color: '#666',
+              borderColor: '#ddd',
+              borderRadius: 2,
+              px: 3,
+              '&:hover': {
+                borderColor: '#999',
+                backgroundColor: '#f5f5f5',
+              }
+            }}
+          >
+            ✖️ Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Invoice Upload Modal */}
+      <Dialog
+        open={invoiceModalOpen}
+        onClose={() => setInvoiceModalOpen(false)}
+        aria-labelledby="invoice-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '400px',
+          }
+        }}
+      >
+        <DialogTitle 
+          id="invoice-dialog-title"
+          sx={{ 
+            color: 'primary.main',
+            fontWeight: 'bold',
+          }}
+        >
+          Share Invoice - Request #{selectedInvoiceRequest?.id}
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#333', mb: 2 }}>
+            Dealer: <strong>{selectedInvoiceRequest?.dealer?.name || 'N/A'}</strong>
+          </Typography>
+          <Typography sx={{ color: '#333', mb: 2 }}>
+            Total Cost: <strong>{selectedInvoiceRequest?.total_cost ? `₨${parseFloat(selectedInvoiceRequest.total_cost).toFixed(2)}` : 'N/A'}</strong>
+          </Typography>
+          
+          <input
+            type="file"
+            id="invoice_file"
+            name="invoice_file"
+            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+            onChange={(e) => setInvoiceFile(e.target.files[0] || null)}
+            style={{ display: 'none' }}
+          />
+          
+          <label htmlFor="invoice_file">
+            <Button
+              variant="outlined"
+              component="span"
+              startIcon={<InvoiceIcon />}
+              disabled={invoiceLoading}
+              fullWidth
+              sx={{ mt: 2 }}
+            >
+              Select Invoice File
+            </Button>
+          </label>
+          
+          {invoiceFile && (
+            <Typography variant="body2" sx={{ color: '#666', mt: 1 }}>
+              Selected: {invoiceFile.name}
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button 
+            onClick={() => {
+              setInvoiceModalOpen(false);
+              setSelectedInvoiceRequest(null);
+              setInvoiceFile(null);
+            }}
+            variant="outlined"
+            sx={{ 
+              color: '#666',
+              borderColor: '#ddd',
+              '&:hover': {
+                borderColor: '#999',
+                backgroundColor: '#f5f5f5',
+              }
+            }}
+            disabled={invoiceLoading}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleInvoiceSubmit}
+            variant="contained"
+            color="primary"
+            disabled={invoiceLoading || !invoiceFile}
+          >
+            {invoiceLoading ? 'Uploading...' : 'Upload Invoice'}
           </Button>
         </DialogActions>
       </Dialog>

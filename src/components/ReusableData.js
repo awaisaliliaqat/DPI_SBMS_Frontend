@@ -170,6 +170,12 @@ const ReusableDataTable = ({
     '& .actions-column': {
       minWidth: '120px !important',
     },
+    
+    // Reduce gap between action icons only
+    '& [data-field="actions"] .MuiDataGrid-actionsCell': {
+      gap: '2px !important', // Reduce from default spacing to 2px
+    },
+    
     ...sx,
   };
 

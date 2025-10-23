@@ -24,6 +24,12 @@ export const NAVIGATION_CONFIG = {
     icon: '🏪',
     requiredPermission: 'read'
   },
+  requestPriceAdjustment: {
+    displayName: 'Request Items Adjustment',
+    routerLink: '/request-items-adjustment',
+    icon: '💵',
+    requiredPermission: 'read'
+  },
   dashboard: {
     displayName: 'Dashboard',
     routerLink: '/dashboard',

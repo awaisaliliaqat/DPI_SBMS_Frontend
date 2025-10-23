@@ -16,6 +16,7 @@ import {
   Divider,
   InputAdornment,
   Paper,
+  Checkbox,
 } from '@mui/material';
 import {
   CheckCircle as ApproveIcon,
@@ -93,6 +94,10 @@ export default function AreaHeadRequests() {
   const [manualApprovalReason, setManualApprovalReason] = React.useState('');
   const [manualApprovalFile, setManualApprovalFile] = React.useState(null);
   const [manualApprovalLoading, setManualApprovalLoading] = React.useState(false);
+
+  // Selection state for manual approval
+  const [selectedRequests, setSelectedRequests] = React.useState([]);
+  const [showSelectionColumn, setShowSelectionColumn] = React.useState(false);
   
   // File upload state for edit modal
   const [sitePhotos, setSitePhotos] = React.useState([]);
@@ -179,13 +184,13 @@ export default function AreaHeadRequests() {
     }
   }, [canRead, navigate]);
 
-  // API call to fetch vendors
+  // API call to fetch vendors from SAP
   const fetchVendors = React.useCallback(async () => {
     setLoadingVendors(true);
     setVendorsError(null);
     
     try {
-      const response = await get('/api/vendors');
+      const response = await get('/api/sap/vendors');
       
       if (response.success && Array.isArray(response.data)) {
         setVendors(response.data);
@@ -330,19 +335,23 @@ export default function AreaHeadRequests() {
       const requestData = await get(apiUrl);
       
       // Handle the API response format: { success: true, data: [...], totalCount: number }
+      let requestsData = [];
       if (requestData.success && requestData.data && Array.isArray(requestData.data)) {
+        requestsData = requestData.data;
         setRowsState({
           rows: requestData.data,
           rowCount: requestData.totalCount || requestData.data.length,
         });
       } else if (requestData.requests && Array.isArray(requestData.requests)) {
         // Fallback for different response format
+        requestsData = requestData.requests;
         setRowsState({
           rows: requestData.requests,
           rowCount: requestData.totalCount || requestData.requests.length,
         });
       } else if (Array.isArray(requestData)) {
         // Fallback for direct array response
+        requestsData = requestData;
         setRowsState({
           rows: requestData,
           rowCount: requestData.length,
@@ -353,6 +362,10 @@ export default function AreaHeadRequests() {
           rowCount: 0,
         });
       }
+
+      // Check if any request has ceo_pending status to show selection column
+      const hasCeoPending = requestsData.some(request => request.status === 'ceo_pending');
+      setShowSelectionColumn(hasCeoPending);
       
     } catch (loadError) {
       setError(loadError.message || 'Failed to load requests');
@@ -558,28 +571,42 @@ export default function AreaHeadRequests() {
     
     setManualApprovalLoading(true);
     try {
-      // TODO: Add API call here when ready
-      console.log('Manual approval submitted:', {
-        requestId: selectedRequest.id,
-        reason: manualApprovalReason,
-        file: manualApprovalFile
+      // Prepare the manual approval form data
+      const manualApprovalForm = manualApprovalFile ? {
+        filename: manualApprovalFile.name,
+        size: manualApprovalFile.size,
+        type: manualApprovalFile.type,
+        uploadedAt: new Date().toISOString()
+      } : null;
+
+      // Call the manual approval API
+      const response = await post(`/api/shopboard-requests/${selectedRequest.id}/approvals/manual-approve`, {
+        request_id: selectedRequest.id,
+        manual_approval_reason: manualApprovalReason,
+        manual_approval_form: manualApprovalForm
       });
-      
-      toast.success('Manual approval submitted successfully!', {
-        position: "top-right",
-        autoClose: 3000,
-        hideProgressBar: false,
-        closeOnClick: true,
-        pauseOnHover: true,
-        draggable: true,
-      });
-      
-      // Close modal and reset form
-      setManualApprovalModalOpen(false);
-      setManualApprovalReason('');
-      setManualApprovalFile(null);
-      setSelectedRequest(null);
-      
+
+      if (response.success) {
+        toast.success('Manual approval submitted successfully!', {
+          position: "top-right",
+          autoClose: 3000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+        
+        // Close modal and reset form
+        setManualApprovalModalOpen(false);
+        setManualApprovalReason('');
+        setManualApprovalFile(null);
+        setSelectedRequest(null);
+        
+        // Refresh the data
+        loadRequests();
+      } else {
+        throw new Error(response.message || 'Manual approval failed');
+      }
     } catch (error) {
       console.error('Error submitting manual approval:', error);
       toast.error('Failed to submit manual approval. Please try again.', {
@@ -593,7 +620,54 @@ export default function AreaHeadRequests() {
     } finally {
       setManualApprovalLoading(false);
     }
-  }, [selectedRequest, manualApprovalReason, manualApprovalFile]);
+  }, [selectedRequest, manualApprovalReason, manualApprovalFile, post, loadRequests]);
+
+  // Bulk send to CEO handler (no API yet)
+  const handleBulkSendToCEO = React.useCallback(() => {
+    if (!selectedRequests || selectedRequests.length === 0) return;
+    console.log('Send to CEO for approval for selected requests:', selectedRequests);
+    toast.info(`Send to CEO for ${selectedRequests.length} selected request(s)`, {
+      position: "top-right",
+      autoClose: 3000,
+      hideProgressBar: false,
+      closeOnClick: true,
+      pauseOnHover: true,
+      draggable: true,
+    });
+  }, [selectedRequests]);
+
+  // Selection handlers with event propagation prevention
+  const handleSelectRequest = React.useCallback((requestId, event) => {
+    // Prevent event propagation to avoid triggering row click
+    if (event) {
+      event.stopPropagation();
+    }
+    
+    setSelectedRequests(prev => {
+      if (prev.includes(requestId)) {
+        return prev.filter(id => id !== requestId);
+      } else {
+        return [...prev, requestId];
+      }
+    });
+  }, []);
+
+  const handleSelectAll = React.useCallback((event) => {
+    // Prevent event propagation to avoid triggering row click
+    if (event) {
+      event.stopPropagation();
+    }
+    
+    const ceoPendingRequests = rowsState.rows
+      .filter(row => row.status === 'ceo_pending')
+      .map(row => row.id);
+    
+    if (selectedRequests.length === ceoPendingRequests.length) {
+      setSelectedRequests([]);
+    } else {
+      setSelectedRequests(ceoPendingRequests);
+    }
+  }, [rowsState.rows, selectedRequests.length]);
 
   // Fetch comments for a specific request
   const fetchRequestComments = React.useCallback(async (requestId) => {
@@ -841,7 +915,7 @@ export default function AreaHeadRequests() {
     
     try {
       const updateData = {
-        vendor_id: selectedVendor.id,
+        vendor_id: selectedVendor.id, // This is now the SAP CardCode
         status: 'Rfq',
         assigned_vm: 1,
         updated_by: user.id
@@ -1104,15 +1178,17 @@ export default function AreaHeadRequests() {
             );
           }
 
-          if (key === 'vendor_id') {
+          if (key === 'vendor_code') {
+            // Use vendor_name if already fetched and available in main_changes
+            const vendorDisplay = mc.vendor_name || resolveVendorName(value) || value;
             return (
               <Typography key={`${key}-${idx}`} variant="body2" sx={{ color: '#333', mb: 0.5 }}>
-                Vendor: {resolveVendorName(value) || value}
+                Vendor: {vendorDisplay}
               </Typography>
             );
           }
           if (key === 'vendor_name') {
-            return null; // Skip this field as vendor_id already shows the name
+            return null; // Skip this field as vendor_code already shows the name
           }
           if (key === 'dealer_id') {
             // Use dealer_name if already fetched and available in main_changes
@@ -1928,9 +2004,9 @@ export default function AreaHeadRequests() {
 //       });
 //     }
 //   }, []);
-  
-const generatePDF = React.useCallback((requestData) => {
-  try {
+
+  const generatePDF = React.useCallback((requestData) => {
+    try {
     // Create a hidden iframe for PDF generation
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
@@ -2391,28 +2467,28 @@ const generatePDF = React.useCallback((requestData) => {
     };
 
     toast.success('PDF generation initiated. Please use the print dialog to save as PDF.', {
-      position: "top-right",
-      autoClose: 3000,
-      hideProgressBar: false,
-      closeOnClick: true,
-      pauseOnHover: true,
-      draggable: true,
-    });
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+  
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast.error('Failed to generate PDF. Please try again.', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    }
+  }, []);
 
-  } catch (error) {
-    console.error('Error generating PDF:', error);
-    toast.error('Failed to generate PDF. Please try again.', {
-      position: "top-right",
-      autoClose: 5000,
-      hideProgressBar: false,
-      closeOnClick: true,
-      pauseOnHover: true,
-      draggable: true,
-    });
-  }
-}, []);
-
-const handleRowClick = React.useCallback(
+  const handleRowClick = React.useCallback(
     ({ row }) => {
       handleView(row);
     },
@@ -2504,11 +2580,44 @@ const handleRowClick = React.useCallback(
 
   // Column definitions for shopboard requests (showing only 4 key fields)
   const columns = React.useMemo(
-    () => [
-      { 
-        field: 'id', 
-        headerName: 'Request ID',
-        width: 100,
+    () => {
+      const baseColumns = [
+        // Selection column - only show if user has permission AND there are ceo_pending requests
+        ...(canManualApproval && showSelectionColumn ? [{
+          field: 'select',
+          headerName: 'Select',
+          width: 80,
+          sortable: false,
+          filterable: false,
+          disableColumnMenu: true,
+          renderHeader: () => (
+            <Checkbox
+              checked={selectedRequests.length > 0 && selectedRequests.length === rowsState.rows.filter(row => row.status === 'ceo_pending').length}
+              indeterminate={selectedRequests.length > 0 && selectedRequests.length < rowsState.rows.filter(row => row.status === 'ceo_pending').length}
+              onChange={handleSelectAll}
+              color="primary"
+              onClick={(e) => e.stopPropagation()}
+            />
+          ),
+          renderCell: (params) => {
+            const isCeoPending = params.row.status === 'ceo_pending';
+            const isSelected = selectedRequests.includes(params.row.id);
+            
+            return (
+              <Checkbox
+                checked={isSelected}
+                onChange={(e) => handleSelectRequest(params.row.id, e)}
+                disabled={!isCeoPending}
+                color="primary"
+                onClick={(e) => e.stopPropagation()}
+              />
+            );
+          }
+        }] : []),
+        { 
+          field: 'id', 
+          headerName: 'Request ID',
+          width: 100,
       },
       {
         field: 'dealer_name',
@@ -2810,8 +2919,11 @@ const handleRowClick = React.useCallback(
           return actions;
         },
       },
-    ],
-    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint],
+    ];
+
+    return baseColumns;
+    },
+    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, showSelectionColumn, selectedRequests, rowsState.rows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleSelectAll, handleSelectRequest],
   );
 
   const pageTitle = 'Area Head Requests';
@@ -2853,6 +2965,20 @@ const handleRowClick = React.useCallback(
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
+      )}
+
+      {/* Top toolbar actions (above table) */}
+      {canManualApproval && showSelectionColumn && selectedRequests.length > 0 && (
+        <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-start' }}>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleBulkSendToCEO}
+            sx={{ fontWeight: 'bold', textTransform: 'none' }}
+          >
+            Send to CEO for Approval
+          </Button>
+        </Box>
       )}
 
       <ReusableDataTable
