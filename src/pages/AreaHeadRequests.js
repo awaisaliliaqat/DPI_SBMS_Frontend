@@ -33,6 +33,8 @@ import {
   Visibility as VisibilityIcon,
   Print as PrintIcon,
   Gavel as ManualApprovalIcon,
+  Payment as PaymentIcon,
+  Receipt as InvoiceIcon,
 } from '@mui/icons-material';
 import { GridActionsCellItem } from '@mui/x-data-grid';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -42,6 +44,7 @@ import { useAuth } from '../auth/AuthContext';
 import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
+import InvoiceViewer from '../components/InvoiceViewer';
 import { BASE_URL } from "../constants/Constants";
 import { useApi } from '../hooks/useApi';
 import jsPDF from 'jspdf';
@@ -98,6 +101,10 @@ export default function AreaHeadRequests() {
   // Selection state for manual approval
   const [selectedRequests, setSelectedRequests] = React.useState([]);
   const [showSelectionColumn, setShowSelectionColumn] = React.useState(false);
+
+  // Invoice viewer modal state
+  const [invoiceModalOpen, setInvoiceModalOpen] = React.useState(false);
+  const [selectedInvoiceRequest, setSelectedInvoiceRequest] = React.useState(null);
   
   // File upload state for edit modal
   const [sitePhotos, setSitePhotos] = React.useState([]);
@@ -184,16 +191,42 @@ export default function AreaHeadRequests() {
     }
   }, [canRead, navigate]);
 
-  // API call to fetch vendors from SAP
-  const fetchVendors = React.useCallback(async () => {
+  // API call to fetch vendors from users table (SAP users) filtered by dealer district
+  const fetchVendors = React.useCallback(async (dealerDistrict = null) => {
     setLoadingVendors(true);
     setVendorsError(null);
     
     try {
-      const response = await get('/api/sap/vendors');
+      const response = await get('/api/sap-users');
       
       if (response.success && Array.isArray(response.data)) {
-        setVendors(response.data);
+        // Transform SAP users to vendor format for compatibility
+        let vendorData = response.data.map(user => ({
+          id: user.id,
+          name: user.card_name || user.username,
+          username: user.username,
+          card_name: user.card_name,
+          contact_person: user.contact_person,
+          cellular: user.cellular,
+          phone: user.phone,
+          address: user.address,
+          region: user.region,
+          is_sap: user.is_sap
+        }));
+
+        // Filter vendors by dealer district if provided
+        if (dealerDistrict) {
+          const dealerDistrictLower = dealerDistrict.toLowerCase();
+          vendorData = vendorData.filter(vendor => {
+            const vendorRegionLower = vendor.region?.name?.toLowerCase() || '';
+            return vendorRegionLower.includes(dealerDistrictLower) || 
+                   dealerDistrictLower.includes(vendorRegionLower);
+          });
+          console.log(`Filtered vendors for district "${dealerDistrict}":`, vendorData.length, 'vendors');
+        }
+        
+        setVendors(vendorData);
+        console.log('SAP vendors loaded from users table:', vendorData.length, 'vendors');
       } else {
         throw new Error('Invalid vendors data format');
       }
@@ -215,10 +248,10 @@ export default function AreaHeadRequests() {
 
   // Load vendors when assign dialog opens
   React.useEffect(() => {
-    if (assignDialogOpen) {
-      fetchVendors();
+    if (assignDialogOpen && requestToAction?.dealer?.district) {
+      fetchVendors(requestToAction.dealer.district);
     }
-  }, [assignDialogOpen, fetchVendors]);
+  }, [assignDialogOpen, fetchVendors, requestToAction]);
 
   // Load dropdown data for edit form
   const loadDropdownData = React.useCallback(async (dealerCode = null) => {
@@ -565,6 +598,25 @@ export default function AreaHeadRequests() {
     setSelectedRequest(requestData);
     setManualApprovalModalOpen(true);
   }, [canManualApproval]);
+
+  const handleApproveForPayment = React.useCallback((requestData) => {
+    // For now, just show a message in tooltip - no actual functionality
+    toast.success('Approved for payment!', {
+      position: "top-right",
+      autoClose: 3000,
+      hideProgressBar: false,
+      closeOnClick: true,
+      pauseOnHover: true,
+      draggable: true,
+    });
+  }, []);
+
+  const handleViewInvoice = React.useCallback((requestData) => {
+    if (!canRead) return;
+    
+    setSelectedInvoiceRequest(requestData);
+    setInvoiceModalOpen(true);
+  }, [canRead]);
 
   const handleManualApprovalSubmit = React.useCallback(async () => {
     if (!selectedRequest) return;
@@ -2650,6 +2702,11 @@ export default function AreaHeadRequests() {
             displayStatus = 'quotation received';
           }
           
+          // Display "invoice_sent" as "Invoice Received" on Area Head page
+          if (status === 'invoice_sent') {
+            displayStatus = 'Invoice Received';
+          }
+          
           const getStatusColor = (status) => {
             switch (status) {
               case 'processing': return 'success';
@@ -2657,6 +2714,8 @@ export default function AreaHeadRequests() {
               case 'rfq not accepted': return 'error';
               case 'Rfq': return 'info';
               case 'quotation sent': return 'secondary';
+              case 'invoice_sent': return 'primary';
+              case 'payment_released': return 'success';
               case 'not decided': return 'warning';
               case null:
               case undefined:
@@ -2903,6 +2962,45 @@ export default function AreaHeadRequests() {
             );
           }
 
+          // Show approve for payment button for invoice_sent status
+          if (row.status === 'invoice_sent') {
+            actions.push(
+              <GridActionsCellItem
+                key="approveForPayment"
+                icon={<Tooltip title="Approve for payment"><PaymentIcon /></Tooltip>}
+                label="Approve for Payment"
+                onClick={() => handleApproveForPayment(row)}
+                color="success"
+              />
+            );
+          }
+
+          // Show invoice viewer if invoice data exists
+          if (canRead && row.invoice) {
+            try {
+              const invoiceData = typeof row.invoice === 'string' ? JSON.parse(row.invoice) : row.invoice;
+              const hasInvoiceData = invoiceData && (
+                (invoiceData.invoice_files && invoiceData.invoice_files.length > 0) ||
+                (invoiceData.dealer_acknowledgment_files && invoiceData.dealer_acknowledgment_files.length > 0) ||
+                (invoiceData.site_photos && invoiceData.site_photos.length > 0)
+              );
+              
+              if (hasInvoiceData) {
+                actions.push(
+                  <GridActionsCellItem
+                    key="viewInvoice"
+                    icon={<Tooltip title="View Invoice Documents"><InvoiceIcon /></Tooltip>}
+                    label="View Invoice"
+                    onClick={() => handleViewInvoice(row)}
+                    color="info"
+                  />
+                );
+              }
+            } catch (error) {
+              console.error('Error parsing invoice data:', error);
+            }
+          }
+
           // Show history action for all requests
           if (canRead) {
             actions.push(
@@ -2923,7 +3021,7 @@ export default function AreaHeadRequests() {
 
     return baseColumns;
     },
-    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, showSelectionColumn, selectedRequests, rowsState.rows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleSelectAll, handleSelectRequest],
+    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, showSelectionColumn, selectedRequests, rowsState.rows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleApproveForPayment, handleViewInvoice, handleSelectAll, handleSelectRequest],
   );
 
   const pageTitle = 'Area Head Requests';
@@ -3278,20 +3376,44 @@ export default function AreaHeadRequests() {
             fontWeight: 'bold',
           }}
         >
-          Request for Quotation
+          Assign to Vendor
         </DialogTitle>
         <DialogContent>
           <Typography sx={{ color: '#333', mb: 2 }}>
-            Select a vendor to request quotation for processing request <strong>#{requestToAction?.id}</strong>:
+            Select a vendor to assign for processing request <strong>#{requestToAction?.id}</strong>:
           </Typography>
-          <Typography variant="body2" sx={{ color: '#666', mb: 2 }}>
-            This request is processing and is ready for vendor quotation request.
+          <Typography variant="body2" sx={{ color: '#666', mb: 1 }}>
+            Choose from available SAP vendors to assign this request for quotation.
           </Typography>
+          {requestToAction?.dealer?.district && (
+            <Typography variant="body2" sx={{ color: '#1976d2', mb: 2, fontStyle: 'italic' }}>
+              Showing vendors from <strong>{requestToAction.dealer.district}</strong> region only.
+            </Typography>
+          )}
           
           {loadingVendors ? (
             <Typography>Loading vendors...</Typography>
           ) : vendorsError ? (
             <Alert severity="error">{vendorsError}</Alert>
+          ) : vendors.length === 0 ? (
+            <Box sx={{ 
+              textAlign: 'center', 
+              py: 4, 
+              px: 2,
+              backgroundColor: '#f5f5f5',
+              borderRadius: 2,
+              border: '1px solid #e0e0e0'
+            }}>
+              <Typography variant="h6" sx={{ color: '#666', mb: 1 }}>
+                No vendors available for this region
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#999' }}>
+                There are no SAP vendors assigned to <strong>{requestToAction?.dealer?.district}</strong> region.
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#999', mt: 1 }}>
+                Please contact the administrator to assign vendors to this region.
+              </Typography>
+            </Box>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {/* Vendor Search Autocomplete */}
@@ -3339,8 +3461,24 @@ export default function AreaHeadRequests() {
                         color: '#1976d2',
                         mb: 0.5
                       }}>
-                        {option.name}
+                        {option.card_name || option.name}
                       </Typography>
+                      <Typography variant="body2" sx={{ 
+                        color: '#666', 
+                        fontSize: '0.8rem',
+                        mb: 0.25
+                      }}>
+                        Code: {option.username}
+                      </Typography>
+                      {option.region?.name && (
+                        <Typography variant="body2" sx={{ 
+                          color: '#666', 
+                          fontSize: '0.8rem',
+                          mb: 0.25
+                        }}>
+                          Region: {option.region.name}
+                        </Typography>
+                      )}
                       {option.contact_person && (
                         <Typography variant="body2" sx={{ 
                           color: '#666', 
@@ -3350,12 +3488,12 @@ export default function AreaHeadRequests() {
                           Contact: {option.contact_person}
                         </Typography>
                       )}
-                      {option.phone && (
+                      {(option.phone || option.cellular) && (
                         <Typography variant="body2" sx={{ 
                           color: '#666', 
                           fontSize: '0.8rem'
                         }}>
-                          Phone: {option.phone}
+                          Phone: {option.phone || option.cellular}
                         </Typography>
                       )}
                     </Box>
@@ -3428,16 +3566,24 @@ export default function AreaHeadRequests() {
                     Selected Vendor:
                   </Typography>
                   <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
-                    {selectedVendor.name}
+                    {selectedVendor.card_name || selectedVendor.name}
                   </Typography>
+                  <Typography variant="body2" sx={{ color: '#666' }}>
+                    Code: {selectedVendor.username}
+                  </Typography>
+                  {selectedVendor.region?.name && (
+                    <Typography variant="body2" sx={{ color: '#666' }}>
+                      Region: {selectedVendor.region.name}
+                    </Typography>
+                  )}
                   {selectedVendor.contact_person && (
                     <Typography variant="body2" sx={{ color: '#666' }}>
                       Contact: {selectedVendor.contact_person}
                     </Typography>
                   )}
-                  {selectedVendor.phone && (
+                  {(selectedVendor.phone || selectedVendor.cellular) && (
                     <Typography variant="body2" sx={{ color: '#666' }}>
-                      Phone: {selectedVendor.phone}
+                      Phone: {selectedVendor.phone || selectedVendor.cellular}
                     </Typography>
                   )}
                 </Box>
@@ -3479,12 +3625,16 @@ export default function AreaHeadRequests() {
             onClick={confirmAssign}
             variant="contained"
             color="secondary"
-            disabled={isLoading || !selectedVendor}
+            disabled={isLoading || !selectedVendor || vendors.length === 0}
             sx={{
-              minWidth: '180px'
+              minWidth: '180px',
+              '&:disabled': {
+                backgroundColor: '#e0e0e0',
+                color: '#999',
+              }
             }}
           >
-            {isLoading ? 'Processing...' : 'Request for Quotation'}
+            {isLoading ? 'Processing...' : vendors.length === 0 ? 'No Vendors Available' : 'Request for Quotation'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -4829,7 +4979,10 @@ export default function AreaHeadRequests() {
                       Current Status
                     </Typography>
                     <Chip 
-                      label={selectedDetailedRequest.status || 'Not Decided'} 
+                      label={
+                        selectedDetailedRequest.status === 'invoice_sent' ? 'Invoice Received' :
+                        selectedDetailedRequest.status || 'Not Decided'
+                      } 
                       variant="filled" 
                       size="small"
                       color={
@@ -4838,6 +4991,8 @@ export default function AreaHeadRequests() {
                         selectedDetailedRequest.status === 'rfq not accepted' ? 'error' :
                         selectedDetailedRequest.status === 'Rfq' ? 'info' :
                         selectedDetailedRequest.status === 'quotation sent' ? 'secondary' :
+                        selectedDetailedRequest.status === 'invoice_sent' ? 'primary' :
+                        selectedDetailedRequest.status === 'payment_released' ? 'success' :
                         selectedDetailedRequest.status === 'ceo_pending' ? 'warning' :
                         selectedDetailedRequest.status === 'under_review' ? 'info' :
                         'default'
@@ -4990,6 +5145,14 @@ export default function AreaHeadRequests() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Invoice Viewer Modal */}
+      <InvoiceViewer
+        open={invoiceModalOpen}
+        onClose={() => setInvoiceModalOpen(false)}
+        invoiceData={selectedInvoiceRequest?.invoice}
+        requestId={selectedInvoiceRequest?.id}
+      />
 
       {/* React Toastify Container */}
       <ToastContainer

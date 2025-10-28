@@ -30,6 +30,12 @@ export const NAVIGATION_CONFIG = {
     icon: '💵',
     requiredPermission: 'read'
   },
+  vendorAssignment: {
+    displayName: 'SAP User Management',
+    routerLink: '/vendor-assignment',
+    icon: '👥',
+    requiredPermission: 'read'
+  },
   dashboard: {
     displayName: 'Dashboard',
     routerLink: '/dashboard',

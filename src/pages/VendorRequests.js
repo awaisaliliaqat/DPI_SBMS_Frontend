@@ -82,6 +82,8 @@ export default function VendorRequests() {
   const [invoiceModalOpen, setInvoiceModalOpen] = React.useState(false);
   const [selectedInvoiceRequest, setSelectedInvoiceRequest] = React.useState(null);
   const [invoiceFile, setInvoiceFile] = React.useState(null);
+  const [dealerAcknowledgmentFile, setDealerAcknowledgmentFile] = React.useState(null);
+  const [sitePhotosFiles, setSitePhotosFiles] = React.useState([]);
   const [invoiceLoading, setInvoiceLoading] = React.useState(false);
   
   // Edit modal state
@@ -369,13 +371,65 @@ export default function VendorRequests() {
   }, []);
 
   const handleInvoiceSubmit = React.useCallback(() => {
-    if (!selectedInvoiceRequest || !invoiceFile) return;
+    if (!selectedInvoiceRequest) return;
     
     setInvoiceLoading(true);
+    setInvoiceModalOpen(false);
     
-    // Simple success message
-    setTimeout(() => {
-      toast.success('Invoice upload functionality ready!', {
+    // Call the confirm function to update status
+    confirmInvoiceUpload();
+  }, [selectedInvoiceRequest]);
+
+  // Confirm invoice upload function
+  const confirmInvoiceUpload = async () => {
+    if (!selectedInvoiceRequest) return;
+    
+    setIsLoading(true);
+    
+    try {
+      // Create FormData for file uploads
+      const formData = new FormData();
+
+      // Add basic data
+      formData.append('status', 'invoice_sent');
+      formData.append('updated_by', user.id);
+
+      // Add existing invoice data if it exists
+      if (selectedInvoiceRequest.invoice) {
+        formData.append('existing_invoice', JSON.stringify(selectedInvoiceRequest.invoice));
+      }
+
+      // Add invoice files
+      if (invoiceFile) {
+        formData.append('invoice_file', invoiceFile);
+      }
+
+      // Add dealer acknowledgment file
+      if (dealerAcknowledgmentFile) {
+        formData.append('dealer_acknowledgment_file', dealerAcknowledgmentFile);
+      }
+
+      // Add site photos files
+      sitePhotosFiles.forEach((file) => {
+        formData.append('site_photos_files', file);
+      });
+
+      // Make API call with FormData
+      const response = await fetch(`${BASE_URL}/api/shopboard-requests/${selectedInvoiceRequest.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      await response.json();
+
+      toast.success('Invoice sent successfully!', {
         position: "top-right",
         autoClose: 3000,
         hideProgressBar: false,
@@ -384,12 +438,25 @@ export default function VendorRequests() {
         draggable: true,
       });
       
-      setInvoiceModalOpen(false);
+      loadRequests();
+    } catch (invoiceError) {
+      toast.error(`Failed to send invoice: ${invoiceError.message}`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setIsLoading(false);
       setSelectedInvoiceRequest(null);
       setInvoiceFile(null);
+      setDealerAcknowledgmentFile(null);
+      setSitePhotosFiles([]);
       setInvoiceLoading(false);
-    }, 1000);
-  }, [selectedInvoiceRequest, invoiceFile]);
+    }
+  };
 
   const handleEdit = React.useCallback((requestData) => {
     if (!canUpdate) return;
@@ -1034,6 +1101,8 @@ export default function VendorRequests() {
               case 'rfq not accepted': return 'error';
               case 'Rfq': return 'info';
               case 'quotation sent': return 'secondary';
+              case 'invoice_sent': return 'primary';
+              case 'payment_released': return 'success';
               case 'not decided': return 'warning';
               case null:
               case undefined:
@@ -2657,6 +2726,8 @@ export default function VendorRequests() {
                         selectedDetailedRequest.status === 'rfq not accepted' ? 'error' :
                         selectedDetailedRequest.status === 'Rfq' ? 'info' :
                         selectedDetailedRequest.status === 'quotation sent' ? 'secondary' :
+                        selectedDetailedRequest.status === 'invoice_sent' ? 'primary' :
+                        selectedDetailedRequest.status === 'payment_released' ? 'success' :
                         selectedDetailedRequest.status === 'ceo_pending' ? 'warning' :
                         selectedDetailedRequest.status === 'under_review' ? 'info' :
                         'default'
@@ -2770,6 +2841,106 @@ export default function VendorRequests() {
               Selected: {invoiceFile.name}
             </Typography>
           )}
+
+          {/* Dealer Acknowledgment Form */}
+          <Box sx={{ mt: 3 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+              Dealer Acknowledgment Form
+            </Typography>
+            <input
+              type="file"
+              id="dealer_acknowledgment_file"
+              name="dealer_acknowledgment_file"
+              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+              onChange={(e) => setDealerAcknowledgmentFile(e.target.files[0] || null)}
+              style={{ display: 'none' }}
+            />
+            
+            <label htmlFor="dealer_acknowledgment_file">
+              <Button
+                variant="outlined"
+                component="span"
+                startIcon={<AddIcon />}
+                disabled={invoiceLoading}
+                fullWidth
+                sx={{ 
+                  border: '2px dashed #ccc',
+                  '&:hover': {
+                    border: '2px dashed #1976d2',
+                    backgroundColor: '#f5f5f5'
+                  }
+                }}
+              >
+                Select Dealer Acknowledgment Form (PDF, Images)
+              </Button>
+            </label>
+            
+            {dealerAcknowledgmentFile && (
+              <Box sx={{ mt: 1 }}>
+                <Chip
+                  label={dealerAcknowledgmentFile.name}
+                  size="small"
+                  onDelete={() => setDealerAcknowledgmentFile(null)}
+                  sx={{ mr: 1, mb: 1 }}
+                />
+              </Box>
+            )}
+          </Box>
+
+          {/* Site Photos */}
+          <Box sx={{ mt: 3 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+              Site Photos
+            </Typography>
+            <input
+              type="file"
+              id="site_photos_files"
+              name="site_photos_files"
+              multiple
+              accept="image/*,.pdf"
+              onChange={(e) => setSitePhotosFiles(Array.from(e.target.files))}
+              style={{ display: 'none' }}
+            />
+            
+            <label htmlFor="site_photos_files">
+              <Button
+                variant="outlined"
+                component="span"
+                startIcon={<AddIcon />}
+                disabled={invoiceLoading}
+                fullWidth
+                sx={{ 
+                  border: '2px dashed #ccc',
+                  '&:hover': {
+                    border: '2px dashed #1976d2',
+                    backgroundColor: '#f5f5f5'
+                  }
+                }}
+              >
+                Select Site Photos (PDF, Images)
+              </Button>
+            </label>
+            
+            {sitePhotosFiles.length > 0 && (
+              <Box sx={{ mt: 1 }}>
+                <Typography variant="body2" sx={{ color: '#666', mb: 1, fontWeight: 'bold' }}>
+                  Selected files: {sitePhotosFiles.length}
+                </Typography>
+                {sitePhotosFiles.map((file, index) => (
+                  <Chip
+                    key={`site-photo-${index}`}
+                    label={file.name}
+                    size="small"
+                    onDelete={() => {
+                      const newFiles = sitePhotosFiles.filter((_, i) => i !== index);
+                      setSitePhotosFiles(newFiles);
+                    }}
+                    sx={{ mr: 1, mb: 1 }}
+                  />
+                ))}
+              </Box>
+            )}
+          </Box>
         </DialogContent>
         <DialogActions sx={{ p: 2, gap: 1 }}>
           <Button 
@@ -2777,6 +2948,8 @@ export default function VendorRequests() {
               setInvoiceModalOpen(false);
               setSelectedInvoiceRequest(null);
               setInvoiceFile(null);
+              setDealerAcknowledgmentFile(null);
+              setSitePhotosFiles([]);
             }}
             variant="outlined"
             sx={{ 

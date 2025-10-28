@@ -12,6 +12,7 @@ import FeatureManagement from '../pages/Feature';
 import AreaHeadRequests from '../pages/AreaHeadRequests';
 import VendorRequests from '../pages/VendorRequests';
 import RequestItemsAdjustment from '../pages/RequestItemsAdjustment';
+import VendorAssignment from '../pages/VendorAssignment';
 // import Reports from '../pages/Reports';
 // import Settings from '../pages/Settings';
 
@@ -45,6 +46,7 @@ const AppRoutesContent = () => {
         <Route path="area-head-requests" element={<AreaHeadRequests />} />
         <Route path="vendor-requests" element={<VendorRequests />} />
         <Route path="request-items-adjustment" element={<RequestItemsAdjustment />} />
+        <Route path="vendor-assignment" element={<VendorAssignment />} />
         {/* <Route path="users" element={<FeatureManagement />} /> */}
         <Route index element={<Navigate to="/signin" />} />
       </Route>
