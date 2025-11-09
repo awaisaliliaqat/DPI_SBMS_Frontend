@@ -36,7 +36,7 @@ import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
 import { Close, Add } from '@mui/icons-material';
-import { PERMISSIONS,BASE_URL } from '../constants/Constants';
+import { PERMISSIONS, BASE_URL, getPermissionsForFeature, EXCLUDED_FEATURES } from '../constants/Constants';
 
 const INITIAL_PAGE_SIZE = 10;
 
@@ -73,6 +73,7 @@ export default function RoleManagement() {
   const [rolePermissions, setRolePermissions] = React.useState([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [roleToDelete, setRoleToDelete] = React.useState(null);
+  const [availablePermissions, setAvailablePermissions] = React.useState([]);
   
   // Features state (fetched from API)
   const [features, setFeatures] = React.useState([]);
@@ -180,11 +181,13 @@ export default function RoleManagement() {
       
       if (data.success && data.data) {
         // Transform API response to match our expected format
-        const formattedFeatures = data.data.map(tab => ({
-          id: tab.id,
-          name: tab.displayName || tab.name,
-          originalData: tab
-        }));
+        const formattedFeatures = data.data
+          .filter(tab => !EXCLUDED_FEATURES.includes(tab.name)) // Filter out excluded features
+          .map(tab => ({
+            id: tab.id,
+            name: tab.displayName || tab.name,
+            originalData: tab
+          }));
         
         setFeatures(formattedFeatures);
       } else {
@@ -215,11 +218,50 @@ export default function RoleManagement() {
 
 
   const handlePermissionChange = (permissionId, isChecked) => {
+    // Prevent unchecking "read" permission - it's required
+    if (permissionId === 'read' && !isChecked) {
+      toast.error('Read permission is required and cannot be removed', {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+    
     setSelectedPermissions(prev => ({
       ...prev,
       [permissionId]: isChecked
     }));
   };
+
+  // Update available permissions when feature is selected
+  React.useEffect(() => {
+    if (selectedFeature) {
+      const selectedFeatureObj = features.find(f => f.id === parseInt(selectedFeature));
+      // Get feature name from originalData.name (database name) or name property
+      const featureName = selectedFeatureObj?.originalData?.name || selectedFeatureObj?.name;
+      const permissions = getPermissionsForFeature(featureName);
+      setAvailablePermissions(permissions);
+      
+      // Auto-select "read" permission by default
+      setSelectedPermissions({ read: true });
+    } else {
+      setAvailablePermissions([]);
+      setSelectedPermissions({});
+    }
+  }, [selectedFeature, features]);
+
+  // Reset selected feature when modal opens/closes
+  React.useEffect(() => {
+    if (!modalOpen) {
+      setSelectedFeature('');
+      setSelectedPermissions({});
+      setAvailablePermissions([]);
+    }
+  }, [modalOpen]);
 
   const handleFilterModelChange = React.useCallback(
     (model) => {
@@ -284,6 +326,13 @@ export default function RoleManagement() {
   
   const handleRemoveFeaturePermissions = (featureId) => {
     setRolePermissions(rolePermissions.filter(perm => perm.featureId !== featureId));
+    // Feature is now available again in the dropdown
+  };
+
+  // Get available features (exclude already selected ones)
+  const getAvailableFeatures = () => {
+    const selectedFeatureIds = rolePermissions.map(perm => perm.featureId);
+    return features.filter(feature => !selectedFeatureIds.includes(feature.id));
   };
 
   // API call to fetch roles with pagination
@@ -461,10 +510,15 @@ export default function RoleManagement() {
       return;
     }
 
-    // Get selected permission IDs
+    // Get selected permission IDs - ensure "read" is always included
     const selectedOperations = Object.keys(selectedPermissions).filter(
       permissionId => selectedPermissions[permissionId]
     );
+
+    // Ensure "read" is always included
+    if (!selectedOperations.includes('read')) {
+      selectedOperations.push('read');
+    }
 
     if (selectedOperations.length === 0) {
       toast.error('Please select at least one permission', {
@@ -495,6 +549,11 @@ export default function RoleManagement() {
         }
       });
       
+      // Ensure "read" is always present
+      if (!existingOperations.includes('read')) {
+        existingOperations.push('read');
+      }
+      
       setRolePermissions(updatedPermissions);
     } else {
       // Create new permission entry
@@ -511,6 +570,7 @@ export default function RoleManagement() {
     // Reset selections
     setSelectedFeature('');
     setSelectedPermissions({});
+    setAvailablePermissions([]);
   };
   
   const handleModalSubmit = async (formData) => {
@@ -654,8 +714,12 @@ export default function RoleManagement() {
                       <MenuItem disabled>
                         Error loading features
                       </MenuItem>
+                    ) : getAvailableFeatures().length === 0 ? (
+                      <MenuItem disabled>
+                        All features have been assigned
+                      </MenuItem>
                     ) : (
-                      features.map(feature => (
+                      getAvailableFeatures().map(feature => (
                         <MenuItem key={feature.id} value={feature.id}>
                           {feature.name}
                         </MenuItem>
@@ -674,24 +738,41 @@ export default function RoleManagement() {
               <Grid item xs={12} md={6}>
                 <FormControl component="fieldset" fullWidth>
                   <Typography variant="subtitle2" gutterBottom>
-                    Select Permissions *
+                    Select Permissions * {selectedFeature && <Typography component="span" variant="caption" color="text.secondary">(Read is required)</Typography>}
                   </Typography>
                   <FormGroup row>
-                    {PERMISSIONS.map(permission => (
-                      <FormControlLabel
-                        key={permission.id}
-                        control={
-                          <Checkbox
-                            checked={!!selectedPermissions[permission.id]}
-                            onChange={(e) => handlePermissionChange(permission.id, e.target.checked)}
-                            disabled={!selectedFeature || loadingFeatures}
+                    {availablePermissions.length > 0 ? (
+                      availablePermissions.map(permission => {
+                        const isReadPermission = permission.id === 'read';
+                        const isChecked = !!selectedPermissions[permission.id];
+                        const isDisabled = !selectedFeature || loadingFeatures || isReadPermission;
+                        
+                        return (
+                          <FormControlLabel
+                            key={permission.id}
+                            control={
+                              <Checkbox
+                                checked={isChecked}
+                                onChange={(e) => handlePermissionChange(permission.id, e.target.checked)}
+                                disabled={isDisabled}
+                              />
+                            }
+                            label={permission.name}
+                            sx={{ mr: 2 }}
                           />
-                        }
-                        label={permission.name}
-                        sx={{ mr: 2 }}
-                      />
-                    ))}
+                        );
+                      })
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        {selectedFeature ? 'Loading permissions...' : 'Please select a feature first'}
+                      </Typography>
+                    )}
                   </FormGroup>
+                  {selectedFeature && (
+                    <Typography variant="caption" color="info.main" sx={{ mt: 1, display: 'block' }}>
+                      Note: Read permission is required and will be automatically included.
+                    </Typography>
+                  )}
                 </FormControl>
               </Grid>
               

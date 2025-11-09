@@ -83,8 +83,20 @@ export default function VendorRequests() {
   const [selectedInvoiceRequest, setSelectedInvoiceRequest] = React.useState(null);
   const [invoiceFile, setInvoiceFile] = React.useState(null);
   const [dealerAcknowledgmentFile, setDealerAcknowledgmentFile] = React.useState(null);
-  const [sitePhotosFiles, setSitePhotosFiles] = React.useState([]);
+  // Per-item site photos for invoice modal: { [itemId]: File[] }
+  const [sitePhotosPerItem, setSitePhotosPerItem] = React.useState({});
   const [invoiceLoading, setInvoiceLoading] = React.useState(false);
+  
+  // Existing invoice files state (for display when editing)
+  const [existingInvoiceFiles, setExistingInvoiceFiles] = React.useState([]);
+  const [existingDealerAcknowledgmentFiles, setExistingDealerAcknowledgmentFiles] = React.useState([]);
+  const [existingSitePhotosPerItem, setExistingSitePhotosPerItem] = React.useState({});
+  
+  // Rejection comments modal state
+  const [rejectionCommentsModalOpen, setRejectionCommentsModalOpen] = React.useState(false);
+  const [selectedRejectionRequest, setSelectedRejectionRequest] = React.useState(null);
+  const [rejectionComments, setRejectionComments] = React.useState([]);
+  const [loadingRejectionComments, setLoadingRejectionComments] = React.useState(false);
   
   // Edit modal state
   const [editModalOpen, setEditModalOpen] = React.useState(false);
@@ -367,37 +379,129 @@ export default function VendorRequests() {
 
   const handleShareInvoice = React.useCallback((requestData) => {
     setSelectedInvoiceRequest(requestData);
+    
+    // Parse and load existing invoice data if available
+    let invoiceData = {};
+    if (requestData.invoice) {
+      try {
+        invoiceData = typeof requestData.invoice === 'string' 
+          ? JSON.parse(requestData.invoice) 
+          : requestData.invoice;
+      } catch (error) {
+        console.error('Error parsing invoice data:', error);
+        invoiceData = {};
+      }
+    }
+    
+    // Set existing files
+    setExistingInvoiceFiles(invoiceData.invoice_files || []);
+    setExistingDealerAcknowledgmentFiles(invoiceData.dealer_acknowledgment_files || []);
+    setExistingSitePhotosPerItem(invoiceData.site_photos_by_item || {});
+    
+    // Clear new file selections
+    setInvoiceFile(null);
+    setDealerAcknowledgmentFile(null);
+    setSitePhotosPerItem({});
+    
     setInvoiceModalOpen(true);
   }, []);
 
-  const handleInvoiceSubmit = React.useCallback(() => {
-    if (!selectedInvoiceRequest) return;
+  // Handle viewing rejection comments for invoice rejected status
+  const handleViewRejectionComments = React.useCallback(async (requestData) => {
+    setSelectedRejectionRequest(requestData);
+    setRejectionCommentsModalOpen(true);
+    setLoadingRejectionComments(true);
     
-    setInvoiceLoading(true);
-    setInvoiceModalOpen(false);
+    try {
+      // Fetch comments for this request, filtered by vendor_rejection type
+      const response = await get(`/api/shopboard-requests/${requestData.id}`);
+      if (response.success && response.data && response.data.comments) {
+        // Filter comments by vendor_rejection type
+        const vendorRejectionComments = response.data.comments.filter(
+          comment => comment.comment_type === 'vendor_rejection'
+        );
+        setRejectionComments(vendorRejectionComments);
+      } else {
+        setRejectionComments([]);
+      }
+    } catch (error) {
+      console.error('Error fetching rejection comments:', error);
+      toast.error('Failed to load rejection comments', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      setRejectionComments([]);
+    } finally {
+      setLoadingRejectionComments(false);
+    }
+  }, [get]);
+
+  // Handle editing invoice after rejection
+  const handleEditInvoiceAfterRejection = React.useCallback((requestData) => {
+    // Set the request
+    setSelectedInvoiceRequest(requestData);
     
-    // Call the confirm function to update status
-    confirmInvoiceUpload();
-  }, [selectedInvoiceRequest]);
+    // Parse and load existing invoice data if available
+    let invoiceData = {};
+    if (requestData.invoice) {
+      try {
+        invoiceData = typeof requestData.invoice === 'string' 
+          ? JSON.parse(requestData.invoice) 
+          : requestData.invoice;
+      } catch (error) {
+        console.error('Error parsing invoice data:', error);
+        invoiceData = {};
+      }
+    }
+    
+    // Set existing files
+    setExistingInvoiceFiles(invoiceData.invoice_files || []);
+    setExistingDealerAcknowledgmentFiles(invoiceData.dealer_acknowledgment_files || []);
+    setExistingSitePhotosPerItem(invoiceData.site_photos_by_item || {});
+    
+    // Clear new file selections
+    setInvoiceFile(null);
+    setDealerAcknowledgmentFile(null);
+    setSitePhotosPerItem({});
+    
+    setInvoiceModalOpen(true);
+  }, []);
 
   // Confirm invoice upload function
-  const confirmInvoiceUpload = async () => {
+  const confirmInvoiceUpload = React.useCallback(async () => {
     if (!selectedInvoiceRequest) return;
     
     setIsLoading(true);
     
     try {
+      
       // Create FormData for file uploads
       const formData = new FormData();
 
-      // Add basic data
+      // Add basic data - set status to invoice_sent (works for both initial upload and resubmission after rejection)
       formData.append('status', 'invoice_sent');
       formData.append('updated_by', user.id);
 
-      // Add existing invoice data if it exists
+
+      // Get existing invoice data or create empty structure
+      let existingInvoiceData = {};
       if (selectedInvoiceRequest.invoice) {
-        formData.append('existing_invoice', JSON.stringify(selectedInvoiceRequest.invoice));
+        try {
+          existingInvoiceData = typeof selectedInvoiceRequest.invoice === 'string' 
+            ? JSON.parse(selectedInvoiceRequest.invoice) 
+            : selectedInvoiceRequest.invoice;
+        } catch (error) {
+          console.error('Error parsing existing invoice data:', error);
+          existingInvoiceData = {};
+        }
       }
+
+      // Add existing invoice data
+      formData.append('existing_invoice', JSON.stringify(existingInvoiceData));
 
       // Add invoice files
       if (invoiceFile) {
@@ -409,9 +513,11 @@ export default function VendorRequests() {
         formData.append('dealer_acknowledgment_file', dealerAcknowledgmentFile);
       }
 
-      // Add site photos files
-      sitePhotosFiles.forEach((file) => {
-        formData.append('site_photos_files', file);
+      // Add per-item site photos files as site_photos_files[<item_id>][]
+      Object.entries(sitePhotosPerItem).forEach(([itemId, files]) => {
+        (files || []).forEach((file) => {
+          formData.append(`site_photos_files[${itemId}][]`, file);
+        });
       });
 
       // Make API call with FormData
@@ -429,7 +535,8 @@ export default function VendorRequests() {
 
       await response.json();
 
-      toast.success('Invoice sent successfully!', {
+      const isResubmission = selectedInvoiceRequest.status === 'invoice rejected';
+      toast.success(isResubmission ? 'Invoice resubmitted successfully!' : 'Invoice sent successfully!', {
         position: "top-right",
         autoClose: 3000,
         hideProgressBar: false,
@@ -453,10 +560,23 @@ export default function VendorRequests() {
       setSelectedInvoiceRequest(null);
       setInvoiceFile(null);
       setDealerAcknowledgmentFile(null);
-      setSitePhotosFiles([]);
+      setSitePhotosPerItem({});
+      setExistingInvoiceFiles([]);
+      setExistingDealerAcknowledgmentFiles([]);
+      setExistingSitePhotosPerItem({});
       setInvoiceLoading(false);
     }
-  };
+  }, [selectedInvoiceRequest, invoiceFile, dealerAcknowledgmentFile, sitePhotosPerItem, user.id, token, loadRequests]);
+
+  const handleInvoiceSubmit = React.useCallback(() => {
+    if (!selectedInvoiceRequest) return;
+    
+    setInvoiceLoading(true);
+    setInvoiceModalOpen(false);
+    
+    // Call the confirm function to update status
+    confirmInvoiceUpload();
+  }, [selectedInvoiceRequest, confirmInvoiceUpload]);
 
   const handleEdit = React.useCallback((requestData) => {
     if (!canUpdate) return;
@@ -580,9 +700,14 @@ export default function VendorRequests() {
           return db - da;
         });
         
+        // Filter logs to only show those with item_changes
+        const filteredLogs = sorted.filter(log => 
+          log.item_changes && Array.isArray(log.item_changes) && log.item_changes.length > 0
+        );
+        
         // Fetch dealer names for logs that have dealer_id
         const logsWithDealerNames = await Promise.all(
-          sorted.map(async (log) => {
+          filteredLogs.map(async (log) => {
             if (log.main_changes?.dealer_id && !log.main_changes?.dealer_name) {
               try {
                 // Fetch dealer by code
@@ -1093,7 +1218,9 @@ export default function VendorRequests() {
         width: 120,
         renderCell: (params) => {
           const status = params.value;
-          const displayStatus = status || 'Not Decided';
+          // Map backend statuses to display as 'quotation sent' on vendor page
+          const mappedStatus = (status === 'under_review' || status === 'ceo_pending') ? 'quotation sent' : status;
+          const displayStatus = mappedStatus || 'Not Decided';
           const getStatusColor = (status) => {
             switch (status) {
               case 'processing': return 'success';
@@ -1102,6 +1229,7 @@ export default function VendorRequests() {
               case 'Rfq': return 'info';
               case 'quotation sent': return 'secondary';
               case 'invoice_sent': return 'primary';
+              case 'invoice rejected': return 'error';
               case 'payment_released': return 'success';
               case 'not decided': return 'warning';
               case null:
@@ -1115,7 +1243,7 @@ export default function VendorRequests() {
               label={displayStatus} 
               variant="filled" 
               size="small"
-              color={getStatusColor(status)}
+              color={getStatusColor(mappedStatus)}
             />
           );
         },
@@ -1211,11 +1339,33 @@ export default function VendorRequests() {
             );
           }
           
+          // Show rejection comments and edit invoice button for invoice rejected status
+          if (row.status === 'invoice rejected' && canRead) {
+            actions.push(
+              <GridActionsCellItem
+                key="viewRejectionComments"
+                icon={<Tooltip title="View Rejection Comments"><CommentIcon sx={{ color: '#d32f2f' }} /></Tooltip>}
+                label="View Rejection Comments"
+                onClick={() => handleViewRejectionComments(row)}
+                color="error"
+              />
+            );
+            actions.push(
+              <GridActionsCellItem
+                key="editInvoice"
+                icon={<Tooltip title="Edit Invoice"><InvoiceIcon sx={{ color: '#1976d2' }} /></Tooltip>}
+                label="Edit Invoice"
+                onClick={() => handleEditInvoiceAfterRejection(row)}
+                color="primary"
+              />
+            );
+          }
+          
           return actions;
         },
       },
     ],
-    [canApprove, canReject, canUpdate, canRead, handleViewDetails, handleEdit, handleApprove, handleReject, handleViewComments, handleViewHistory, handleShareInvoice],
+    [canApprove, canUpdate, canRead, handleViewDetails, handleEdit, handleApprove, handleViewComments, handleViewHistory, handleShareInvoice, handleViewRejectionComments, handleEditInvoiceAfterRejection],
   );
 
   const pageTitle = 'Vendor Requests';
@@ -2303,7 +2453,7 @@ export default function VendorRequests() {
           ) : requestHistory.length === 0 ? (
             <Box sx={{ textAlign: 'center', p: 4 }}>
               <Typography variant="body1" sx={{ color: '#666' }}>
-                No history found for this request.
+                No item changes found for this request.
               </Typography>
             </Box>
           ) : (
@@ -2515,7 +2665,14 @@ export default function VendorRequests() {
                               Price per ft²
                             </Typography>
                             <Typography variant="body2">
-                              {item.price_per_sqft ? `₨${parseFloat(item.price_per_sqft).toFixed(2)}` : 'N/A'}
+                              {(() => {
+                                const widthFt = parseFloat(item.width) || 0;
+                                const heightFt = parseFloat(item.height) || 0;
+                                const areaSqft = widthFt * heightFt;
+                                const priceNum = parseFloat(item.price) || 0;
+                                const ppsf = areaSqft > 0 ? priceNum / areaSqft : null;
+                                return ppsf ? `₨${ppsf.toFixed(2)}` : 'N/A';
+                              })()}
                             </Typography>
                           </Box>
                           <Box>
@@ -2800,13 +2957,20 @@ export default function VendorRequests() {
         <DialogTitle 
           id="invoice-dialog-title"
           sx={{ 
-            color: 'primary.main',
+            color: selectedInvoiceRequest?.status === 'invoice rejected' ? 'error.main' : 'primary.main',
             fontWeight: 'bold',
           }}
         >
-          Share Invoice - Request #{selectedInvoiceRequest?.id}
+          {selectedInvoiceRequest?.status === 'invoice rejected' 
+            ? `Edit Invoice - Request #${selectedInvoiceRequest?.id}` 
+            : `Share Invoice - Request #${selectedInvoiceRequest?.id}`}
         </DialogTitle>
         <DialogContent>
+          {selectedInvoiceRequest?.status === 'invoice rejected' && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              This invoice was rejected. Please review the rejection comments and update the invoice accordingly.
+            </Alert>
+          )}
           <Typography sx={{ color: '#333', mb: 2 }}>
             Dealer: <strong>{selectedInvoiceRequest?.dealer?.name || 'N/A'}</strong>
           </Typography>
@@ -2836,10 +3000,49 @@ export default function VendorRequests() {
             </Button>
           </label>
           
+          {/* Existing Invoice Files */}
+          {existingInvoiceFiles.length > 0 && (
+            <Box sx={{ mt: 1, mb: 2 }}>
+              <Typography variant="body2" sx={{ color: '#666', mb: 1, fontWeight: 'bold' }}>
+                Existing invoice files:
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {existingInvoiceFiles.map((file, index) => (
+                  <Chip
+                    key={`existing-invoice-${index}`}
+                    label={file.split('/').pop()}
+                    size="small"
+                    color="primary"
+                    variant="outlined"
+                    onClick={() => {
+                      const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/${file}`;
+                      window.open(fileUrl, '_blank');
+                    }}
+                    sx={{ 
+                      cursor: 'pointer',
+                      '&:hover': {
+                        backgroundColor: '#e3f2fd',
+                      }
+                    }}
+                  />
+                ))}
+              </Box>
+            </Box>
+          )}
+          
+          {/* New Invoice File */}
           {invoiceFile && (
-            <Typography variant="body2" sx={{ color: '#666', mt: 1 }}>
-              Selected: {invoiceFile.name}
-            </Typography>
+            <Box sx={{ mt: 1 }}>
+              <Typography variant="body2" sx={{ color: '#666', mb: 1, fontWeight: 'bold' }}>
+                New file selected:
+              </Typography>
+              <Chip
+                label={invoiceFile.name}
+                size="small"
+                onDelete={() => setInvoiceFile(null)}
+                sx={{ mr: 1, mb: 1 }}
+              />
+            </Box>
           )}
 
           {/* Dealer Acknowledgment Form */}
@@ -2875,8 +3078,42 @@ export default function VendorRequests() {
               </Button>
             </label>
             
+            {/* Existing Dealer Acknowledgment Files */}
+            {existingDealerAcknowledgmentFiles.length > 0 && (
+              <Box sx={{ mt: 1, mb: 1 }}>
+                <Typography variant="body2" sx={{ color: '#666', mb: 1, fontWeight: 'bold' }}>
+                  Existing acknowledgment files:
+                </Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {existingDealerAcknowledgmentFiles.map((file, index) => (
+                    <Chip
+                      key={`existing-ack-${index}`}
+                      label={file.split('/').pop()}
+                      size="small"
+                      color="secondary"
+                      variant="outlined"
+                      onClick={() => {
+                        const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/${file}`;
+                        window.open(fileUrl, '_blank');
+                      }}
+                      sx={{ 
+                        cursor: 'pointer',
+                        '&:hover': {
+                          backgroundColor: '#f3e5f5',
+                        }
+                      }}
+                    />
+                  ))}
+                </Box>
+              </Box>
+            )}
+            
+            {/* New Dealer Acknowledgment File */}
             {dealerAcknowledgmentFile && (
               <Box sx={{ mt: 1 }}>
+                <Typography variant="body2" sx={{ color: '#666', mb: 1, fontWeight: 'bold' }}>
+                  New file selected:
+                </Typography>
                 <Chip
                   label={dealerAcknowledgmentFile.name}
                   size="small"
@@ -2887,58 +3124,137 @@ export default function VendorRequests() {
             )}
           </Box>
 
-          {/* Site Photos */}
+          {/* Per-Item Site Photos */}
           <Box sx={{ mt: 3 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
-              Site Photos
+              Site Photos per Request Item
             </Typography>
-            <input
-              type="file"
-              id="site_photos_files"
-              name="site_photos_files"
-              multiple
-              accept="image/*,.pdf"
-              onChange={(e) => setSitePhotosFiles(Array.from(e.target.files))}
-              style={{ display: 'none' }}
-            />
-            
-            <label htmlFor="site_photos_files">
-              <Button
-                variant="outlined"
-                component="span"
-                startIcon={<AddIcon />}
-                disabled={invoiceLoading}
-                fullWidth
-                sx={{ 
-                  border: '2px dashed #ccc',
-                  '&:hover': {
-                    border: '2px dashed #1976d2',
-                    backgroundColor: '#f5f5f5'
-                  }
-                }}
-              >
-                Select Site Photos (PDF, Images)
-              </Button>
-            </label>
-            
-            {sitePhotosFiles.length > 0 && (
-              <Box sx={{ mt: 1 }}>
-                <Typography variant="body2" sx={{ color: '#666', mb: 1, fontWeight: 'bold' }}>
-                  Selected files: {sitePhotosFiles.length}
-                </Typography>
-                {sitePhotosFiles.map((file, index) => (
-                  <Chip
-                    key={`site-photo-${index}`}
-                    label={file.name}
-                    size="small"
-                    onDelete={() => {
-                      const newFiles = sitePhotosFiles.filter((_, i) => i !== index);
-                      setSitePhotosFiles(newFiles);
-                    }}
-                    sx={{ mr: 1, mb: 1 }}
-                  />
+            {selectedInvoiceRequest?.requestItems && selectedInvoiceRequest.requestItems.length > 0 ? (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {selectedInvoiceRequest.requestItems.map((item, idx) => (
+                  <Paper key={item.id || idx} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 2, alignItems: 'center', mb: 2 }}>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: '#666' }}>Request Type</Typography>
+                        <Typography variant="body2">{item.requestType?.name || 'N/A'}</Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: '#666' }}>Width (ft)</Typography>
+                        <Typography variant="body2">{item.width || 'N/A'}</Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: '#666' }}>Height (ft)</Typography>
+                        <Typography variant="body2">{item.height || 'N/A'}</Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: '#666' }}>Price/ft²</Typography>
+                        <Typography variant="body2">
+                          {(() => {
+                            const widthFt = parseFloat(item.width) || 0;
+                            const heightFt = parseFloat(item.height) || 0;
+                            const areaSqft = widthFt * heightFt;
+                            const priceNum = parseFloat(item.price) || 0;
+                            const ppsf = areaSqft > 0 ? priceNum / areaSqft : null;
+                            return ppsf ? `₨${ppsf.toFixed(2)}` : 'N/A';
+                          })()}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: '#666' }}>Total</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{item.price ? `₨${parseFloat(item.price).toFixed(2)}` : 'N/A'}</Typography>
+                      </Box>
+                    </Box>
+
+                    <input
+                      type="file"
+                      id={`site_photos_files_${item.id}`}
+                      name={`site_photos_files[${item.id}][]`}
+                      multiple
+                      accept="image/*,.pdf"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        setSitePhotosPerItem(prev => ({ ...prev, [item.id]: files }));
+                      }}
+                      style={{ display: 'none' }}
+                    />
+                    <label htmlFor={`site_photos_files_${item.id}`}>
+                      <Button
+                        variant="outlined"
+                        component="span"
+                        startIcon={<AddIcon />}
+                        disabled={invoiceLoading}
+                        sx={{ 
+                          border: '2px dashed #ccc',
+                          '&:hover': {
+                            border: '2px dashed #1976d2',
+                            backgroundColor: '#f5f5f5'
+                          }
+                        }}
+                      >
+                        Select Site Photos for this item
+                      </Button>
+                    </label>
+
+                    {/* Existing Site Photos for this item */}
+                    {(existingSitePhotosPerItem[item.id] || []).length > 0 && (
+                      <Box sx={{ mt: 1, mb: 1 }}>
+                        <Typography variant="body2" sx={{ color: '#666', mb: 1, fontWeight: 'bold' }}>
+                          Existing site photos: {(existingSitePhotosPerItem[item.id] || []).length}
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                          {(existingSitePhotosPerItem[item.id] || []).map((file, index) => (
+                            <Chip
+                              key={`existing-site-photo-${item.id}-${index}`}
+                              label={file.split('/').pop()}
+                              size="small"
+                              color="success"
+                              variant="outlined"
+                              onClick={() => {
+                                const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/${file}`;
+                                window.open(fileUrl, '_blank');
+                              }}
+                              sx={{ 
+                                cursor: 'pointer',
+                                '&:hover': {
+                                  backgroundColor: '#e8f5e8',
+                                }
+                              }}
+                            />
+                          ))}
+                        </Box>
+                      </Box>
+                    )}
+                    
+                    {/* New Site Photos for this item */}
+                    {(sitePhotosPerItem[item.id] || []).length > 0 && (
+                      <Box sx={{ mt: 1 }}>
+                        <Typography variant="body2" sx={{ color: '#666', mb: 1, fontWeight: 'bold' }}>
+                          New files selected: {(sitePhotosPerItem[item.id] || []).length}
+                        </Typography>
+                        {(sitePhotosPerItem[item.id] || []).map((file, index) => (
+                          <Chip
+                            key={`site-photo-${item.id}-${index}`}
+                            label={file.name}
+                            size="small"
+                            onDelete={() => {
+                              setSitePhotosPerItem(prev => {
+                                const list = [...(prev[item.id] || [])];
+                                list.splice(index, 1);
+                                return { ...prev, [item.id]: list };
+                              });
+                            }}
+                            sx={{ mr: 1, mb: 1 }}
+                          />
+                        ))}
+                      </Box>
+                    )}
+                  </Paper>
                 ))}
               </Box>
+            ) : (
+              <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
+                No request items available
+              </Typography>
             )}
           </Box>
         </DialogContent>
@@ -2949,7 +3265,10 @@ export default function VendorRequests() {
               setSelectedInvoiceRequest(null);
               setInvoiceFile(null);
               setDealerAcknowledgmentFile(null);
-              setSitePhotosFiles([]);
+              setSitePhotosPerItem({});
+              setExistingInvoiceFiles([]);
+              setExistingDealerAcknowledgmentFiles([]);
+              setExistingSitePhotosPerItem({});
             }}
             variant="outlined"
             sx={{ 
@@ -2967,11 +3286,132 @@ export default function VendorRequests() {
           <Button 
             onClick={handleInvoiceSubmit}
             variant="contained"
-            color="primary"
-            disabled={invoiceLoading || !invoiceFile}
+            color={selectedInvoiceRequest?.status === 'invoice rejected' ? 'error' : 'primary'}
+            disabled={invoiceLoading || (
+              !invoiceFile && 
+              !dealerAcknowledgmentFile && 
+              Object.values(sitePhotosPerItem).reduce((n, arr) => n + (arr ? arr.length : 0), 0) === 0 &&
+              existingInvoiceFiles.length === 0 &&
+              existingDealerAcknowledgmentFiles.length === 0 &&
+              Object.values(existingSitePhotosPerItem).reduce((n, arr) => n + (arr ? arr.length : 0), 0) === 0
+            )}
           >
-            {invoiceLoading ? 'Uploading...' : 'Upload Invoice'}
+            {invoiceLoading 
+              ? 'Uploading...' 
+              : selectedInvoiceRequest?.status === 'invoice rejected' 
+                ? 'Resubmit Invoice' 
+                : 'Upload Invoice'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Rejection Comments Modal */}
+      <Dialog
+        open={rejectionCommentsModalOpen}
+        onClose={() => {
+          setRejectionCommentsModalOpen(false);
+          setSelectedRejectionRequest(null);
+          setRejectionComments([]);
+        }}
+        aria-labelledby="rejection-comments-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '500px',
+            maxWidth: '700px',
+            maxHeight: '80vh',
+            overflow: 'auto',
+          }
+        }}
+      >
+        <DialogTitle 
+          id="rejection-comments-dialog-title"
+          sx={{ 
+            color: 'error.main',
+            fontWeight: 'bold',
+          }}
+        >
+          Invoice Rejection Comments - Request #{selectedRejectionRequest?.id}
+        </DialogTitle>
+        <DialogContent>
+          {loadingRejectionComments ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+              <Typography>Loading rejection comments...</Typography>
+            </Box>
+          ) : rejectionComments.length === 0 ? (
+            <Box sx={{ textAlign: 'center', p: 4 }}>
+              <Typography variant="body1" sx={{ color: '#666' }}>
+                No rejection comments found for this request.
+              </Typography>
+            </Box>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {rejectionComments.map((comment, index) => (
+                <Box 
+                  key={index} 
+                  sx={{ 
+                    p: 2, 
+                    border: '1px solid #ffcdd2', 
+                    borderRadius: 1, 
+                    backgroundColor: '#ffebee' 
+                  }}
+                >
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                      {comment.user ? comment.user.username : 'Unknown User'}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#666' }}>
+                      {comment.created_at ? new Date(comment.created_at).toLocaleString() : 'Unknown Date'}
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" sx={{ color: '#333', mb: 1 }}>
+                    {comment.comment}
+                  </Typography>
+                  <Chip 
+                    label="Vendor Rejection" 
+                    size="small" 
+                    color="error" 
+                    variant="outlined"
+                  />
+                </Box>
+              ))}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button 
+            onClick={() => {
+              setRejectionCommentsModalOpen(false);
+              setSelectedRejectionRequest(null);
+              setRejectionComments([]);
+            }}
+            variant="outlined"
+            sx={{ 
+              color: '#666',
+              borderColor: '#ddd',
+              '&:hover': {
+                borderColor: '#999',
+                backgroundColor: '#f5f5f5',
+              }
+            }}
+          >
+            Close
+          </Button>
+          {selectedRejectionRequest && (
+            <Button 
+              onClick={() => {
+                setRejectionCommentsModalOpen(false);
+                handleEditInvoiceAfterRejection(selectedRejectionRequest);
+              }}
+              variant="contained"
+              color="primary"
+              sx={{ 
+                minWidth: '140px'
+              }}
+            >
+              Edit Invoice
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
 
