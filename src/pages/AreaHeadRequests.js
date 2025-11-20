@@ -3120,17 +3120,24 @@ export default function AreaHeadRequests() {
             );
           }
           
-          // Show combined view & send messages for ceo_pending status with add_comment permission
-          if (row.status === 'ceo_pending' && canAddComment) {
-            actions.push(
-              <GridActionsCellItem
-                key="viewAndSendMessages"
-                icon={<Tooltip title="View & Send Messages"><CommentIcon /></Tooltip>}
-                label="View & Send Messages"
-                onClick={() => handleViewAndSendMessages(row)}
-                color="info"
-              />
-            );
+          // Show combined view & send messages for requests with add_comment permission
+          // Exclude statuses: not decided, Rfq, quotation sent, under_review, and null/undefined/empty
+          if (canAddComment) {
+            const excludedStatuses = ['not decided', 'Rfq', 'quotation sent', 'under_review'];
+            const status = row.status;
+            const isExcludedStatus = !status || excludedStatuses.includes(status);
+            
+            if (!isExcludedStatus) {
+              actions.push(
+                <GridActionsCellItem
+                  key="viewAndSendMessages"
+                  icon={<Tooltip title="View & Send Messages"><CommentIcon /></Tooltip>}
+                  label="View & Send Messages"
+                  onClick={() => handleViewAndSendMessages(row)}
+                  color="info"
+                />
+              );
+            }
           }
 
           // Show print button for ceo_pending status with print permission
