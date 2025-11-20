@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { NAVIGATION_CONFIG } from '../constants/NavigationConfig';
+import { BASENAME } from '../constants/Constants';
 
 
 export const SCREEN_ROUTES = {
@@ -50,7 +51,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('authToken');
     localStorage.removeItem('userData');
 
-     window.location.href = '/signin';
+    window.location.href = `${BASENAME}/signin`;
   };
 
   // Check if user has specific permission

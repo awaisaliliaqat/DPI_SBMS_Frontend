@@ -1,5 +1,5 @@
 // services/apiService.js
-import { BASE_URL } from '../constants/Constants';
+import { BASE_URL, BASENAME } from '../constants/Constants';
 
 class ApiService {
   constructor() {
@@ -85,9 +85,10 @@ class ApiService {
     localStorage.removeItem('authToken');
     localStorage.removeItem('userData');
     
-    // Redirect to login
-    if (window.location.pathname !== '/signin') {
-      window.location.href = '/signin';
+    // Redirect to login (check if not already on signin page)
+    const signinPath = `${BASENAME}/signin`;
+    if (!window.location.pathname.endsWith('/signin')) {
+      window.location.href = signinPath;
     }
   }
 
