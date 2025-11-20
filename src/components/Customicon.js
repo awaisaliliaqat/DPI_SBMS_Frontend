@@ -1,6 +1,7 @@
 import * as React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
+import SvgIcon from '@mui/material/SvgIcon';
 import diamondPaintIcon from '../diamond_paint_icon.png';
 
 export function SitemarkIcon() {
