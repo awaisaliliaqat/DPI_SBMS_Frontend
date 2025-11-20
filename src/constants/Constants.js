@@ -2,7 +2,7 @@
 export const BASE_URL = 'http://125.209.66.147:5001';
 
 // Base path for React Router (must match the basename in App.js)
-export const BASENAME = '/diamond-paints';
+export const BASENAME = '/ShopBoard';
 
 export const PERMISSIONS = [
   { id: 'create', name: 'Create' },
