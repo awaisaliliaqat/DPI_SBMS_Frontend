@@ -1,5 +1,5 @@
 // Base URL configuration
-export const BASE_URL = 'http://localhost:5001';
+export const BASE_URL = 'http://125.209.66.147:5001';
 
 export const PERMISSIONS = [
   { id: 'create', name: 'Create' },
