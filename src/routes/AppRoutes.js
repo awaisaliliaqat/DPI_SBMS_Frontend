@@ -1,5 +1,5 @@
 import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import SignIn from '../Signin';
 import { useAuth } from '../auth/AuthContext';
 import { AuthProvider } from '../auth/AuthContext';
@@ -19,12 +19,31 @@ import VendorAssignment from '../pages/VendorAssignment';
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
+  const navigate = useNavigate();
+  
+  React.useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      navigate('/signin', { replace: true });
+    }
+  }, [isAuthenticated, loading, navigate]);
   
   if (loading) {
     return <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>;
   }
   
-  return isAuthenticated ? children : <Navigate to="/signin" />;
+  if (!isAuthenticated) {
+    return null; // Will redirect via useEffect
+  }
+  
+  return children;
+};
+
+const RedirectToSignin = () => {
+  const navigate = useNavigate();
+  React.useEffect(() => {
+    navigate('/signin', { replace: true });
+  }, [navigate]);
+  return null;
 };
 
 const AppRoutesContent = () => {
@@ -48,11 +67,11 @@ const AppRoutesContent = () => {
         <Route path="request-items-adjustment" element={<RequestItemsAdjustment />} />
         <Route path="vendor-assignment" element={<VendorAssignment />} />
         {/* <Route path="users" element={<FeatureManagement />} /> */}
-        <Route index element={<Navigate to="/signin" />} />
+        <Route index element={<RedirectToSignin />} />
       </Route>
       
       {/* Fallback route */}
-      <Route path="*" element={<Navigate to="/signin" />} />
+      <Route path="*" element={<RedirectToSignin />} />
     </Routes>
   );
 };
