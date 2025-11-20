@@ -352,7 +352,7 @@ export default function SignIn(props) {
               Forgot your password?
             </Link>
           </Box>
-          <Divider sx={{ color: '#666' }}>Diamond Paints</Divider>
+          <Divider sx={{ color: '#666' }}>Paint Solutions</Divider>
         </Card>
         
         {/* React Toastify Container */}
