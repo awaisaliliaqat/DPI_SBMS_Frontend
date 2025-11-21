@@ -112,7 +112,8 @@ export default function UserManagement() {
   };
 
   const validateEmail = (email) => {
-    if (!email) return 'Email is required';
+    // Email is optional, only validate format if provided
+    if (!email || email.trim() === '') return '';
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) return 'Please enter a valid email address';
     return '';
@@ -149,10 +150,10 @@ export default function UserManagement() {
       name: 'email',
       label: 'Email',
       type: 'email',
-      required: true,
+      required: false,
       readOnly: isViewMode,
       validate: validateEmail,
-      tooltip: 'Must be a valid email address'
+      tooltip: 'Must be a valid email address (optional)'
     },
     ...(isCreate ? [{
       name: 'password',

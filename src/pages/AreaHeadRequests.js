@@ -207,10 +207,17 @@ export default function AreaHeadRequests() {
     setVendorsError(null);
     
     try {
-      const response = await get('/api/sap-users');
+      // Build API URL with district filter if provided
+      let apiUrl = '/api/sap-users';
+      if (dealerDistrict) {
+        apiUrl += `?district=${encodeURIComponent(dealerDistrict)}`;
+      }
+      
+      const response = await get(apiUrl);
       
       if (response.success && Array.isArray(response.data)) {
         // Transform SAP users to vendor format for compatibility
+        // Note: regions is now an array (many-to-many relationship)
         let vendorData = response.data.map(user => ({
           id: user.id,
           name: user.card_name || user.username,
@@ -220,23 +227,13 @@ export default function AreaHeadRequests() {
           cellular: user.cellular,
           phone: user.phone,
           address: user.address,
-          region: user.region,
+          region: user.regions && user.regions.length > 0 ? user.regions[0] : null, // Use first region for backward compatibility
+          regions: user.regions || [], // Include all regions
           is_sap: user.is_sap
         }));
-
-        // Filter vendors by dealer district if provided
-        if (dealerDistrict) {
-          const dealerDistrictLower = dealerDistrict.toLowerCase();
-          vendorData = vendorData.filter(vendor => {
-            const vendorRegionLower = vendor.region?.name?.toLowerCase() || '';
-            return vendorRegionLower.includes(dealerDistrictLower) || 
-                   dealerDistrictLower.includes(vendorRegionLower);
-          });
-          console.log(`Filtered vendors for district "${dealerDistrict}":`, vendorData.length, 'vendors');
-        }
         
         setVendors(vendorData);
-        console.log('SAP vendors loaded from users table:', vendorData.length, 'vendors');
+        console.log(`SAP vendors loaded for district "${dealerDistrict || 'all'}":`, vendorData.length, 'vendors');
       } else {
         throw new Error('Invalid vendors data format');
       }
