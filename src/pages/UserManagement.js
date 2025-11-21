@@ -422,7 +422,11 @@ export default function UserManagement() {
     // Transform user data for view mode
     const transformedUserData = {
       ...userData,
-      regionName: userData.region ? `${userData.region.name} (${userData.region.code})` : 'No Region'
+      regionName: userData.region ? `${userData.region.name} (${userData.region.code})` : 'No Region',
+      // Format username for vendors: show card_name (username)
+      username: userData.user_type === 'vendor' && userData.card_name 
+        ? `${userData.card_name} (${userData.username})`
+        : userData.username
     };
     
     setSelectedUser(transformedUserData);
@@ -658,6 +662,13 @@ export default function UserManagement() {
         field: 'username',
         headerName: 'Username',
         width: 150,
+        renderCell: (params) => {
+          const row = params.row;
+          if (row.user_type === 'vendor' && row.card_name) {
+            return `${row.card_name} (${row.username})`;
+          }
+          return row.username;
+        },
       },
       {
         field: 'email',
