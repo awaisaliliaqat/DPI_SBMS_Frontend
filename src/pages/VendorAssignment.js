@@ -19,6 +19,8 @@ import {
   FormControlLabel,
   Checkbox,
   CircularProgress,
+  Chip,
+  FormHelperText,
 } from '@mui/material';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast, ToastContainer } from 'react-toastify';
@@ -37,7 +39,7 @@ export default function VendorAssignment() {
   const navigate = useNavigate();
 
   const { user } = useAuth();
-  const { get, post, del } = useApi();
+  const { get, post, put, del } = useApi();
 
   // Permissions based on tab key 'vendorAssignment'
   const permKey = 'vendorAssignment';
@@ -73,7 +75,7 @@ export default function VendorAssignment() {
   const [loadingRegions, setLoadingRegions] = React.useState(false);
   const [formData, setFormData] = React.useState({
     vendor_id: '',
-    region_id: '',
+    region_ids: [],
     password: '',
     confirmPassword: '',
   });
@@ -242,20 +244,36 @@ export default function VendorAssignment() {
       errors.vendor_id = 'Vendor is required';
     }
 
-    if (!formData.region_id) {
-      errors.region_id = 'Region is required';
+    if (!formData.region_ids || !Array.isArray(formData.region_ids) || formData.region_ids.length === 0) {
+      errors.region_ids = 'At least one region is required';
     }
 
-    if (!formData.password) {
-      errors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
-      errors.password = 'Password must be at least 6 characters';
-    }
+    // Password validation - required for create, optional for edit
+    if (modalMode === 'create') {
+      if (!formData.password) {
+        errors.password = 'Password is required';
+      } else if (formData.password.length < 6) {
+        errors.password = 'Password must be at least 6 characters';
+      }
 
-    if (!formData.confirmPassword) {
-      errors.confirmPassword = 'Confirm password is required';
-    } else if (formData.password !== formData.confirmPassword) {
-      errors.confirmPassword = 'Passwords do not match';
+      if (!formData.confirmPassword) {
+        errors.confirmPassword = 'Confirm password is required';
+      } else if (formData.password !== formData.confirmPassword) {
+        errors.confirmPassword = 'Passwords do not match';
+      }
+    } else if (modalMode === 'edit') {
+      // For edit mode, password is optional but if provided, must be valid
+      if (formData.password && formData.password.trim() !== '') {
+        if (formData.password.length < 6) {
+          errors.password = 'Password must be at least 6 characters';
+        }
+        
+        if (!formData.confirmPassword) {
+          errors.confirmPassword = 'Confirm password is required when changing password';
+        } else if (formData.password !== formData.confirmPassword) {
+          errors.confirmPassword = 'Passwords do not match';
+        }
+      }
     }
 
     setFormErrors(errors);
@@ -268,7 +286,7 @@ export default function VendorAssignment() {
     setSelectedRow(null);
     setFormData({
       vendor_id: '',
-      region_id: '',
+      region_ids: [],
       password: '',
       confirmPassword: '',
     });
@@ -285,9 +303,13 @@ export default function VendorAssignment() {
   const handleView = React.useCallback((row) => {
     if (!canRead) return;
     setSelectedRow(row);
+    // Transform regions array to region_ids array
+    const regionIds = row.regions && Array.isArray(row.regions) && row.regions.length > 0
+      ? row.regions.map(r => r.id)
+      : [];
     setFormData({
       vendor_id: row.username || '',
-      region_id: row.region_id || '',
+      region_ids: regionIds,
       password: '••••••', // Don't show actual password
       confirmPassword: '••••••',
     });
@@ -298,9 +320,13 @@ export default function VendorAssignment() {
   const handleEdit = React.useCallback((row) => {
     if (!canUpdate) return;
     setSelectedRow(row);
+    // Transform regions array to region_ids array
+    const regionIds = row.regions && Array.isArray(row.regions) && row.regions.length > 0
+      ? row.regions.map(r => r.id)
+      : [];
     setFormData({
       vendor_id: row.username || '',
-      region_id: row.region_id || '',
+      region_ids: regionIds,
       password: '', // Leave empty for editing
       confirmPassword: '',
     });
@@ -380,7 +406,7 @@ export default function VendorAssignment() {
       // Prepare payload for SAP user creation
       const payload = {
         vendor_id: formData.vendor_id,
-        region_id: formData.region_id,
+        region_ids: Array.isArray(formData.region_ids) ? formData.region_ids : [],
         password: formData.password,
         card_name: selectedVendor?.name || selectedVendor?.CardName || 'Unknown Vendor',
         contact_person: selectedVendor?.contact_person || selectedVendor?.CntctPrsn || null,
@@ -392,13 +418,32 @@ export default function VendorAssignment() {
       // Console log the payload as requested
       console.log('Vendor Assignment Payload:', payload);
       console.log('Selected Vendor:', vendors.find(v => (v.id || v.CardCode) === formData.vendor_id));
-      console.log('Selected Region:', regions.find(r => r.id === formData.region_id));
+      console.log('Selected Regions:', formData.region_ids.map(id => regions.find(r => r.id === id)).filter(Boolean));
 
-      // Create SAP user via API
-      const response = await post('/api/sap-users/create', payload);
+      let response;
+      if (modalMode === 'create') {
+        // Create SAP user via API
+        response = await post('/api/sap-users/create', payload);
+      } else if (modalMode === 'edit' && selectedRow) {
+        // Update SAP user via API
+        const updatePayload = {
+          region_ids: Array.isArray(formData.region_ids) ? formData.region_ids : [],
+        };
+        
+        // Only include password if it's provided (not empty)
+        if (formData.password && formData.password.trim() !== '') {
+          updatePayload.password = formData.password;
+        }
+        
+        response = await put(`/api/sap-users/${selectedRow.id}`, updatePayload);
+      } else {
+        throw new Error('Invalid operation mode');
+      }
       
       if (response.success) {
-        toast.success('SAP user created successfully!', {
+        toast.success(modalMode === 'create' 
+          ? 'SAP user created successfully!' 
+          : 'SAP user updated successfully!', {
           position: "top-right",
           autoClose: 3000,
           hideProgressBar: false,
@@ -413,21 +458,22 @@ export default function VendorAssignment() {
         // Reset form
         setFormData({
           vendor_id: '',
-          region_id: '',
+          region_ids: [],
           password: '',
           confirmPassword: '',
         });
         setUseSystemPassword(false);
         setFormErrors({});
+        setSelectedRow(null);
         
-        // Reload SAP users to show the new one
+        // Reload SAP users to show the updated data
         loadSapUsers();
       } else {
-        throw new Error(response.message || 'Failed to create SAP user');
+        throw new Error(response.message || `Failed to ${modalMode === 'create' ? 'create' : 'update'} SAP user`);
       }
     } catch (error) {
-      console.error('Error creating SAP user:', error);
-      toast.error(`Failed to create SAP user: ${error.message}`, {
+      console.error(`Error ${modalMode === 'create' ? 'creating' : 'updating'} SAP user:`, error);
+      toast.error(`Failed to ${modalMode === 'create' ? 'create' : 'update'} SAP user: ${error.message}`, {
         position: "top-right",
         autoClose: 5000,
         hideProgressBar: false,
@@ -459,12 +505,41 @@ export default function VendorAssignment() {
       width: 200,
       renderCell: (params) => params.value || 'N/A'
     },
-    { 
-      field: 'region', 
-      headerName: 'Region', 
-      width: 150,
-      renderCell: (params) => params.value?.name || 'N/A'
-    },
+    // { 
+    //   field: 'regions', 
+    //   headerName: 'Regions', 
+    //   width: 250,
+    //   align: 'left',
+    //   headerAlign: 'left',
+    //   renderCell: (params) => {
+    //     const regions = params.value;
+    //     if (!regions || !Array.isArray(regions) || regions.length === 0) {
+    //       return (
+    //         <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+    //           <Chip 
+    //             label="No Regions" 
+    //             variant="outlined" 
+    //             size="small"
+    //             color="default"
+    //           />
+    //         </Box>
+    //       );
+    //     }
+    //     return (
+    //       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center', py: 0.5 }}>
+    //         {regions.map((region) => (
+    //           <Chip 
+    //             key={region.id}
+    //             label={`${region.name}${region.code ? ` (${region.code})` : ''}`} 
+    //             variant="outlined" 
+    //             size="small"
+    //             color="secondary"
+    //           />
+    //         ))}
+    //       </Box>
+    //     );
+    //   }
+    // },
     { 
       field: 'contact_person', 
       headerName: 'Contact Person', 
@@ -634,20 +709,35 @@ export default function VendorAssignment() {
               openOnFocus
             />
 
-            {/* Region Selection */}
-            <FormControl fullWidth error={!!formErrors.region_id}>
-              <InputLabel>Region *</InputLabel>
+            {/* Region Selection - Multi-select */}
+            <FormControl fullWidth error={!!formErrors.region_ids} disabled={loadingRegions}>
+              <InputLabel>Regions *</InputLabel>
               <Select
-                value={formData.region_id}
-                label="Region *"
+                multiple
+                value={Array.isArray(formData.region_ids) ? formData.region_ids : []}
+                label="Regions *"
                 onChange={(e) => {
-                  setFormData(prev => ({ ...prev, region_id: e.target.value }));
+                  const value = e.target.value;
+                  setFormData(prev => ({ 
+                    ...prev, 
+                    region_ids: typeof value === 'string' ? value.split(',') : value 
+                  }));
                   // Clear region error when selection is made
-                  if (formErrors.region_id) {
-                    setFormErrors(prev => ({ ...prev, region_id: '' }));
+                  if (formErrors.region_ids) {
+                    setFormErrors(prev => ({ ...prev, region_ids: '' }));
                   }
                 }}
                 disabled={modalMode === 'view' || loadingRegions}
+                renderValue={(selected) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {selected.map((regionId) => {
+                      const region = regions.find(r => r.id === regionId);
+                      return region ? (
+                        <Chip key={regionId} label={`${region.name}${region.code ? ` (${region.code})` : ''}`} size="small" />
+                      ) : null;
+                    })}
+                  </Box>
+                )}
               >
                 {loadingRegions ? (
                   <MenuItem disabled>
@@ -659,15 +749,16 @@ export default function VendorAssignment() {
                 ) : (
                   regions.map(region => (
                     <MenuItem key={region.id} value={region.id}>
-                      {region.name}
+                      {region.name} {region.code ? `(${region.code})` : ''}
                     </MenuItem>
                   ))
                 )}
               </Select>
-              {formErrors.region_id && (
-                <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.75 }}>
-                  {formErrors.region_id}
-                </Typography>
+              {formErrors.region_ids && (
+                <FormHelperText error>{formErrors.region_ids}</FormHelperText>
+              )}
+              {!formErrors.region_ids && (
+                <FormHelperText>Select one or more regions</FormHelperText>
               )}
             </FormControl>
 
@@ -687,7 +778,7 @@ export default function VendorAssignment() {
 
                 {/* Password Field */}
                 <TextField
-                  label="Password *"
+                  label={modalMode === 'create' ? "Password *" : "New Password (Optional)"}
                   type={showPassword ? 'text' : 'password'}
                   value={formData.password}
                   onChange={(e) => {
@@ -700,7 +791,7 @@ export default function VendorAssignment() {
                   variant="outlined"
                   disabled={useSystemPassword}
                   error={!!formErrors.password}
-                  helperText={formErrors.password || 'Minimum 6 characters'}
+                  helperText={formErrors.password || (modalMode === 'create' ? 'Minimum 6 characters' : 'Leave empty to keep current password')}
                   InputProps={{
                     endAdornment: (
                       <InputAdornment position="end">
@@ -718,7 +809,7 @@ export default function VendorAssignment() {
 
                 {/* Confirm Password Field */}
                 <TextField
-                  label="Confirm Password *"
+                  label={modalMode === 'create' ? "Confirm Password *" : "Confirm New Password (Optional)"}
                   type={showConfirmPassword ? 'text' : 'password'}
                   value={formData.confirmPassword}
                   onChange={(e) => {
@@ -731,7 +822,7 @@ export default function VendorAssignment() {
                   variant="outlined"
                   disabled={useSystemPassword}
                   error={!!formErrors.confirmPassword}
-                  helperText={formErrors.confirmPassword}
+                  helperText={formErrors.confirmPassword || (modalMode === 'edit' ? 'Required only if changing password' : '')}
                   InputProps={{
                     endAdornment: (
                       <InputAdornment position="end">
