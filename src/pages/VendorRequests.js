@@ -1198,6 +1198,23 @@ export default function VendorRequests() {
           return dealer ? dealer.name : 'N/A';
         },
       },
+      {
+        field: 'creator',
+        headerName: 'Created By',
+        width: 150,
+        align: 'left',
+        headerAlign: 'left',
+        renderCell: (params) => {
+          const creator = params.row.creator;
+          return (
+            <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+              <Typography variant="body2">
+                {creator?.username || 'N/A'}
+              </Typography>
+            </Box>
+          );
+        },
+      },
       // {
       //   field: 'requestItems',
       //   headerName: 'Request Types',
@@ -1471,114 +1488,155 @@ export default function VendorRequests() {
           Request Details #{selectedRequest?.id}
         </DialogTitle>
         <DialogContent>
-          {selectedRequest && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
-              {/* Dealer Information */}
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                  Dealer Information
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 2 }}>
-                  <TextField
-                    label="Dealer Name"
-                    value={selectedRequest.dealer?.name || 'N/A'}
-                    variant="outlined"
-                    fullWidth
-                    disabled
-                    helperText="Read-only"
-                  />
-                  <TextField
-                    label="Dealer Code"
-                    value={selectedRequest.dealer?.code || 'N/A'}
-                    variant="outlined"
-                    fullWidth
-                    disabled
-                    helperText="Read-only"
-                  />
+          {selectedRequest && (() => {
+            // Check if there's a parent dealer (dealer.id !== dealer_relation.parent.id)
+            const hasParent = selectedRequest?.dealer_relation?.parent && 
+                              selectedRequest?.dealer?.id && 
+                              selectedRequest.dealer.id !== selectedRequest.dealer_relation.parent.id;
+            const parent = hasParent ? selectedRequest.dealer_relation.parent : null;
+            
+            return (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
+                {/* Parent Dealer Information - Only show if parent exists */}
+                {hasParent && parent && (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                      Parent Dealer Information
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 2 }}>
+                      <TextField
+                        label="Parent Dealer Code"
+                        value={parent.code || 'N/A'}
+                        variant="outlined"
+                        fullWidth
+                        disabled
+                        helperText="Read-only"
+                      />
+                      <TextField
+                        label="Parent Dealer Name"
+                        value={parent.name || 'N/A'}
+                        variant="outlined"
+                        fullWidth
+                        disabled
+                        helperText="Read-only"
+                      />
+                      <TextField
+                        label="Parent Dealer Phone"
+                        value={parent.phone || 'N/A'}
+                        variant="outlined"
+                        fullWidth
+                        disabled
+                        helperText="Read-only"
+                      />
+                    </Box>
+                  </Box>
+                )}
+                
+                {/* Current Dealer Information */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                    Dealer Information
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 2 }}>
                     <TextField
-                      label="Phone"
-                      value={selectedRequest.dealer?.phone || 'N/A'}
+                      label="Dealer Name"
+                      value={selectedRequest.dealer?.name || 'N/A'}
                       variant="outlined"
                       fullWidth
                       disabled
                       helperText="Read-only"
                     />
-                </Box>
+                    <TextField
+                      label="Dealer Code"
+                      value={selectedRequest.dealer?.code || 'N/A'}
+                      variant="outlined"
+                      fullWidth
+                      disabled
+                      helperText="Read-only"
+                    />
+                      <TextField
+                        label="Phone"
+                        value={selectedRequest.dealer?.phone || 'N/A'}
+                        variant="outlined"
+                        fullWidth
+                        disabled
+                        helperText="Read-only"
+                      />
+                  </Box>
+                  <TextField
+                    label="Address"
+                    value={selectedRequest.dealer?.city || 'N/A'}
+                    variant="outlined"
+                    fullWidth
+                    disabled
+                    helperText="Read-only"
+                  />
                 <TextField
-                  label="Address"
-                  value={selectedRequest.dealer?.city || 'N/A'}
+                  label="Dealer Type"
+                  value={(() => {
+                    const type = selectedRequest.dealer_type;
+                    if (!type) return 'Old';
+                    return type === 'new' ? 'New' : 'Old';
+                  })()}
                   variant="outlined"
                   fullWidth
                   disabled
                   helperText="Read-only"
                 />
-              <TextField
-                label="Dealer Type"
-                value={(() => {
-                  const type = selectedRequest.dealer_type;
-                  if (!type) return 'Old';
-                  return type === 'new' ? 'New' : 'Old';
-                })()}
-                variant="outlined"
-                fullWidth
-                disabled
-                helperText="Read-only"
-              />
-              </Box>
+                </Box>
 
-              {/* Survey Date */}
-              <TextField
-                label="Survey Date"
-                value={(() => {
-                  const today = new Date();
-                  return today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-                })()}
-                variant="outlined"
-                fullWidth
-                disabled
-                helperText="Read-only"
-              />
+                {/* Survey Date */}
+                <TextField
+                  label="Survey Date"
+                  value={(() => {
+                    const today = new Date();
+                    return today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+                  })()}
+                  variant="outlined"
+                  fullWidth
+                  disabled
+                  helperText="Read-only"
+                />
 
-              {/* Files (match Area Head view modal): Survey Form Attachments */}
-
-              {/* Survey Form Attachments */}
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                  Survey Form Attachments
-                </Typography>
-                {selectedRequest.survey_form_attachments && 
-                 Array.isArray(selectedRequest.survey_form_attachments) && 
-                 selectedRequest.survey_form_attachments.length > 0 ? (
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                    {selectedRequest.survey_form_attachments.map((file, index) => (
-                      <Chip
-                        key={`survey-${index}`}
-                        label={file.split('/').pop()}
-                        size="small"
-                        color="success"
-                        variant="outlined"
-                        onClick={() => {
-                          const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/survey_forms/${file}`;
-                          window.open(fileUrl, '_blank');
-                        }}
-                        sx={{ 
-                          cursor: 'pointer',
-                          '&:hover': {
-                            backgroundColor: '#e3f2fd',
-                            transform: 'scale(1.05)'
-                          }
-                        }}
-                      />
-                    ))}
-                  </Box>
-                ) : (
-                  <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
-                    No survey form attachments available
+                {/* Survey Form Attachments */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                    Survey Form Attachments
                   </Typography>
-                )}
+                  {selectedRequest.survey_form_attachments && 
+                   Array.isArray(selectedRequest.survey_form_attachments) && 
+                   selectedRequest.survey_form_attachments.length > 0 ? (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {selectedRequest.survey_form_attachments.map((file, index) => (
+                        <Chip
+                          key={`survey-${index}`}
+                          label={file.split('/').pop()}
+                          size="small"
+                          color="success"
+                          variant="outlined"
+                          onClick={() => {
+                            const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/survey_forms/${file}`;
+                            window.open(fileUrl, '_blank');
+                          }}
+                          sx={{ 
+                            cursor: 'pointer',
+                            '&:hover': {
+                              backgroundColor: '#e3f2fd',
+                              transform: 'scale(1.05)'
+                            }
+                          }}
+                        />
+                      ))}
+                    </Box>
+                  ) : (
+                    <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
+                      No survey form attachments available
+                    </Typography>
+                  )}
+                </Box>
               </Box>
-            </Box>
-          )}
+            );
+          })()}
         </DialogContent>
         <DialogActions sx={{ p: 2, gap: 1 }}>
           <Button 
@@ -2575,59 +2633,101 @@ export default function VendorRequests() {
           Request Details - #{selectedDetailedRequest?.id}
         </DialogTitle>
         <DialogContent>
-          {selectedDetailedRequest && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 2 }}>
-              {/* Dealer Information */}
-              <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
-                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
-                  🏢 Dealer Information
-                </Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
-                      Dealer Name
+          {selectedDetailedRequest && (() => {
+            // Check if there's a parent dealer (dealer.id !== dealer_relation.parent.id)
+            const hasParent = selectedDetailedRequest?.dealer_relation?.parent && 
+                              selectedDetailedRequest?.dealer?.id && 
+                              selectedDetailedRequest.dealer.id !== selectedDetailedRequest.dealer_relation.parent.id;
+            const parent = hasParent ? selectedDetailedRequest.dealer_relation.parent : null;
+            
+            return (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 2 }}>
+                {/* Parent Dealer Information - Only show if parent exists */}
+                {hasParent && parent && (
+                  <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#e3f2fd', border: '2px solid #bbdefb' }}>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                      👤 Parent Dealer Information
                     </Typography>
-                    <Typography variant="body1">
-                      {selectedDetailedRequest.dealer?.name || 'N/A'}
-                    </Typography>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 2 }}>
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                          Parent Dealer Code
+                        </Typography>
+                        <Typography variant="body1">
+                          {parent.code || 'N/A'}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                          Parent Dealer Name
+                        </Typography>
+                        <Typography variant="body1">
+                          {parent.name || 'N/A'}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                          Parent Dealer Phone
+                        </Typography>
+                        <Typography variant="body1">
+                          {parent.phone || 'N/A'}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Paper>
+                )}
+                
+                {/* Current Dealer Information */}
+                <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
+                  <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                    🏢 Dealer Information
+                  </Typography>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                        Dealer Name
+                      </Typography>
+                      <Typography variant="body1">
+                        {selectedDetailedRequest.dealer?.name || 'N/A'}
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                        Dealer Code
+                      </Typography>
+                      <Typography variant="body1">
+                        {selectedDetailedRequest.dealer?.code || 'N/A'}
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                        Phone
+                      </Typography>
+                      <Typography variant="body1">
+                        {selectedDetailedRequest.dealer?.phone || 'N/A'}
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                        Address
+                      </Typography>
+                      <Typography variant="body1">
+                        {selectedDetailedRequest.dealer?.city || 'N/A'}
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                        Dealer Type
+                      </Typography>
+                      <Typography variant="body1">
+                        {selectedDetailedRequest.dealer_type === 'new' ? 'New' : 'Old'}
+                      </Typography>
+                    </Box>
                   </Box>
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
-                      Dealer Code
-                    </Typography>
-                    <Typography variant="body1">
-                      {selectedDetailedRequest.dealer?.code || 'N/A'}
-                    </Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
-                      Phone
-                    </Typography>
-                    <Typography variant="body1">
-                      {selectedDetailedRequest.dealer?.phone || 'N/A'}
-                    </Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
-                      Address
-                    </Typography>
-                    <Typography variant="body1">
-                      {selectedDetailedRequest.dealer?.city || 'N/A'}
-                    </Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
-                      Dealer Type
-                    </Typography>
-                    <Typography variant="body1">
-                      {selectedDetailedRequest.dealer_type === 'new' ? 'New' : 'Old'}
-                    </Typography>
-                  </Box>
-                </Box>
-              </Paper>
+                </Paper>
 
-              {/* Request Items */}
-              <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
+                {/* Request Items */}
+                <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
                 <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
                   📋 Request Items & Dimensions
                 </Typography>
@@ -2919,8 +3019,9 @@ export default function VendorRequests() {
                   </Box>
                 </Box>
               </Paper>
-            </Box>
-          )}
+              </Box>
+            );
+          })()}
         </DialogContent>
         <DialogActions sx={{ p: 3, gap: 2, backgroundColor: '#f8f9fa', borderTop: '1px solid #e0e0e0' }}>
           <Button 

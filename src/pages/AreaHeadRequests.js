@@ -2719,86 +2719,122 @@ export default function AreaHeadRequests() {
 
 
   // Get fields for view modal
-  const getRequestFields = () => [
-    {
-      name: 'dealer',
-      label: 'Dealer Name',
-      type: 'text',
-      readOnly: true,
-      valueFormatter: (value) => {
-        if (!value) return 'N/A';
-        if (typeof value === 'string') return value;
-        return value.name || 'N/A';
+  const getRequestFields = (requestData = null) => {
+    const fields = [];
+    
+    // Check if there's a parent dealer (dealer.id !== dealer_relation.parent.id)
+    const hasParent = requestData?.dealer_relation?.parent && 
+                      requestData?.dealer?.id && 
+                      requestData.dealer.id !== requestData.dealer_relation.parent.id;
+    
+    // Add parent dealer fields if parent exists
+    if (hasParent) {
+      fields.push(
+        {
+          name: 'parent_dealer_code',
+          label: 'Parent Dealer Code',
+          type: 'text',
+          readOnly: true,
+        },
+        {
+          name: 'parent_dealer_name',
+          label: 'Parent Dealer Name',
+          type: 'text',
+          readOnly: true,
+        },
+        {
+          name: 'parent_dealer_phone',
+          label: 'Parent Dealer Phone',
+          type: 'text',
+          readOnly: true,
+        }
+      );
+    }
+    
+    // Add current dealer fields
+    fields.push(
+      {
+        name: 'dealer',
+        label: 'Dealer Name',
+        type: 'text',
+        readOnly: true,
+        valueFormatter: (value) => {
+          if (!value) return 'N/A';
+          if (typeof value === 'string') return value;
+          return value.name || 'N/A';
+        },
       },
-    },
-    {
-      name: 'dealer',
-      label: 'Dealer Code',
-      type: 'text',
-      readOnly: true,
-      valueFormatter: (value) => {
-        if (!value) return 'N/A';
-        if (typeof value === 'string') return value;
-        return value.code || 'N/A';
+      {
+        name: 'dealer',
+        label: 'Dealer Code',
+        type: 'text',
+        readOnly: true,
+        valueFormatter: (value) => {
+          if (!value) return 'N/A';
+          if (typeof value === 'string') return value;
+          return value.code || 'N/A';
+        },
       },
-    },
-    {
-      name: 'dealer',
-      label: 'Phone',
-      type: 'text',
-      readOnly: true,
-      valueFormatter: (value) => {
-        if (!value) return 'N/A';
-        if (typeof value === 'string') return 'N/A';
-        return value.phone || 'N/A';
+      {
+        name: 'dealer',
+        label: 'Phone',
+        type: 'text',
+        readOnly: true,
+        valueFormatter: (value) => {
+          if (!value) return 'N/A';
+          if (typeof value === 'string') return 'N/A';
+          return value.phone || 'N/A';
+        },
       },
-    },
-    {
-      name: 'dealer',
-      label: 'Address',
-      type: 'text',
-      readOnly: true,
-      valueFormatter: (value) => {
-        if (!value) return 'N/A';
-        if (typeof value === 'string') return value;
-        return value.city || 'N/A';
+      {
+        name: 'dealer',
+        label: 'Address',
+        type: 'text',
+        readOnly: true,
+        valueFormatter: (value) => {
+          if (!value) return 'N/A';
+          if (typeof value === 'string') return value;
+          return value.city || 'N/A';
+        },
       },
-    },
-    {
-      name: 'dealer_type',
-      label: 'Dealer Type',
-      type: 'text',
-      readOnly: true,
-      valueFormatter: (value) => {
-        if (!value) return 'Old';
-        return value === 'new' ? 'New' : 'Old';
+      {
+        name: 'dealer_type',
+        label: 'Dealer Type',
+        type: 'text',
+        readOnly: true,
+        valueFormatter: (value) => {
+          if (!value) return 'Old';
+          return value === 'new' ? 'New' : 'Old';
+        },
       },
-    },
-    {
-      name: 'survey_date',
-      label: 'Survey Date',
-      type: 'text',
-      readOnly: true,
-      valueFormatter: () => {
-        const today = new Date();
-        return today.toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric'
-        });
+      {
+        name: 'survey_date',
+        label: 'Survey Date',
+        type: 'text',
+        readOnly: true,
+        valueFormatter: () => {
+          const today = new Date();
+          return today.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+        },
       },
-    },
-    {
-      name: 'survey_form_attachments',
-      label: 'Survey Form Attachments',
-      type: 'text',
-      readOnly: true,
-      valueFormatter: (value) => {
-        if (!value || !Array.isArray(value) || value.length === 0) return 'No attachments';
-        return `${value.length} file(s) attached`;
-      },
-    },
-  ];
+      {
+        name: 'survey_form_attachments',
+        label: 'Survey Form Attachments',
+        type: 'text',
+        readOnly: true,
+        valueFormatter: (value) => {
+          if (!value || !Array.isArray(value) || value.length === 0) return 'No attachments';
+          return `${value.length} file(s) attached`;
+        },
+      }
+    );
+    
+    return fields;
+  };
 
   // Column definitions for shopboard requests (showing only 4 key fields)
   const columns = React.useMemo(
@@ -3351,8 +3387,25 @@ export default function AreaHeadRequests() {
         onClose={() => setModalOpen(false)}
         mode="view"
         title="Request Details"
-        initialData={selectedRequest || {}}
-        fields={getRequestFields()}
+        initialData={(() => {
+          const data = selectedRequest || {};
+          // Check if there's a parent dealer and add parent fields to initialData
+          const hasParent = data?.dealer_relation?.parent && 
+                            data?.dealer?.id && 
+                            data.dealer.id !== data.dealer_relation.parent.id;
+          
+          if (hasParent && data.dealer_relation.parent) {
+            const parent = data.dealer_relation.parent;
+            return {
+              ...data,
+              parent_dealer_code: parent.code || 'N/A',
+              parent_dealer_name: parent.name || 'N/A',
+              parent_dealer_phone: parent.phone || 'N/A',
+            };
+          }
+          return data;
+        })()}
+        fields={getRequestFields(selectedRequest)}
         onSubmit={() => setModalOpen(false)}
         loading={false}
         hideSubmitButton={true}
