@@ -9,10 +9,60 @@ import Typography from '@mui/material/Typography';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import NotificationsRoundedIcon from '@mui/icons-material/NotificationsRounded';
 import MenuButton from './MenuButton';
-import MenuContent from './MenuContent';
+import DynamicMenuContent from '../../components/DynamicMenuContent';
 import CardAlert from './CardAlert';
+import { useAuth } from '../../auth/AuthContext';
+
+// Helper function to get user initials for avatar
+const getUserInitials = (username, email) => {
+  if (username) {
+    return username.charAt(0).toUpperCase();
+  }
+  if (email) {
+    return email.charAt(0).toUpperCase();
+  }
+  return 'U'; // Default fallback
+};
+
+// Helper function to generate avatar color based on username
+const stringToColor = (string) => {
+  let hash = 0;
+  let i;
+
+  for (i = 0; i < string.length; i += 1) {
+    hash = string.charCodeAt(i) + ((hash << 5) - hash);
+  }
+
+  let color = '#';
+
+  for (i = 0; i < 3; i += 1) {
+    const value = (hash >> (i * 8)) & 0xff;
+    color += `00${value.toString(16)}`.slice(-2);
+  }
+
+  return color;
+};
+
+const stringAvatar = (username, email) => {
+  const name = username || email || 'User';
+  return {
+    sx: {
+      bgcolor: stringToColor(name),
+      width: 24,
+      height: 24,
+    },
+    children: getUserInitials(username, email),
+  };
+};
 
 function SideMenuMobile({ open, toggleDrawer }) {
+  const { user, logout, loading } = useAuth();
+
+  const handleLogout = () => {
+    toggleDrawer(false)();
+    logout();
+  };
+
   return (
     <Drawer
       anchor="right"
@@ -37,28 +87,45 @@ function SideMenuMobile({ open, toggleDrawer }) {
             direction="row"
             sx={{ gap: 1, alignItems: 'center', flexGrow: 1, p: 1 }}
           >
-            <Avatar
-              sizes="small"
-              alt="Riley Carter"
-              src="/static/images/avatar/7.jpg"
-              sx={{ width: 24, height: 24 }}
-            />
-            <Typography component="p" variant="h6">
-              Riley Carter
+            {loading ? (
+              <Avatar sx={{ width: 24, height: 24 }}>?</Avatar>
+            ) : (
+              <Avatar
+                {...stringAvatar(user?.username, user?.email)}
+                alt={user?.username || user?.email || 'User'}
+                sx={{ width: 24, height: 24 }}
+              />
+            )}
+            <Typography 
+              component="p" 
+              variant="h6"
+              sx={{
+                textTransform: 'capitalize',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {loading ? 'Loading...' : (user?.username || 'Unknown User')}
             </Typography>
           </Stack>
-          <MenuButton showBadge>
+          {/* <MenuButton showBadge>
             <NotificationsRoundedIcon />
-          </MenuButton>
+          </MenuButton> */}
         </Stack>
         <Divider />
         <Stack sx={{ flexGrow: 1 }}>
-          <MenuContent />
+          <DynamicMenuContent />
           <Divider />
         </Stack>
-        <CardAlert />
+        {/* <CardAlert /> */}
         <Stack sx={{ p: 2 }}>
-          <Button variant="outlined" fullWidth startIcon={<LogoutRoundedIcon />}>
+          <Button 
+            variant="outlined" 
+            fullWidth 
+            startIcon={<LogoutRoundedIcon />}
+            onClick={handleLogout}
+          >
             Logout
           </Button>
         </Stack>
