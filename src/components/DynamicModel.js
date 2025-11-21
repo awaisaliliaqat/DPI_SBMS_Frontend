@@ -134,8 +134,11 @@ const DynamicModal = ({
       ...otherProps
     } = field;
     
-    const rawValue = formData[name] || '';
-    const value = valueFormatter ? valueFormatter(rawValue) : rawValue;
+    const rawValue = formData[name];
+    // For multi-select, default to empty array if undefined/null
+    const defaultValue = field.multiple ? [] : '';
+    const rawValueWithDefault = rawValue !== undefined && rawValue !== null ? rawValue : defaultValue;
+    const value = valueFormatter ? valueFormatter(rawValueWithDefault) : rawValueWithDefault;
     const error = errors[name] || '';
     const isViewMode = mode === 'view';
     const isDisabled = isViewMode || disabled;
@@ -176,12 +179,23 @@ const DynamicModal = ({
           >
             <InputLabel>{label}{required ? ' *' : ''}</InputLabel>
             <Select
-              value={value}
+              value={field.multiple ? (Array.isArray(value) ? value : []) : value}
               label={label}
               onChange={(e) => handleChange(name, e.target.value)}
               onBlur={() => handleBlur(name)}
               variant={isViewMode ? "filled" : "outlined"}
               readOnly={isViewMode}
+              multiple={field.multiple || false}
+              renderValue={field.multiple ? (selected) => (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                  {selected.map((value) => {
+                    const option = options?.find(opt => opt.value === value);
+                    return option ? (
+                      <Chip key={value} label={option.label} size="small" />
+                    ) : null;
+                  })}
+                </Box>
+              ) : undefined}
             >
               {options?.map(option => (
                 <MenuItem key={option.value} value={option.value}>

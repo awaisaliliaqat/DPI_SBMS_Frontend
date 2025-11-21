@@ -8,7 +8,7 @@ import {
   DialogContent,
   DialogActions,
   Button,
-  Tooltip,
+  Box,
 } from '@mui/material';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast, ToastContainer } from 'react-toastify';
@@ -27,7 +27,7 @@ export default function UserManagement() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   
-  const { user, hasPermission, token } = useAuth();
+  const { user, token } = useAuth();
   
   // Check user permissions
   const canRead = user?.permissions?.user?.includes('read') || false;
@@ -35,7 +35,7 @@ export default function UserManagement() {
   const canUpdate = user?.permissions?.user?.includes('update') || false;
   const canDelete = user?.permissions?.user?.includes('delete') || false;
 
-  const { get, post, put, del } = useApi(); // Use the useApi hook
+  const { get, post, put } = useApi(); // Use the useApi hook
 
   const [rowsState, setRowsState] = React.useState({
     rows: [],
@@ -205,26 +205,24 @@ export default function UserManagement() {
       loading: loadingRoles,
       error: rolesError,
     },
-    // For view mode, use a different field name to display regionName
+    // For view mode, use a different field name to display regions
     isViewMode ? {
-      name: 'regionName', // Use regionName field instead of regionId
-      label: 'Region',
+      name: 'regionsDisplay', // Use regionsDisplay field instead of regionIds
+      label: 'Regions',
       type: 'text',
       readOnly: true,
     } : {
-      name: 'regionId',
-      label: 'Region',
+      name: 'regionIds',
+      label: 'Regions',
       type: 'select',
+      multiple: true,
       required: false,
       validate: validateRegion,
-      tooltip: 'Please select a region (optional)',
-      options: [
-        { value: '', label: 'No Region' },
-        ...regions.map(region => ({
-          value: region.id,
-          label: `${region.name} (${region.code})`
-        }))
-      ],
+      tooltip: 'Please select one or more regions (optional)',
+      options: regions.map(region => ({
+        value: region.id,
+        label: `${region.name} (${region.code})`
+      })),
       loading: loadingRegions,
       error: regionsError,
     },
@@ -420,9 +418,13 @@ export default function UserManagement() {
     if (!canRead) return;
     
     // Transform user data for view mode
+    const regionsDisplay = userData.regions && userData.regions.length > 0
+      ? userData.regions.map(r => `${r.name} (${r.code})`).join(', ')
+      : 'No Regions';
+    
     const transformedUserData = {
       ...userData,
-      regionName: userData.region ? `${userData.region.name} (${userData.region.code})` : 'No Region',
+      regionsDisplay: regionsDisplay,
       // Format username for vendors: show card_name (username)
       username: userData.user_type === 'vendor' && userData.card_name 
         ? `${userData.card_name} (${userData.username})`
@@ -441,7 +443,9 @@ export default function UserManagement() {
     // Transform user data for edit mode
     const transformedUserData = {
       ...userData,
-      regionId: userData.region ? userData.region.id : ''
+      regionIds: userData.regions && userData.regions.length > 0
+        ? userData.regions.map(r => r.id)
+        : []
     };
     
     setSelectedUser(transformedUserData);
@@ -573,7 +577,9 @@ export default function UserManagement() {
         username: formData.username,
         email: formData.email,
         role_id: parseInt(formData.roleId),
-        region_id: formData.regionId ? parseInt(formData.regionId) : null,
+        region_ids: formData.regionIds && Array.isArray(formData.regionIds) && formData.regionIds.length > 0
+          ? formData.regionIds.map(id => parseInt(id))
+          : [],
         is_active: formData.isActive !== undefined ? formData.isActive : true,
       };
 
@@ -582,12 +588,10 @@ export default function UserManagement() {
         submitData.password = formData.password;
       }
 
-      let response;
-      
       if (modalMode === 'create') {
-        response = await post('/api/users', submitData);
+        await post('/api/users', submitData);
       } else {
-        response = await put(`/api/users/${selectedUser.id}`, submitData);
+        await put(`/api/users/${selectedUser.id}`, submitData);
       }
 
       const successMessage = modalMode === 'create' 
@@ -689,28 +693,37 @@ export default function UserManagement() {
         ),
       },
       {
-        field: 'region',
-        headerName: 'Region',
-        width: 150,
+        field: 'regions',
+        headerName: 'Regions',
+        width: 250,
+        align: 'left',
+        headerAlign: 'left',
         renderCell: (params) => {
-          const region = params.value;
-          if (!region) {
+          const regions = params.value;
+          if (!regions || regions.length === 0) {
             return (
-              <Chip 
-                label="No Region" 
-                variant="outlined" 
-                size="small"
-                color="default"
-              />
+              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                <Chip 
+                  label="No Regions" 
+                  variant="outlined" 
+                  size="small"
+                  color="default"
+                />
+              </Box>
             );
           }
           return (
-            <Chip 
-              label={`${region.name} (${region.code})`} 
-              variant="outlined" 
-              size="small"
-              color="secondary"
-            />
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center', py: 0.5 }}>
+              {regions.map((region) => (
+                <Chip 
+                  key={region.id}
+                  label={`${region.name} (${region.code})`} 
+                  variant="outlined" 
+                  size="small"
+                  color="secondary"
+                />
+              ))}
+            </Box>
           );
         },
       },
