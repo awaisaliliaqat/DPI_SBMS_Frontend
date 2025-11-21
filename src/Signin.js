@@ -371,7 +371,7 @@ export default function SignIn(props) {
             >
               {isLoading ? 'Signing in...' : 'Sign in'}
             </BlueButton>
-            <Link
+            {/* <Link
               component="button"
               type="button"
               onClick={handleClickOpen}
@@ -386,7 +386,7 @@ export default function SignIn(props) {
               disabled={isLoading}
             >
               Forgot your password?
-            </Link>
+            </Link> */}
           </Box>
           <Divider sx={{ color: 'text.secondary', '&::before, &::after': { borderColor: 'divider' } }}>Paint Solutions</Divider>
         </Card>
