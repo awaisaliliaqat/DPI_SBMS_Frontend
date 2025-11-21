@@ -2866,6 +2866,23 @@ export default function AreaHeadRequests() {
         },
       },
       {
+        field: 'creator',
+        headerName: 'Created By',
+        width: 150,
+        align: 'left',
+        headerAlign: 'left',
+        renderCell: (params) => {
+          const creator = params.row.creator;
+          return (
+            <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+              <Typography variant="body2">
+                {creator?.username || 'N/A'}
+              </Typography>
+            </Box>
+          );
+        },
+      },
+      {
         field: 'status',
         headerName: 'Status',
         width: 120,

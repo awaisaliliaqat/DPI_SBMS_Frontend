@@ -692,41 +692,41 @@ export default function UserManagement() {
           />
         ),
       },
-      {
-        field: 'regions',
-        headerName: 'Regions',
-        width: 250,
-        align: 'left',
-        headerAlign: 'left',
-        renderCell: (params) => {
-          const regions = params.value;
-          if (!regions || regions.length === 0) {
-            return (
-              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
-                <Chip 
-                  label="No Regions" 
-                  variant="outlined" 
-                  size="small"
-                  color="default"
-                />
-              </Box>
-            );
-          }
-          return (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center', py: 0.5 }}>
-              {regions.map((region) => (
-                <Chip 
-                  key={region.id}
-                  label={`${region.name} (${region.code})`} 
-                  variant="outlined" 
-                  size="small"
-                  color="secondary"
-                />
-              ))}
-            </Box>
-          );
-        },
-      },
+      // {
+      //   field: 'regions',
+      //   headerName: 'Regions',
+      //   width: 250,
+      //   align: 'left',
+      //   headerAlign: 'left',
+      //   renderCell: (params) => {
+      //     const regions = params.value;
+      //     if (!regions || regions.length === 0) {
+      //       return (
+      //         <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+      //           <Chip 
+      //             label="No Regions" 
+      //             variant="outlined" 
+      //             size="small"
+      //             color="default"
+      //           />
+      //         </Box>
+      //       );
+      //     }
+      //     return (
+      //       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center', py: 0.5 }}>
+      //         {regions.map((region) => (
+      //           <Chip 
+      //             key={region.id}
+      //             label={`${region.name} (${region.code})`} 
+      //             variant="outlined" 
+      //             size="small"
+      //             color="secondary"
+      //           />
+      //         ))}
+      //       </Box>
+      //     );
+      //   },
+      // },
       {
         field: 'isActive',
         headerName: 'Status',
