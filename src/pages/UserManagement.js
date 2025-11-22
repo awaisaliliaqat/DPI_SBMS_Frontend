@@ -136,7 +136,7 @@ export default function UserManagement() {
   };
 
   // Update your getUserFields function to use a different field name for view mode
-  const getUserFields = (isCreate = false, includePassword = false, isViewMode = false) => [
+  const getUserFields = React.useCallback((isCreate = false, includePassword = false, isViewMode = false) => [
     {
       name: 'username',
       label: 'Username',
@@ -234,7 +234,7 @@ export default function UserManagement() {
       defaultValue: true,
       readOnly: isViewMode,
     },
-  ];
+  ], [roles, loadingRoles, regionsError, regions, loadingRegions]);
 
   // API call to fetch roles
   const fetchRoles = React.useCallback(async () => {
@@ -293,6 +293,15 @@ export default function UserManagement() {
       setLoadingRegions(false);
     }
   }, [get]);
+
+  // Memoize fields array to ensure it updates when showPasswordChange changes
+  const modalFields = React.useMemo(() => {
+    return getUserFields(
+      modalMode === 'create', 
+      showPasswordChange, 
+      modalMode === 'view'
+    );
+  }, [getUserFields, modalMode, showPasswordChange]);
 
   // Load roles and regions when modal opens for create/edit/view modes
   React.useEffect(() => {
@@ -863,11 +872,7 @@ export default function UserManagement() {
         mode={modalMode}
         title={`${modalMode === 'create' ? 'Create' : modalMode === 'edit' ? 'Edit' : 'View'} User`}
         initialData={selectedUser || {}}
-        fields={getUserFields(
-          modalMode === 'create', 
-          showPasswordChange, 
-          modalMode === 'view'
-        )}
+        fields={modalFields}
         onSubmit={handleModalSubmit}
         loading={isLoading}
         showPasswordChange={showPasswordChange}

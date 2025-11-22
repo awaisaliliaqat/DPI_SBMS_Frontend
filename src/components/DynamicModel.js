@@ -50,6 +50,34 @@ const DynamicModal = ({
     }
   }, [open, initialData]);
 
+  // Clear password fields when password change is canceled, or initialize when enabled
+  useEffect(() => {
+    if (isEditMode) {
+      if (!showPasswordChange) {
+        // Clear password fields when password change is canceled
+        setFormData(prev => {
+          const { password, confirmPassword, ...rest } = prev;
+          return rest;
+        });
+        setErrors(prev => {
+          const { password, confirmPassword, ...rest } = prev;
+          return rest;
+        });
+        setTouched(prev => {
+          const { password, confirmPassword, ...rest } = prev;
+          return rest;
+        });
+      } else {
+        // Initialize password fields when password change is enabled
+        setFormData(prev => ({
+          ...prev,
+          password: prev.password || '',
+          confirmPassword: prev.confirmPassword || '',
+        }));
+      }
+    }
+  }, [showPasswordChange, isEditMode]);
+
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     
