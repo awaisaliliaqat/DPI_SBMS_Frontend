@@ -70,7 +70,7 @@ export default function RequestItemsAdjustment() {
   const loadDropdowns = React.useCallback(async () => {
     try {
       const [vendorsRes, reqTypesRes] = await Promise.all([
-        get('/api/sap/vendors'),
+        get('/api/users/vendors'),
         get('/api/request-types')
       ]);
       if (vendorsRes?.success && Array.isArray(vendorsRes.data)) {
