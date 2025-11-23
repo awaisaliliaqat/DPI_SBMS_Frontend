@@ -10,7 +10,13 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Paper,
+  Divider,
+  Chip,
+  Grid,
+  IconButton,
 } from '@mui/material';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -60,40 +66,44 @@ export default function RequestItemsAdjustment() {
   const [vendors, setVendors] = React.useState([]);
   const [requestTypes, setRequestTypes] = React.useState([]);
   const [formData, setFormData] = React.useState({
-    vendor_id: '',
-    request_type_id: '',
-    lump_sum_price: '',
-    from_date: '',
+    user_id: '',
+    requestItems: [], // Array of { request_type_id, price }
   });
 
-  // Load dropdown data
+  // Load all dropdown data (vendors + request types) - for create modal
+  // Only loads vendors that don't have active pricing (exclude_with_pricing=true)
   const loadDropdowns = React.useCallback(async () => {
     try {
       const [vendorsRes, reqTypesRes] = await Promise.all([
-        get('/api/users/vendors'),
+        get('/api/users/vendors?exclude_with_pricing=true'),
         get('/api/request-types')
       ]);
       if (vendorsRes?.success && Array.isArray(vendorsRes.data)) {
         setVendors(vendorsRes.data);
-        console.log('Vendors loaded:', vendorsRes.data.length, 'vendors');
-        console.log('First vendor:', vendorsRes.data[0]);
-      } else {
-        console.log('Vendors response:', vendorsRes);
       }
       if (reqTypesRes?.success && Array.isArray(reqTypesRes.data)) {
         setRequestTypes(reqTypesRes.data);
       }
     } catch (e) {
       console.error('Error loading dropdowns:', e);
-      console.error('Error details:', e.message);
-      toast.error('Failed to load vendors');
+      toast.error('Failed to load dropdown data');
     }
   }, [get]);
 
-  // Load dropdowns when component mounts
-  React.useEffect(() => {
-    loadDropdowns();
-  }, [loadDropdowns]);
+  // Load only request types - for edit/view modal (vendor is already known)
+  const loadRequestTypes = React.useCallback(async () => {
+    try {
+      const reqTypesRes = await get('/api/request-types');
+      if (reqTypesRes?.success && Array.isArray(reqTypesRes.data)) {
+        setRequestTypes(reqTypesRes.data);
+      }
+    } catch (e) {
+      console.error('Error loading request types:', e);
+      toast.error('Failed to load request types');
+    }
+  }, [get]);
+
+  // Dropdowns will be loaded only when modal opens (in handleCreate, handleView, handleEdit)
 
   // Data load
   const loadPricing = React.useCallback(async () => {
@@ -102,9 +112,12 @@ export default function RequestItemsAdjustment() {
     setIsLoading(true);
     try {
       const data = await get('/api/vendor-request-pricing');
-      // API returns { success, data }
-      const rows = data?.data || [];
-      console.log('Loaded pricing data:', rows);
+      // API returns { success, data } - data is grouped by vendor
+      const rows = (data?.data || []).map((vendor, index) => ({
+        ...vendor,
+        id: vendor.vendor_id || `vendor-${index}`, // Use vendor_id as unique ID for the row
+      }));
+      console.log('Loaded pricing data (grouped by vendor):', rows);
       setRowsState({ rows, rowCount: rows.length });
     } catch (e) {
       setError(e.message || 'Failed to load');
@@ -153,7 +166,7 @@ export default function RequestItemsAdjustment() {
   const handleCreate = React.useCallback(() => {
     if (!canCreate) return;
     setSelectedRow(null);
-    setFormData({ vendor_id: '', request_type_id: '', lump_sum_price: '', from_date: '' });
+    setFormData({ user_id: '', requestItems: [] });
     setModalMode('create');
     setModalOpen(true);
     // Load dropdowns when modal opens
@@ -162,38 +175,53 @@ export default function RequestItemsAdjustment() {
 
   const handleView = React.useCallback((row) => {
     if (!canRead) return;
+    // Use data directly from row - no API call needed
     setSelectedRow(row);
     setFormData({
-      vendor_id: row.vendor_id,
-      request_type_id: row.request_type_id,
-      lump_sum_price: row.lump_sum_price ?? '',
-      from_date: row.from_date,
+      user_id: row.user_id || '',
+      requestItems: (row.requestItems || []).map(item => ({
+        request_type_id: item.request_type_id,
+        price: item.price ?? '',
+      })),
     });
     setModalMode('view');
     setModalOpen(true);
-    // Load dropdowns when modal opens
-    loadDropdowns();
-  }, [canRead, loadDropdowns]);
+    // Only load request types (vendor is already known and can't be changed)
+    loadRequestTypes();
+  }, [canRead, loadRequestTypes]);
 
   const handleEdit = React.useCallback((row) => {
     if (!canUpdate) return;
+    // Use data directly from row - no API call needed
     setSelectedRow(row);
     setFormData({
-      vendor_id: row.vendor_id,
-      request_type_id: row.request_type_id,
-      lump_sum_price: row.lump_sum_price ?? '',
-      from_date: row.from_date,
+      user_id: row.user_id || '',
+      requestItems: (row.requestItems || []).map(item => ({
+        request_type_id: item.request_type_id,
+        price: item.price ?? '',
+      })),
     });
     setModalMode('edit');
     setModalOpen(true);
-    // Load dropdowns when modal opens
-    loadDropdowns();
-  }, [canUpdate, loadDropdowns]);
+    // Only load request types (vendor is already known and can't be changed)
+    loadRequestTypes();
+  }, [canUpdate, loadRequestTypes]);
 
   const handleDelete = React.useCallback(async (row) => {
     if (!canDelete) return;
+    // Confirm deletion
+    if (!window.confirm(`Are you sure you want to delete all pricing for vendor ${row.vendor_name || row.vendor_id}?`)) {
+      return;
+    }
     try {
-      await del(`/api/vendor-request-pricing/${row.id}`);
+      // Delete all active items for this vendor
+      if (row.requestItems && row.requestItems.length > 0) {
+        await Promise.all(
+          row.requestItems.map(item => 
+            del(`/api/vendor-request-pricing/${item.id}`).catch(() => null)
+          )
+        );
+      }
       toast.success('Deleted successfully');
       loadPricing();
     } catch (e) {
@@ -208,24 +236,37 @@ export default function RequestItemsAdjustment() {
   // Submit
   const onSubmit = async () => {
     // Basic validation
-    if (!formData.vendor_id) return toast.error('Vendor is required');
-    if (!formData.request_type_id) return toast.error('Request type is required');
-    if (!formData.from_date) return toast.error('From date is required');
+    if (!formData.user_id) return toast.error('Vendor is required');
+    if (!formData.requestItems || formData.requestItems.length === 0) {
+      return toast.error('At least one request type is required');
+    }
+
+    // Validate that all items have prices
+    const invalidItems = formData.requestItems.filter(item => !item.price || item.price === '');
+    if (invalidItems.length > 0) {
+      return toast.error('Please provide a price for all selected request types');
+    }
+
+    // Prepare request items with proper format
+    const requestItems = formData.requestItems.map(item => ({
+      request_type_id: item.request_type_id,
+      price: item.price === '' ? null : Number(item.price),
+    }));
 
     try {
       if (modalMode === 'create') {
         await post('/api/vendor-request-pricing', {
-          vendor_id: formData.vendor_id,
-          request_type_id: formData.request_type_id,
-          lump_sum_price: formData.lump_sum_price === '' ? null : Number(formData.lump_sum_price),
-          from_date: formData.from_date,
+          user_id: formData.user_id,
+          requestItems: requestItems,
         });
         toast.success('Created successfully');
         loadPricing();
       } else if (modalMode === 'edit' && selectedRow) {
-        await put(`/api/vendor-request-pricing/${selectedRow.id}`, {
-          lump_sum_price: formData.lump_sum_price === '' ? null : Number(formData.lump_sum_price),
-          from_date: formData.from_date,
+        // For edit, create new items with updated prices
+        // The backend will automatically close existing active items
+        await post('/api/vendor-request-pricing', {
+          user_id: formData.user_id,
+          requestItems: requestItems,
         });
         toast.success('Updated successfully');
         loadPricing();
@@ -236,51 +277,64 @@ export default function RequestItemsAdjustment() {
     }
   };
 
-  // Columns - SIMPLIFIED VERSION
+  // Handle request type selection change
+  const handleRequestTypesChange = React.useCallback((selectedTypes) => {
+    const selectedIds = selectedTypes.map(t => t.id);
+    const currentIds = formData.requestItems.map(item => item.request_type_id);
+    
+    // Find newly added types
+    const newTypes = selectedIds.filter(id => !currentIds.includes(id));
+    // Find removed types
+    const removedIds = currentIds.filter(id => !selectedIds.includes(id));
+    
+    // Update requestItems: remove deleted, keep existing, add new
+    let updatedItems = formData.requestItems
+      .filter(item => !removedIds.includes(item.request_type_id))
+      .map(item => ({ ...item }));
+    
+    // Add new items
+    newTypes.forEach(id => {
+      updatedItems.push({ request_type_id: id, price: '' });
+    });
+    
+    setFormData(prev => ({ ...prev, requestItems: updatedItems }));
+  }, [formData.requestItems]);
+
+  // Handle price change for a specific request type
+  const handlePriceChange = React.useCallback((requestTypeId, price) => {
+    setFormData(prev => ({
+      ...prev,
+      requestItems: prev.requestItems.map(item =>
+        item.request_type_id === requestTypeId
+          ? { ...item, price: price }
+          : item
+      ),
+    }));
+  }, []);
+
+  // Remove a request item
+  const handleRemoveItem = React.useCallback((requestTypeId) => {
+    setFormData(prev => ({
+      ...prev,
+      requestItems: prev.requestItems.filter(item => item.request_type_id !== requestTypeId),
+    }));
+  }, []);
+
+  // Columns - Grouped by vendor
   const columns = React.useMemo(() => [
-    { 
-      field: 'id', 
-      headerName: 'ID', 
-      width: 80 
-    },
     { 
       field: 'vendor_id', 
       headerName: 'Vendor Code', 
-      width: 120
+      width: 140,
+      flex: 0.8
     },
     { 
       field: 'vendor_name', 
       headerName: 'Vendor Name', 
-      width: 200,
-      renderCell: (params) => {
-        // Use the vendor_name from the API response directly
-        return params.row.vendor_name || 'N/A';
-      }
+      width: 250,
+      flex: 1.2
     },
-    { 
-      field: 'request_type_name', 
-      headerName: 'Request Type', 
-      width: 200,
-      renderCell: (params) => params.row?.requestType?.name || 'N/A'
-    },
-    { 
-      field: 'lump_sum_price', 
-      headerName: 'Price', 
-      width: 160,
-      renderCell: (params) => params.row?.lump_sum_price == null ? '' : Number(params.row.lump_sum_price).toFixed(2)
-    },
-    { 
-      field: 'from_date', 
-      headerName: 'From Date', 
-      width: 140 
-    },
-    // { 
-    //   field: 'to_date', 
-    //   headerName: 'To Date', 
-    //   width: 140,
-    //   renderCell: (params) => params.row?.to_date ? String(params.row.to_date) : '-'
-    // },
-  ], [vendors]);
+  ], []);
 
   const pageTitle = 'Request Items Adjustment';
 
@@ -327,89 +381,222 @@ export default function RequestItemsAdjustment() {
         showToolbar={true}
       />
 
-      <Dialog open={modalOpen} onClose={() => setModalOpen(false)} aria-labelledby="pricing-dialog-title" PaperProps={{ sx: { backgroundColor: '#ffffff', minWidth: '520px', maxWidth: '720px' } }}>
-        <DialogTitle id="pricing-dialog-title" sx={{ fontWeight: 'bold' }}>
-          {modalMode === 'create' ? 'Create' : modalMode === 'edit' ? 'Edit' : 'View'} Pricing
+      <Dialog 
+        open={modalOpen} 
+        onClose={() => setModalOpen(false)} 
+        aria-labelledby="pricing-dialog-title" 
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ 
+          sx: { 
+            backgroundColor: '#ffffff',
+            borderRadius: 2,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+          } 
+        }}
+      >
+        <DialogTitle 
+          id="pricing-dialog-title" 
+          sx={{ 
+            fontWeight: 600,
+            fontSize: '1.5rem',
+            pb: 1,
+            borderBottom: '1px solid #e0e0e0'
+          }}
+        >
+          {modalMode === 'create' ? 'Create' : modalMode === 'edit' ? 'Edit' : 'View'} Request Items Pricing
         </DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-            {/* Debug info */}
-            {process.env.NODE_ENV === 'development' && (
-              <Typography variant="caption" color="text.secondary">
-                Debug: {vendors.length} vendors loaded
-                {vendors.length === 0 && ' - Check console for errors'}
+        <DialogContent sx={{ pt: 3 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {/* Vendor Selection */}
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 500, color: 'text.secondary' }}>
+                Vendor Information
               </Typography>
-            )}
-            <Autocomplete
-              options={vendors}
-              getOptionLabel={(option) => option.name || ''}
-              isOptionEqualToValue={(option, value) => String(option.id) === String(value.id)}
-              value={
-                formData.vendor_id 
-                  ? vendors.find(x => String(x.id) === String(formData.vendor_id)) || null
-                  : null
-              }
-              onChange={(event, newValue) => {
-                console.log('Vendor selected:', newValue);
-                setFormData(prev => ({ ...prev, vendor_id: newValue?.id || '' }));
-              }}
-              renderInput={(params) => (
-                <TextField 
-                  {...params} 
-                  label={`Vendor * (${vendors.length} available)`} 
-                  variant="outlined" 
-                  required 
+              {modalMode === 'create' ? (
+                <Autocomplete
+                  options={vendors}
+                  getOptionLabel={(option) => option.name || ''}
+                  isOptionEqualToValue={(option, value) => String(option.user_id) === String(value?.user_id)}
+                  value={
+                    formData.user_id 
+                      ? vendors.find(x => String(x.user_id) === String(formData.user_id)) || null
+                      : null
+                  }
+                  onChange={(event, newValue) => {
+                    setFormData(prev => ({ ...prev, user_id: newValue?.user_id || '' }));
+                  }}
+                  renderInput={(params) => (
+                    <TextField 
+                      {...params} 
+                      label="Vendor *" 
+                      variant="outlined" 
+                      required 
+                      fullWidth
+                    />
+                  )}
+                  loading={vendors.length === 0}
+                  loadingText="Loading vendors..."
+                  noOptionsText="No vendors found"
+                  fullWidth
+                />
+              ) : (
+                <TextField
+                  label="Vendor"
+                  value={`${selectedRow?.vendor_name || ''} (${selectedRow?.vendor_id || ''})`}
+                  variant="outlined"
+                  fullWidth
+                  disabled
                 />
               )}
-              disabled={modalMode !== 'create'}
-              loading={vendors.length === 0}
-              loadingText="Loading vendors..."
-              noOptionsText="No vendors found"
-              freeSolo={false}
-              selectOnFocus
-              clearOnBlur
-              handleHomeEndKeys
-              openOnFocus
-            />
-            <Autocomplete
-              options={requestTypes}
-              getOptionLabel={(o) => o.name || ''}
-              isOptionEqualToValue={(opt, val) => String(opt.id) === String(val.id)}
-              value={
-                requestTypes.find(x => String(x.id) === String(formData.request_type_id))
-                || (selectedRow?.requestType ? { id: selectedRow.requestType.id, name: selectedRow.requestType.name } : null)
-              }
-              onChange={(e, v) => setFormData(prev => ({ ...prev, request_type_id: v?.id || '' }))}
-              renderInput={(params) => <TextField {...params} label="Request Type *" variant="outlined" required />} 
-              disabled={modalMode !== 'create'}
-            />
-            <TextField
-              label="Total Price"
-              type="number"
-              value={formData.lump_sum_price}
-              onChange={(e) => setFormData(prev => ({ ...prev, lump_sum_price: e.target.value }))}
-              variant="outlined"
-              inputProps={{ step: '0.01', min: '0' }}
-              disabled={modalMode === 'view'}
-            />
-            <TextField
-              label="From Date *"
-              type="date"
-              value={formData.from_date}
-              onChange={(e) => setFormData(prev => ({ ...prev, from_date: e.target.value }))}
-              variant="outlined"
-              InputLabelProps={{ shrink: true }}
-              disabled={modalMode === 'view'}
-            />
-            {selectedRow?.to_date && (
-              <TextField label="To Date" value={selectedRow.to_date} disabled />
+            </Box>
+
+            <Divider />
+
+            {/* Request Types Selection */}
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 500, color: 'text.secondary' }}>
+                Request Types & Pricing
+              </Typography>
+              <Autocomplete
+                multiple
+                options={requestTypes}
+                getOptionLabel={(o) => o.name || ''}
+                isOptionEqualToValue={(opt, val) => String(opt.id) === String(val.id)}
+                value={
+                  formData.requestItems.length > 0
+                    ? requestTypes.filter(x => 
+                        formData.requestItems.some(item => item.request_type_id === x.id)
+                      )
+                    : []
+                }
+                onChange={(e, newValue) => handleRequestTypesChange(newValue)}
+                renderInput={(params) => (
+                  <TextField 
+                    {...params} 
+                    label="Select Request Types *" 
+                    variant="outlined" 
+                    required 
+                    placeholder="Select one or more request types"
+                    fullWidth
+                  />
+                )}
+                renderTags={(value, getTagProps) =>
+                  value.map((option, index) => (
+                    <Chip
+                      label={option.name}
+                      {...getTagProps({ index })}
+                      key={option.id}
+                      sx={{ mb: 0.5 }}
+                    />
+                  ))
+                }
+                disabled={modalMode === 'view'}
+                fullWidth
+              />
+            </Box>
+
+            {/* Individual Price Inputs */}
+            {formData.requestItems.length > 0 && (
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 500, color: 'text.secondary' }}>
+                  Set Prices for Each Request Type
+                </Typography>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {formData.requestItems.map((item, idx) => {
+                    const requestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                    const originalItem = selectedRow?.requestItems?.find(ri => ri.request_type_id === item.request_type_id);
+                    return (
+                      <Paper
+                        key={item.request_type_id}
+                        elevation={0}
+                        sx={{
+                          p: 2,
+                          border: '1px solid #e0e0e0',
+                          borderRadius: 1,
+                          backgroundColor: '#fafafa',
+                          '&:hover': {
+                            backgroundColor: '#f5f5f5',
+                          },
+                        }}
+                      >
+                        <Grid container spacing={2} alignItems="center">
+                          <Grid item xs={12} sm={4}>
+                            <Typography variant="body2" sx={{ fontWeight: 500, color: 'text.primary', mb: 0.5 }}>
+                              {requestType?.name || 'Unknown Request Type'}
+                            </Typography>
+                            {originalItem && (
+                              <Box sx={{ mt: 1 }}>
+                                <Typography variant="caption" color="text.secondary" display="block">
+                                  From: {originalItem.from_date || 'N/A'}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" display="block">
+                                  To: {originalItem.to_date || 'Active'}
+                                </Typography>
+                              </Box>
+                            )}
+                          </Grid>
+                          <Grid item xs={10} sm={7}>
+                            <TextField
+                              label="Price"
+                              type="number"
+                              value={item.price}
+                              onChange={(e) => handlePriceChange(item.request_type_id, e.target.value)}
+                              variant="outlined"
+                              size="small"
+                              fullWidth
+                              inputProps={{ step: '0.01', min: '0' }}
+                              disabled={modalMode === 'view'}
+                              required
+                              error={modalMode !== 'view' && (!item.price || item.price === '')}
+                              helperText={
+                                modalMode !== 'view' && (!item.price || item.price === '')
+                                  ? 'Price is required'
+                                  : ''
+                              }
+                            />
+                          </Grid>
+                          {modalMode !== 'view' && (
+                            <Grid item xs={2} sm={1}>
+                              <IconButton
+                                onClick={() => handleRemoveItem(item.request_type_id)}
+                                color="error"
+                                size="small"
+                                sx={{ 
+                                  '&:hover': { 
+                                    backgroundColor: 'error.light',
+                                    color: 'error.contrastText'
+                                  } 
+                                }}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Grid>
+                          )}
+                        </Grid>
+                      </Paper>
+                    );
+                  })}
+                </Box>
+              </Box>
             )}
           </Box>
         </DialogContent>
-        <DialogActions sx={{ p: 2, gap: 1 }}>
-          <Button onClick={() => setModalOpen(false)} variant="outlined">Close</Button>
+        <DialogActions sx={{ p: 3, pt: 2, borderTop: '1px solid #e0e0e0', gap: 1 }}>
+          <Button 
+            onClick={() => setModalOpen(false)} 
+            variant="outlined"
+            sx={{ minWidth: 100 }}
+          >
+            Close
+          </Button>
           {(modalMode === 'create' || modalMode === 'edit') && (
-            <Button onClick={onSubmit} variant="contained" disabled={isLoading}>
+            <Button 
+              onClick={onSubmit} 
+              variant="contained" 
+              disabled={isLoading}
+              sx={{ minWidth: 100 }}
+            >
               {modalMode === 'create' ? 'Create' : 'Update'}
             </Button>
           )}
