@@ -16,8 +16,6 @@ import {
   Divider,
   InputAdornment,
   Paper,
-  FormControlLabel,
-  Checkbox,
 } from '@mui/material';
 import {
   CheckCircle as ApproveIcon,
@@ -109,9 +107,6 @@ export default function VendorRequests() {
   const [existingSitePhotos, setExistingSitePhotos] = React.useState([]);
   const [existingOldBoardPhotos, setExistingOldBoardPhotos] = React.useState([]);
 
-  // Suggested pricing state
-  const [suggestedPricing, setSuggestedPricing] = React.useState({});
-  const [loadingSuggestedPricing, setLoadingSuggestedPricing] = React.useState({});
 
   // Action confirmation dialogs
   const [approveDialogOpen, setApproveDialogOpen] = React.useState(false);
@@ -173,32 +168,12 @@ export default function VendorRequests() {
     }
   }, [canRead, navigate]);
 
-  // Load dropdown data for edit form
-  const loadDropdownData = React.useCallback(async (dealerCode = null) => {
+  // Load dropdown data for edit form (warranty statuses only - dealer is already in editingRequest)
+  const loadDropdownData = React.useCallback(async () => {
     setLoadingDropdowns(true);
     try {
-      // If we have a dealer code, fetch that specific dealer
-      // Otherwise, fetch the first page of dealers
-      const dealerPromise = dealerCode 
-        ? get(`/api/dealers/code/${dealerCode}`)
-        : get('/api/dealers');
-      
-      const [dealersRes, requestTypesRes, warrantyStatusesRes] = await Promise.all([
-        dealerPromise,
-        get('/api/request-types'),
-        get('/api/warranty-statuses')
-      ]);
-
-      // Handle dealer response - could be single dealer or list
-      if (dealersRes.success) {
-        if (Array.isArray(dealersRes.data)) {
-          setDealers(dealersRes.data);
-        } else {
-          // Single dealer returned - put it in an array
-          setDealers([dealersRes.data]);
-        }
-      }
-      if (requestTypesRes.success) setRequestTypes(requestTypesRes.data);
+      // Only fetch warranty statuses - dealer data is already available in editingRequest.dealer
+      const warrantyStatusesRes = await get('/api/warranty-statuses');
       if (warrantyStatusesRes.success) setWarrantyStatuses(warrantyStatusesRes.data);
     } catch (error) {
       console.error('Error loading dropdown data:', error);
@@ -215,45 +190,83 @@ export default function VendorRequests() {
     }
   }, [get]);
 
+  // Load allowed request types for vendor
+  const loadAllowedRequestTypes = React.useCallback(async (vendorCode) => {
+    if (!vendorCode) {
+      setRequestTypes([]);
+      return;
+    }
+
+    try {
+      // Use vendor_code query parameter (vendorCode is the vendor_code from shopboard request)
+      const response = await get(`/api/vendor-request-pricing/allowed-request-types?vendor_code=${encodeURIComponent(vendorCode)}`);
+      
+      if (response?.success && Array.isArray(response.data)) {
+        setRequestTypes(response.data);
+        if (response.data.length === 0) {
+          toast.info('No allowed request types found for this vendor', {
+            position: "top-right",
+            autoClose: 5000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          });
+        }
+      } else {
+        setRequestTypes([]);
+        toast.warning('Failed to load allowed request types', {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      }
+    } catch (error) {
+      console.error('Error loading allowed request types:', error);
+      setRequestTypes([]);
+      toast.error('Failed to load allowed request types', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    }
+  }, [get]);
+
   // Load dropdown data when edit modal opens
   React.useEffect(() => {
     if (editModalOpen && editingRequest) {
-      // Pass the dealer code to load that specific dealer
-      const dealerCode = editingRequest.dealer?.code || editFormData.dealer_id;
-      loadDropdownData(dealerCode);
-    }
-  }, [editModalOpen, editingRequest, editFormData.dealer_id, loadDropdownData]);
-
-  // Function to fetch suggested pricing for a vendor and request type
-  const fetchSuggestedPricing = React.useCallback(async (vendorCode, requestTypeId, itemIndex) => {
-    if (!vendorCode || !requestTypeId) return;
-    
-    setLoadingSuggestedPricing(prev => ({ ...prev, [itemIndex]: true }));
-    
-    try {
-      const response = await get(`/api/vendor-request-pricing/suggested?vendor_id=${encodeURIComponent(vendorCode)}&request_type_id=${requestTypeId}`);
+      // Load warranty statuses (dealer is already in editingRequest.dealer, no need to fetch)
+      loadDropdownData();
       
-      if (response.success && response.data) {
-        setSuggestedPricing(prev => ({
-          ...prev,
-          [itemIndex]: response.data.lump_sum_price || 0
-        }));
-      } else {
-        setSuggestedPricing(prev => ({
-          ...prev,
-          [itemIndex]: 0
-        }));
+      // Set dealer from editingRequest.dealer (no API call needed)
+      if (editingRequest.dealer) {
+        setDealers([editingRequest.dealer]);
       }
-    } catch (error) {
-      console.error('Error fetching suggested pricing:', error);
-      setSuggestedPricing(prev => ({
-        ...prev,
-        [itemIndex]: 0
-      }));
-    } finally {
-      setLoadingSuggestedPricing(prev => ({ ...prev, [itemIndex]: false }));
+      
+      // Load allowed request types for this vendor
+      const vendorCode = editingRequest.vendor_code || editingRequest.vendor?.code;
+      if (vendorCode) {
+        loadAllowedRequestTypes(vendorCode);
+      } else {
+        setRequestTypes([]);
+        toast.warning('Vendor code not found for this request', {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      }
     }
-  }, [get]);
+  }, [editModalOpen, editingRequest, loadDropdownData, loadAllowedRequestTypes]);
+
 
   // URL state synchronization
   const handlePaginationModelChange = React.useCallback(
@@ -600,7 +613,6 @@ export default function VendorRequests() {
         height: item.height,
         price: item.price,
         price_per_sqft: price_per_sqft,
-        use_suggested_pricing: false // Default to manual pricing
       };
     });
     
@@ -1163,8 +1175,6 @@ export default function VendorRequests() {
     setOldBoardPhotos([]);
     setExistingSitePhotos([]);
     setExistingOldBoardPhotos([]);
-    setSuggestedPricing({});
-    setLoadingSuggestedPricing({});
   };
 
   const handleRefresh = React.useCallback(() => {
@@ -1852,6 +1862,11 @@ export default function VendorRequests() {
                 <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
                   Request Types & Dimensions
                 </Typography>
+                {requestTypes.length === 0 ? (
+                  <Alert severity="info" sx={{ mt: 2 }}>
+                    No allowed request types found for this vendor. Please contact administrator to add request types for this vendor.
+                  </Alert>
+                ) : null}
                 {editFormData.request_items?.map((item, index) => (
                   <Paper key={index} variant="outlined" sx={{ p: 2, mb: 1.5, borderRadius: 2, backgroundColor: '#fafafa' }}>
                     <Autocomplete
@@ -1860,13 +1875,24 @@ export default function VendorRequests() {
                       value={requestTypes.find(rt => rt.id === item.request_type_id) || null}
                       onChange={(event, newValue) => {
                         const newItems = [...editFormData.request_items];
-                        newItems[index] = { ...newItems[index], request_type_id: newValue?.id || '' };
+                        const selectedRequestType = requestTypes.find(rt => rt.id === newValue?.id);
+                        // Set price_per_sqft from API response (price field)
+                        const pricePerSqft = selectedRequestType?.price || '';
+                        newItems[index] = { 
+                          ...newItems[index], 
+                          request_type_id: newValue?.id || '',
+                          price_per_sqft: pricePerSqft,
+                          // Recalculate price if width and height are already set
+                          price: (() => {
+                            const widthFt = parseFloat(newItems[index].width) || 0;
+                            const heightFt = parseFloat(newItems[index].height) || 0;
+                            const areaSqft = widthFt * heightFt;
+                            const pricePerSqftNum = parseFloat(pricePerSqft) || 0;
+                            const total = areaSqft * pricePerSqftNum;
+                            return isNaN(total) ? '' : Number(total.toFixed(2));
+                          })()
+                        };
                         handleEditFormChange('request_items', newItems);
-                        
-                        // Fetch suggested pricing when request type is selected
-                        if (newValue?.id && editingRequest?.vendor_code) {
-                          fetchSuggestedPricing(editingRequest.vendor_code, newValue.id, index);
-                        }
                       }}
                       renderInput={(params) => (
                         <TextField
@@ -1877,207 +1903,92 @@ export default function VendorRequests() {
                           required
                         />
                       )}
-                      disabled={isLoading}
+                      disabled={isLoading || requestTypes.length === 0}
                       sx={{ mb: 1.5 }}
                     />
                     
-                    {/* Suggested Price Checkbox */}
-                    {item.request_type_id && (
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            checked={item.use_suggested_pricing || false}
-                            onChange={(e) => {
-                              const newItems = [...editFormData.request_items];
-                              newItems[index] = { ...newItems[index], use_suggested_pricing: e.target.checked };
-                              
-                              // If switching to suggested pricing, set width/height to 0 and use suggested price
-                              if (e.target.checked) {
-                                newItems[index].width = '0';
-                                newItems[index].height = '0';
-                                newItems[index].price_per_sqft = '';
-                                newItems[index].price = suggestedPricing[index] || 0;
-                              }
-                              
-                              handleEditFormChange('request_items', newItems);
-                            }}
-                            disabled={isLoading}
-                          />
-                        }
-                        label={
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography variant="body2">Suggested Price</Typography>
-                            {loadingSuggestedPricing[index] && (
-                              <Typography variant="caption" sx={{ color: '#666' }}>
-                                (Loading...)
-                              </Typography>
-                            )}
-                            {!loadingSuggestedPricing[index] && suggestedPricing[index] !== undefined && (
-                              <Typography variant="caption" sx={{ color: suggestedPricing[index] > 0 ? 'success.main' : 'error.main' }}>
-                                ({suggestedPricing[index] > 0 ? `₨${suggestedPricing[index]}` : 'No price available'})
-                              </Typography>
-                            )}
-                          </Box>
-                        }
-                        sx={{ mb: 1.5 }}
-                      />
-                    )}
+                    <TextField
+                      label="Width (ft)"
+                      type="number"
+                      value={item.width || ''}
+                      onChange={(e) => {
+                        const newItems = [...editFormData.request_items];
+                        newItems[index] = { ...newItems[index], width: e.target.value };
+                        const widthFt = parseFloat(newItems[index].width) || 0;
+                        const heightFt = parseFloat(newItems[index].height) || 0;
+                        const areaSqft = widthFt * heightFt;
+                        const pricePerSqft = parseFloat(newItems[index].price_per_sqft) || 0;
+                        const total = areaSqft * pricePerSqft;
+                        newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
+                        handleEditFormChange('request_items', newItems);
+                      }}
+                      variant="outlined"
+                      disabled={isLoading}
+                      sx={{ mr: 1.5, minWidth: 140 }}
+                      inputProps={{ step: '0.01', min: '0' }}
+                    />
+                    <TextField
+                      label="Height (ft)"
+                      type="number"
+                      value={item.height || ''}
+                      onChange={(e) => {
+                        const newItems = [...editFormData.request_items];
+                        newItems[index] = { ...newItems[index], height: e.target.value };
+                        const widthFt = parseFloat(newItems[index].width) || 0;
+                        const heightFt = parseFloat(newItems[index].height) || 0;
+                        const areaSqft = widthFt * heightFt;
+                        const pricePerSqft = parseFloat(newItems[index].price_per_sqft) || 0;
+                        const total = areaSqft * pricePerSqft;
+                        newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
+                        handleEditFormChange('request_items', newItems);
+                      }}
+                      variant="outlined"
+                      disabled={isLoading}
+                      sx={{ mr: 1.5, minWidth: 140 }}
+                      inputProps={{ step: '0.01', min: '0' }}
+                    />
+                    <TextField
+                      label="Area (ft²)"
+                      type="number"
+                      value={(() => {
+                        const widthFt = parseFloat(item.width) || 0;
+                        const heightFt = parseFloat(item.height) || 0;
+                        const areaSqft = widthFt * heightFt;
+                        return areaSqft > 0 ? areaSqft.toFixed(2) : '';
+                      })()}
+                      variant="outlined"
+                      disabled
+                      sx={{ mr: 1.5, minWidth: 160 }}
+                      helperText="Auto"
+                    />
+                    <TextField
+                      label="Price per ft²"
+                      type="number"
+                      value={item.price_per_sqft || ''}
+                      variant="outlined"
+                      disabled
+                      sx={{ mr: 1.5, minWidth: 180 }}
+                      InputProps={{ startAdornment: <InputAdornment position="start">₨</InputAdornment> }}
+                      helperText="From vendor pricing"
+                    />
                     
-                    {/* Manual Pricing Fields - Only show when not using suggested pricing */}
-                    {!item.use_suggested_pricing && (
-                      <>
-                        <TextField
-                          label="Width (ft)"
-                          type="number"
-                          value={item.width || ''}
-                          onChange={(e) => {
-                            const newItems = [...editFormData.request_items];
-                            newItems[index] = { ...newItems[index], width: e.target.value };
-                            const widthFt = parseFloat(newItems[index].width) || 0;
-                            const heightFt = parseFloat(newItems[index].height) || 0;
-                            const areaSqft = widthFt * heightFt;
-                            const pricePerSqft = parseFloat(newItems[index].price_per_sqft) || 0;
-                            const total = areaSqft * pricePerSqft;
-                            newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
-                            handleEditFormChange('request_items', newItems);
-                          }}
-                          variant="outlined"
-                          disabled={isLoading}
-                          sx={{ mr: 1.5, minWidth: 140 }}
-                          inputProps={{ step: '0.01', min: '0' }}
-                        />
-                        <TextField
-                          label="Height (ft)"
-                          type="number"
-                          value={item.height || ''}
-                          onChange={(e) => {
-                            const newItems = [...editFormData.request_items];
-                            newItems[index] = { ...newItems[index], height: e.target.value };
-                            const widthFt = parseFloat(newItems[index].width) || 0;
-                            const heightFt = parseFloat(newItems[index].height) || 0;
-                            const areaSqft = widthFt * heightFt;
-                            const pricePerSqft = parseFloat(newItems[index].price_per_sqft) || 0;
-                            const total = areaSqft * pricePerSqft;
-                            newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
-                            handleEditFormChange('request_items', newItems);
-                          }}
-                          variant="outlined"
-                          disabled={isLoading}
-                          sx={{ mr: 1.5, minWidth: 140 }}
-                          inputProps={{ step: '0.01', min: '0' }}
-                        />
-                        <TextField
-                          label="Area (ft²)"
-                          type="number"
-                          value={(() => {
-                            const widthFt = parseFloat(item.width) || 0;
-                            const heightFt = parseFloat(item.height) || 0;
-                            const areaSqft = widthFt * heightFt;
-                            return areaSqft > 0 ? areaSqft.toFixed(2) : '';
-                          })()}
-                          variant="outlined"
-                          disabled
-                          sx={{ mr: 1.5, minWidth: 160 }}
-                          helperText="Auto"
-                        />
-                        <TextField
-                          label="Price per ft² *"
-                          type="number"
-                          value={item.price_per_sqft || ''}
-                          onChange={(e) => {
-                            const newItems = [...editFormData.request_items];
-                            newItems[index] = { ...newItems[index], price_per_sqft: e.target.value };
-                            const widthFt = parseFloat(newItems[index].width) || 0;
-                            const heightFt = parseFloat(newItems[index].height) || 0;
-                            const areaSqft = widthFt * heightFt;
-                            const pricePerSqft = parseFloat(e.target.value) || 0;
-                            const total = areaSqft * pricePerSqft;
-                            newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
-                            handleEditFormChange('request_items', newItems);
-                          }}
-                          variant="outlined"
-                          disabled={isLoading}
-                          sx={{ mr: 1.5, minWidth: 180 }}
-                          inputProps={{
-                            step: "0.01",
-                            min: "0"
-                          }}
-                          InputProps={{ startAdornment: <InputAdornment position="start">₨</InputAdornment> }}
-                          helperText="per square foot"
-                        />
-                      </>
-                    )}
-                    
-                    {/* Suggested Pricing Fields - Only show when using suggested pricing */}
-                    {item.use_suggested_pricing && (
-                      <>
-                        <TextField
-                          label="Width (ft)"
-                          type="number"
-                          value="0"
-                          variant="outlined"
-                          disabled
-                          sx={{ mr: 1.5, minWidth: 140 }}
-                          helperText="Auto (Suggested)"
-                        />
-                        <TextField
-                          label="Height (ft)"
-                          type="number"
-                          value="0"
-                          variant="outlined"
-                          disabled
-                          sx={{ mr: 1.5, minWidth: 140 }}
-                          helperText="Auto (Suggested)"
-                        />
-                        <TextField
-                          label="Area (ft²)"
-                          type="number"
-                          value="0"
-                          variant="outlined"
-                          disabled
-                          sx={{ mr: 1.5, minWidth: 160 }}
-                          helperText="Auto (Suggested)"
-                        />
-                        <TextField
-                          label="Price per ft²"
-                          type="text"
-                          value="N/A"
-                          variant="outlined"
-                          disabled
-                          sx={{ mr: 1.5, minWidth: 180 }}
-                          helperText="Suggested pricing"
-                        />
-                      </>
-                    )}
-                    
-                    {/* Total Cost Field - Always shown, editable when using suggested pricing */}
+                    {/* Total Cost Field - Always shown, calculated automatically */}
                     <TextField
                       label="Total Cost"
                       type="number"
                       value={(() => {
-                        if (item.use_suggested_pricing) {
-                          return item.price || suggestedPricing[index] || 0;
-                        } else {
-                          const widthFt = parseFloat(item.width) || 0;
-                          const heightFt = parseFloat(item.height) || 0;
-                          const areaSqft = widthFt * heightFt;
-                          const pricePerSqft = parseFloat(item.price_per_sqft) || 0;
-                          const total = areaSqft * pricePerSqft;
-                          return total > 0 ? total.toFixed(2) : '';
-                        }
+                        const widthFt = parseFloat(item.width) || 0;
+                        const heightFt = parseFloat(item.height) || 0;
+                        const areaSqft = widthFt * heightFt;
+                        const pricePerSqft = parseFloat(item.price_per_sqft) || 0;
+                        const total = areaSqft * pricePerSqft;
+                        return total > 0 ? total.toFixed(2) : '';
                       })()}
-                      onChange={(e) => {
-                        if (item.use_suggested_pricing) {
-                          const newItems = [...editFormData.request_items];
-                          newItems[index] = { ...newItems[index], price: e.target.value };
-                          handleEditFormChange('request_items', newItems);
-                        }
-                      }}
                       variant="outlined"
-                      disabled={isLoading || !item.use_suggested_pricing}
+                      disabled
                       sx={{ minWidth: 180 }}
                       InputProps={{ startAdornment: <InputAdornment position="start">₨</InputAdornment> }}
-                      helperText={item.use_suggested_pricing ? "Editable (Suggested)" : "Area × price"}
+                      helperText="Area × price per ft²"
                     />
                     
                     <IconButton
@@ -2095,14 +2006,19 @@ export default function VendorRequests() {
                 <Button
                   variant="outlined"
                   onClick={() => {
-                    const newItems = [...(editFormData.request_items || []), { request_type_id: '', width: '', height: '', price: '', price_per_sqft: '', use_suggested_pricing: false }];
+                    const newItems = [...(editFormData.request_items || []), { request_type_id: '', width: '', height: '', price: '', price_per_sqft: '' }];
                     handleEditFormChange('request_items', newItems);
                   }}
-                  disabled={isLoading}
+                  disabled={isLoading || requestTypes.length === 0}
                   startIcon={<AddIcon />}
                 >
                   Add Request Type
                 </Button>
+                {requestTypes.length === 0 && (
+                  <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic', mt: 1 }}>
+                    Cannot add request types - no allowed request types available for this vendor
+                  </Typography>
+                )}
                 {/* Overall Total Cost (below items) */}
                 <Box sx={{ mt: 1.5, p: 2, borderRadius: 2, backgroundColor: '#f0f7ff', border: '1px solid #d0e6ff' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
@@ -2114,18 +2030,13 @@ export default function VendorRequests() {
                       value={(() => {
                         if (!editFormData.request_items || !Array.isArray(editFormData.request_items)) return '0.00';
                         const total = editFormData.request_items.reduce((sum, it) => {
-                          if (it.use_suggested_pricing) {
-                            // For suggested pricing, use the price field directly
-                            return sum + (parseFloat(it.price) || 0);
-                          } else {
-                            // For manual pricing, calculate area × price_per_sqft
-                            const widthFt = parseFloat(it.width) || 0;
-                            const heightFt = parseFloat(it.height) || 0;
-                            const areaSqft = widthFt * heightFt;
-                            const pricePerSqft = parseFloat(it.price_per_sqft) || 0;
-                            const itemTotal = areaSqft * pricePerSqft;
-                            return sum + (isNaN(itemTotal) ? 0 : itemTotal);
-                          }
+                          // Calculate area × price_per_sqft for each item
+                          const widthFt = parseFloat(it.width) || 0;
+                          const heightFt = parseFloat(it.height) || 0;
+                          const areaSqft = widthFt * heightFt;
+                          const pricePerSqft = parseFloat(it.price_per_sqft) || 0;
+                          const itemTotal = areaSqft * pricePerSqft;
+                          return sum + (isNaN(itemTotal) ? 0 : itemTotal);
                         }, 0);
                         return total.toFixed(2);
                       })()}
