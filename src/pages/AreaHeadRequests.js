@@ -2836,6 +2836,24 @@ export default function AreaHeadRequests() {
     return fields;
   };
 
+  // Helper function to get vendor name from request data
+  // Backend should include vendor information in the shopboard request response
+  const getVendorName = React.useCallback((row) => {
+    // Check if vendor object exists in the response (backend should include this)
+    if (row.vendor && row.vendor.card_name) {
+      return row.vendor.card_name;
+    }
+    // Fallback: check if vendor_name exists directly
+    if (row.vendor_name) {
+      return row.vendor_name;
+    }
+    // If vendor_code exists but no vendor info, show "Not Assigned"
+    if (row.vendor_code) {
+      return 'Not Assigned';
+    }
+    return 'Not Assigned';
+  }, []);
+
   // Column definitions for shopboard requests (showing only 4 key fields)
   const columns = React.useMemo(
     () => {
@@ -2879,23 +2897,68 @@ export default function AreaHeadRequests() {
           field: 'id', 
           headerName: 'Request ID',
           width: 100,
+          align: 'left',
+          headerAlign: 'left',
+          renderCell: (params) => {
+            return (
+              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                <Typography variant="body2">
+                  {params.value}
+                </Typography>
+              </Box>
+            );
+          },
       },
       {
         field: 'dealer_name',
         headerName: 'Dealer Name',
-        width: 200,
+        minWidth: 200,
+        align: 'left',
+        headerAlign: 'left',
         renderCell: (params) => {
           const dealer = params.row.dealer;
-          return dealer ? dealer.name : 'N/A';
+          return (
+            <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+              <Typography variant="body2">
+                {dealer ? dealer.name : 'N/A'}
+              </Typography>
+            </Box>
+          );
         },
       },
       {
         field: 'dealer_code',
         headerName: 'Dealer Code',
         width: 150,
+        align: 'left',
+        headerAlign: 'left',
         renderCell: (params) => {
           const dealer = params.row.dealer;
-          return dealer ? dealer.code : 'N/A';
+          return (
+            <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+              <Typography variant="body2">
+                {dealer ? dealer.code : 'N/A'}
+              </Typography>
+            </Box>
+          );
+        },
+      },
+
+      {
+        field: 'vendor_name',
+        headerName: 'Vendor Name',
+        width: 200,
+        align: 'left',
+        headerAlign: 'left',
+        renderCell: (params) => {
+          const vendorName = getVendorName(params.row);
+          return (
+            <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+              <Typography variant="body2">
+                {vendorName}
+              </Typography>
+            </Box>
+          );
         },
       },
       {
@@ -2916,9 +2979,43 @@ export default function AreaHeadRequests() {
         },
       },
       {
+        field: 'created_at',
+        headerName: 'Created At',
+        minWidth: 170,
+        align: 'left',
+        headerAlign: 'left',
+        renderCell: (params) => {
+          const createdAt = params.value;
+          if (!createdAt) return 'N/A';
+          
+          try {
+            const date = new Date(createdAt);
+            return (
+              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                <Typography variant="body2">
+                  {date.toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                  }) + ' ' + date.toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                  })}
+                </Typography>
+              </Box>
+            );
+          } catch (error) {
+            return 'N/A';
+          }
+        },
+      },
+      {
         field: 'status',
         headerName: 'Status',
-        width: 120,
+        width: 100,
+        align: 'left',
+        headerAlign: 'left',
         renderCell: (params) => {
           const status = params.value;
           let displayStatus = status || 'Not Decided';
@@ -2953,12 +3050,14 @@ export default function AreaHeadRequests() {
             }
           };
           return (
-            <Chip 
-              label={displayStatus} 
-              variant="filled" 
-              size="small"
-              color={getStatusColor(status)}
-            />
+            <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+              <Chip 
+                label={displayStatus} 
+                variant="filled" 
+                size="small"
+                color={getStatusColor(status)}
+              />
+            </Box>
           );
         },
       },
@@ -3264,7 +3363,7 @@ export default function AreaHeadRequests() {
 
     return baseColumns;
     },
-    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, showSelectionColumn, selectedRequests, rowsState.rows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleViewInvoice, handleSelectAll, handleSelectRequest, handleBulkReleasePayment],
+    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, showSelectionColumn, selectedRequests, rowsState.rows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleViewInvoice, handleSelectAll, handleSelectRequest, handleBulkReleasePayment, getVendorName],
   );
 
   const pageTitle = 'Area Head Requests';
