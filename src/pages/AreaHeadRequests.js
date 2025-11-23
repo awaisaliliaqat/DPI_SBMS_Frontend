@@ -260,32 +260,12 @@ export default function AreaHeadRequests() {
     }
   }, [assignDialogOpen, fetchVendors, requestToAction]);
 
-  // Load dropdown data for edit form
-  const loadDropdownData = React.useCallback(async (dealerCode = null) => {
+  // Load dropdown data for edit form (warranty statuses only - dealer is already in editingRequest)
+  const loadDropdownData = React.useCallback(async () => {
     setLoadingDropdowns(true);
     try {
-      // If we have a dealer code, fetch that specific dealer
-      // Otherwise, fetch the first page of dealers
-      const dealerPromise = dealerCode 
-        ? get(`/api/dealers/code/${dealerCode}`)
-        : get('/api/dealers');
-      
-      const [dealersRes, requestTypesRes, warrantyStatusesRes] = await Promise.all([
-        dealerPromise,
-        get('/api/request-types'),
-        get('/api/warranty-statuses')
-      ]);
-
-      // Handle dealer response - could be single dealer or list
-      if (dealersRes.success) {
-        if (Array.isArray(dealersRes.data)) {
-          setDealers(dealersRes.data);
-        } else {
-          // Single dealer returned - put it in an array
-          setDealers([dealersRes.data]);
-        }
-      }
-      if (requestTypesRes.success) setRequestTypes(requestTypesRes.data);
+      // Only fetch warranty statuses - dealer data is already available in editingRequest.dealer
+      const warrantyStatusesRes = await get('/api/warranty-statuses');
       if (warrantyStatusesRes.success) setWarrantyStatuses(warrantyStatusesRes.data);
     } catch (error) {
       console.error('Error loading dropdown data:', error);
@@ -302,14 +282,82 @@ export default function AreaHeadRequests() {
     }
   }, [get]);
 
+  // Load allowed request types for vendor
+  const loadAllowedRequestTypes = React.useCallback(async (vendorCode) => {
+    if (!vendorCode) {
+      setRequestTypes([]);
+      return;
+    }
+
+    try {
+      // Use vendor_code query parameter (vendorCode is the vendor_code from shopboard request)
+      const response = await get(`/api/vendor-request-pricing/allowed-request-types?vendor_code=${encodeURIComponent(vendorCode)}`);
+      
+      if (response?.success && Array.isArray(response.data)) {
+        setRequestTypes(response.data);
+        if (response.data.length === 0) {
+          toast.info('No allowed request types found for this vendor', {
+            position: "top-right",
+            autoClose: 5000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          });
+        }
+      } else {
+        setRequestTypes([]);
+        toast.warning('Failed to load allowed request types', {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      }
+    } catch (error) {
+      console.error('Error loading allowed request types:', error);
+      setRequestTypes([]);
+      toast.error('Failed to load allowed request types', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    }
+  }, [get]);
+
   // Load dropdown data when edit modal opens
   React.useEffect(() => {
     if (editModalOpen && editingRequest) {
-      // Pass the dealer code to load that specific dealer
-      const dealerCode = editingRequest.dealer?.code || editFormData.dealer_id;
-      loadDropdownData(dealerCode);
+      // Load warranty statuses (dealer is already in editingRequest.dealer, no need to fetch)
+      loadDropdownData();
+      
+      // Set dealer from editingRequest.dealer (no API call needed)
+      if (editingRequest.dealer) {
+        setDealers([editingRequest.dealer]);
+      }
+      
+      // Load allowed request types for this vendor
+      const vendorCode = editingRequest.vendor_code || editingRequest.vendor?.code;
+      if (vendorCode) {
+        loadAllowedRequestTypes(vendorCode);
+      } else {
+        setRequestTypes([]);
+        toast.warning('Vendor code not found for this request', {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      }
     }
-  }, [editModalOpen, editingRequest, editFormData.dealer_id, loadDropdownData]);
+  }, [editModalOpen, editingRequest, loadDropdownData, loadAllowedRequestTypes]);
 
   // URL state synchronization
   const handlePaginationModelChange = React.useCallback(
@@ -4092,6 +4140,11 @@ export default function AreaHeadRequests() {
                   Request Types & Dimensions
                 </Typography>
                 <Divider sx={{ mb: 2 }} />
+                {requestTypes.length === 0 ? (
+                  <Alert severity="info" sx={{ mt: 2 }}>
+                    No allowed request types found for this vendor. Please contact administrator to add request types for this vendor.
+                  </Alert>
+                ) : null}
                 {editFormData.request_items?.map((item, index) => (
                   <Paper key={index} variant="outlined" sx={{ p: 2, mb: 1.5, borderRadius: 2, backgroundColor: '#fafafa' }}>
                     <Autocomplete
@@ -4112,7 +4165,7 @@ export default function AreaHeadRequests() {
                           required
                         />
                       )}
-                      disabled={isLoading}
+                      disabled={isLoading || requestTypes.length === 0}
                       sx={{ mb: 1.5 }}
                     />
                     <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
@@ -4229,12 +4282,17 @@ export default function AreaHeadRequests() {
                       const newItems = [...(editFormData.request_items || []), { request_type_id: '', width: '', height: '', price: '', price_per_sqft: '' }];
                       handleEditFormChange('request_items', newItems);
                     }}
-                    disabled={isLoading}
+                    disabled={isLoading || requestTypes.length === 0}
                     startIcon={<AddIcon />}
                   >
                     Add Request Type
                   </Button>
                 </Box>
+                {requestTypes.length === 0 && (
+                  <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic', mt: 1 }}>
+                    Cannot add request types - no allowed request types available for this vendor
+                  </Typography>
+                )}
                 <Box sx={{ mt: 2, p: 2, borderRadius: 2, backgroundColor: '#f0f7ff', border: '1px solid #d0e6ff' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
                     <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'primary.main' }}>

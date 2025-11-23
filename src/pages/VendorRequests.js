@@ -1225,6 +1225,38 @@ export default function VendorRequests() {
           );
         },
       },
+      {
+        field: 'created_at',
+        headerName: 'Created At',
+        minWidth: 170,
+        align: 'left',
+        headerAlign: 'left',
+        renderCell: (params) => {
+          const createdAt = params.value;
+          if (!createdAt) return 'N/A';
+          
+          try {
+            const date = new Date(createdAt);
+            return (
+              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                <Typography variant="body2">
+                  {date.toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                  }) + ' ' + date.toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                  })}
+                </Typography>
+              </Box>
+            );
+          } catch (error) {
+            return 'N/A';
+          }
+        },
+      },
       // {
       //   field: 'requestItems',
       //   headerName: 'Request Types',
