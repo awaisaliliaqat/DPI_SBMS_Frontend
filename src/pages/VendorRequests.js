@@ -596,15 +596,17 @@ export default function VendorRequests() {
     
     setEditingRequest(requestData);
     
-    // Process request items to calculate price_per_sqft from existing data
+    // Process request items - use stored price_per_square_foot if available, otherwise calculate
     const processedItems = (requestData.requestItems || []).map(item => {
       const widthFt = parseFloat(item.width) || 0;
       const heightFt = parseFloat(item.height) || 0;
       const areaSqft = widthFt * heightFt;
       const price = parseFloat(item.price) || 0;
       
-      // Calculate price per sqft from existing data
-      const price_per_sqft = areaSqft > 0 ? (price / areaSqft).toFixed(2) : '';
+      // Use stored price_per_square_foot from backend if available, otherwise calculate
+      const price_per_sqft = item.price_per_square_foot 
+        ? parseFloat(item.price_per_square_foot).toFixed(2)
+        : (areaSqft > 0 ? (price / areaSqft).toFixed(2) : '');
       
       return {
         id: item.id, // Include the item ID to preserve it
@@ -775,7 +777,7 @@ export default function VendorRequests() {
         updated_by: user.id
       });
 
-      toast.success(`Request #${requestToAction.id} approved successfully!`, {
+      toast.success(`Request #${requestToAction.id} quotation sent successfully!`, {
         position: "top-right",
         autoClose: 3000,
         hideProgressBar: false,
@@ -2333,7 +2335,7 @@ export default function VendorRequests() {
               minWidth: '120px'
             }}
           >
-            {isLoading ? 'Updating...' : 'Update Pricing'}
+            {isLoading ? 'Updating...' : 'Update Request'}
           </Button>
         </DialogActions>
       </Dialog>
