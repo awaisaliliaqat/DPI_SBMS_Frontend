@@ -790,19 +790,120 @@ export default function AreaHeadRequests() {
     }
   }, [selectedRequest, manualApprovalReason, manualApprovalFile, post, loadRequests]);
 
-  // Bulk send to CEO handler (no API yet)
-  const handleBulkSendToCEO = React.useCallback(() => {
+  // Bulk send to CEO handler
+  const handleBulkSendToCEO = React.useCallback(async () => {
     if (!selectedRequests || selectedRequests.length === 0) return;
-    console.log('Send to CEO for approval for selected requests:', selectedRequests);
-    toast.info(`Send to CEO for ${selectedRequests.length} selected request(s)`, {
-      position: "top-right",
-      autoClose: 3000,
-      hideProgressBar: false,
-      closeOnClick: true,
-      pauseOnHover: true,
-      draggable: true,
-    });
-  }, [selectedRequests]);
+    
+    // Get selected request objects
+    const selectedRequestObjects = rowsState.rows.filter(row => selectedRequests.includes(row.id));
+    
+    // Filter to only ceo_pending status requests (as per button logic)
+    const ceoPendingRequests = selectedRequestObjects.filter(req => req.status === 'ceo_pending');
+    
+    if (ceoPendingRequests.length === 0) {
+      toast.warning('Please select requests with "CEO Pending" status to send for approval', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      // Generate view tokens and reject tokens for each request
+      const requestsWithTokens = await Promise.all(
+        ceoPendingRequests.map(async (request) => {
+          try {
+            const [viewTokenResponse, rejectTokenResponse] = await Promise.all([
+              get(`/api/shopboard-requests/${request.id}/generate-view-token`),
+              get(`/api/shopboard-requests/${request.id}/generate-reject-token`)
+            ]);
+            return {
+              ...request,
+              viewToken: viewTokenResponse.success ? viewTokenResponse.data.token : null,
+              rejectToken: rejectTokenResponse.success ? rejectTokenResponse.data.token : null
+            };
+          } catch (error) {
+            console.error(`Error generating tokens for request ${request.id}:`, error);
+            return {
+              ...request,
+              viewToken: null,
+              rejectToken: null
+            };
+          }
+        })
+      );
+      
+      // Transform requests to email template format
+      const emailRequests = requestsWithTokens.map(request => ({
+        id: request.id,
+        dealerName: request.dealer?.name || 'N/A',
+        dealerRegion: request.dealer?.district || 'N/A',
+        totalCost: request.total_cost || 0,
+        viewToken: request.viewToken, // Include token for URL generation
+        rejectToken: request.rejectToken, // Include reject token for URL generation
+        requestItems: (request.requestItems || []).map(item => ({
+          requestType: {
+            name: `${item.requestType?.name || 'N/A'}(${item.width || 'N/A'} x ${item.height || 'N/A'})`
+          },
+          width: item.width,
+          height: item.height
+        }))
+      }));
+      
+      // Prepare email template data
+      const templateData = {
+        ceoName: 'CEO Name',
+        senderName: 'Marketing Team',
+        senderDesignation: 'Marketing Manager',
+        department: 'Marketing Department',
+        baseUrl: window.location.origin || 'http://localhost:3000',
+        backendUrl: BASE_URL, // Backend API URL for reject endpoint
+        requests: emailRequests
+      };
+      
+      // Send email
+      const emailResponse = await post('/api/email/shopboard-approval', {
+        to: 'ahmadraza46789@gmail.com', // Hardcoded email as per requirement
+        subject: 'Shop Board Request - Approval Required',
+        templateData: templateData
+      });
+      
+      if (emailResponse.success) {
+        toast.success(`Email sent successfully to CEO for ${ceoPendingRequests.length} request(s)!`, {
+          position: "top-right",
+          autoClose: 3000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+        
+        // Clear selection and refresh data
+        setSelectedRequests([]);
+        loadRequests();
+      } else {
+        throw new Error(emailResponse.message || 'Failed to send email');
+      }
+    } catch (error) {
+      console.error('Error sending email to CEO:', error);
+      toast.error(`Failed to send email: ${error.message}`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedRequests, rowsState.rows, post, loadRequests]);
 
   // Bulk release payment handler
   const handleBulkReleasePayment = React.useCallback(async () => {
@@ -1632,11 +1733,6 @@ export default function AreaHeadRequests() {
     if (a instanceof Date) a = a.toISOString();
     if (b instanceof Date) b = b.toISOString();
     return a === b;
-  };
-  const shouldShowField = (log, prevLog, key) => {
-    if (!log || !log.main_changes) return false;
-    if (log.action !== 'CURRENT' || !prevLog || !prevLog.main_changes) return true;
-    return !valuesEqual(log.main_changes[key], prevLog.main_changes[key]);
   };
 
   const cancelSendToCEO = () => {
@@ -3093,6 +3189,8 @@ export default function AreaHeadRequests() {
               case 'payment_released': return 'success';
               case 'payment successful': return 'success';
               case 'not decided': return 'warning';
+              case 'rejected': return 'error';
+              case 'manual_approval': return 'warning';
               case null:
               case undefined:
               case '': return 'warning';

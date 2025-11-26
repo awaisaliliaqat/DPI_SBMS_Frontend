@@ -1,5 +1,5 @@
 import React from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, useNavigate } from 'react-router-dom';
 import SignIn from '../Signin';
 import { useAuth } from '../auth/AuthContext';
 import { AuthProvider } from '../auth/AuthContext';
@@ -8,11 +8,11 @@ import DashboardLayout from '../dashboard/components/DashboardLayout';
 // import UserManagement from '../pages/UserManagement';
 import RoleManagement from '../pages/Role';
 import UserManagement from '../pages/UserManagement';
-import FeatureManagement from '../pages/Feature';
 import AreaHeadRequests from '../pages/AreaHeadRequests';
 import VendorRequests from '../pages/VendorRequests';
 import RequestItemsAdjustment from '../pages/RequestItemsAdjustment';
 import VendorAssignment from '../pages/VendorAssignment';
+import RequestPrintView from '../pages/RequestPrintView';
 // import Reports from '../pages/Reports';
 // import Settings from '../pages/Settings';
 
@@ -50,6 +50,9 @@ const AppRoutesContent = () => {
   return (
     <Routes>
       <Route path="/signin" element={<SignIn />} />
+      
+      {/* Public route for request print view (with token validation) */}
+      <Route path="/request-view/:id" element={<RequestPrintView />} />
       
       {/* Dashboard Layout Route - contains navbar and sidebar */}
       <Route 
