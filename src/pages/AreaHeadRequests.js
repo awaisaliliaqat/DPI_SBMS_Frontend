@@ -48,6 +48,11 @@ import DynamicModal from '../components/DynamicModel';
 import InvoiceViewer from '../components/InvoiceViewer';
 import RejectInvoiceModal from '../components/RejectInvoiceModal';
 import { BASE_URL } from "../constants/Constants";
+import { 
+  SHOPBOARD_REQUEST_STATUS, 
+  getStatusDisplayName, 
+  getStatusColor as getStatusColorHelper 
+} from "../constants/ShopboardRequestStatus";
 import { useApi } from '../hooks/useApi';
 import jsPDF from 'jspdf';
 
@@ -3164,46 +3169,25 @@ export default function AreaHeadRequests() {
         headerAlign: 'left',
         renderCell: (params) => {
           const status = params.value;
-          let displayStatus = status || 'Not Decided';
+          let displayStatus = getStatusDisplayName(status);
           
           // Display "quotation sent" as "quotation received" on Area Head page
-          if (status === 'quotation sent') {
-            displayStatus = 'quotation received';
+          if (status === SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT) {
+            displayStatus = 'Quotation Received';
           }
           
           // Display "invoice_sent" as "Invoice Received" on Area Head page
-          if (status === 'invoice_sent') {
+          if (status === SHOPBOARD_REQUEST_STATUS.INVOICE_SENT) {
             displayStatus = 'Invoice Received';
           }
           
-          const getStatusColor = (status) => {
-            switch (status) {
-              case 'processing': return 'success';
-              case 'review requested': return 'error';
-              case 'rfq not accepted': return 'error';
-              case 'Rfq': return 'info';
-              case 'quotation sent': return 'secondary';
-              case 'invoice_sent': return 'primary';
-              case 'invoice rejected': return 'error';
-              case 'Submitted for Payment': return 'info';
-              case 'payment_released': return 'success';
-              case 'payment successful': return 'success';
-              case 'not decided': return 'warning';
-              case 'rejected': return 'error';
-              case 'manual_approval': return 'warning';
-              case null:
-              case undefined:
-              case '': return 'warning';
-              default: return 'default';
-            }
-          };
           return (
             <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
               <Chip 
                 label={displayStatus} 
                 variant="filled" 
                 size="small"
-                color={getStatusColor(status)}
+                color={getStatusColorHelper(status)}
               />
             </Box>
           );

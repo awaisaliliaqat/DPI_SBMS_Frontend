@@ -39,6 +39,11 @@ import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
 import { BASE_URL } from "../constants/Constants";
+import { 
+  SHOPBOARD_REQUEST_STATUS, 
+  getStatusDisplayName, 
+  getStatusColor as getStatusColorHelper 
+} from "../constants/ShopboardRequestStatus";
 import { useApi } from '../hooks/useApi';
 
 const INITIAL_PAGE_SIZE = 10;
@@ -496,7 +501,7 @@ export default function VendorRequests() {
       const formData = new FormData();
 
       // Add basic data - set status to invoice_sent (works for both initial upload and resubmission after rejection)
-      formData.append('status', 'invoice_sent');
+      formData.append('status', SHOPBOARD_REQUEST_STATUS.INVOICE_SENT);
       formData.append('updated_by', user.id);
 
 
@@ -548,7 +553,7 @@ export default function VendorRequests() {
 
       await response.json();
 
-      const isResubmission = selectedInvoiceRequest.status === 'invoice rejected';
+      const isResubmission = selectedInvoiceRequest.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED;
       toast.success(isResubmission ? 'Invoice resubmitted successfully!' : 'Invoice sent successfully!', {
         position: "top-right",
         autoClose: 3000,
@@ -773,7 +778,7 @@ export default function VendorRequests() {
     
     try {
       const response = await patch(`/api/shopboard-requests/${requestToAction.id}`, {
-        status: 'quotation sent',
+        status: SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT,
         updated_by: user.id
       });
 
@@ -811,7 +816,7 @@ export default function VendorRequests() {
     
     try {
       const updateData = {
-        status: 'rfq not accepted',
+        status: SHOPBOARD_REQUEST_STATUS.RFQ_NOT_ACCEPTED,
         assigned_vm: 0,
         updated_by: user.id
       };
@@ -1280,31 +1285,17 @@ export default function VendorRequests() {
         renderCell: (params) => {
           const status = params.value;
           // Map backend statuses to display as 'quotation sent' on vendor page
-          const mappedStatus = (status === 'under_review' || status === 'ceo_pending') ? 'quotation sent' : status;
-          const displayStatus = mappedStatus || 'Not Decided';
-          const getStatusColor = (status) => {
-            switch (status) {
-              case 'processing': return 'success';
-              case 'review requested': return 'error';
-              case 'rfq not accepted': return 'error';
-              case 'Rfq': return 'info';
-              case 'quotation sent': return 'secondary';
-              case 'invoice_sent': return 'primary';
-              case 'invoice rejected': return 'error';
-              case 'payment_released': return 'success';
-              case 'not decided': return 'warning';
-              case null:
-              case undefined:
-              case '': return 'warning';
-              default: return 'default';
-            }
-          };
+          const mappedStatus = (status === SHOPBOARD_REQUEST_STATUS.UNDER_REVIEW || status === SHOPBOARD_REQUEST_STATUS.CEO_PENDING) 
+            ? SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT 
+            : status;
+          let displayStatus = getStatusDisplayName(mappedStatus);
+          
           return (
             <Chip 
               label={displayStatus} 
               variant="filled" 
               size="small"
-              color={getStatusColor(mappedStatus)}
+              color={getStatusColorHelper(mappedStatus)}
             />
           );
         },
@@ -1316,7 +1307,7 @@ export default function VendorRequests() {
         width: 200,
         getActions: (params) => {
           const row = params.row;
-          const isRfqStatus = row.status === 'Rfq';
+          const isRfqStatus = row.status === SHOPBOARD_REQUEST_STATUS.RFQ;
           
           const actions = [];
           
@@ -1388,7 +1379,7 @@ export default function VendorRequests() {
           }
           
           // Show share invoice button for ceo_approval status
-          if (row.status === 'ceo_approval' && canRead) {
+          if (row.status === SHOPBOARD_REQUEST_STATUS.CEO_APPROVAL && canRead) {
             actions.push(
               <GridActionsCellItem
                 key="shareInvoice"
@@ -1401,7 +1392,7 @@ export default function VendorRequests() {
           }
           
           // Show rejection comments and edit invoice button for invoice rejected status
-          if (row.status === 'invoice rejected' && canRead) {
+          if (row.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED && canRead) {
             actions.push(
               <GridActionsCellItem
                 key="viewRejectionComments"
@@ -2919,21 +2910,10 @@ export default function VendorRequests() {
                       Current Status
                     </Typography>
                     <Chip 
-                      label={selectedDetailedRequest.status || 'Not Decided'} 
+                      label={getStatusDisplayName(selectedDetailedRequest.status)} 
                       variant="filled" 
                       size="small"
-                      color={
-                        selectedDetailedRequest.status === 'processing' ? 'success' :
-                        selectedDetailedRequest.status === 'review requested' ? 'error' :
-                        selectedDetailedRequest.status === 'rfq not accepted' ? 'error' :
-                        selectedDetailedRequest.status === 'Rfq' ? 'info' :
-                        selectedDetailedRequest.status === 'quotation sent' ? 'secondary' :
-                        selectedDetailedRequest.status === 'invoice_sent' ? 'primary' :
-                        selectedDetailedRequest.status === 'payment_released' ? 'success' :
-                        selectedDetailedRequest.status === 'ceo_pending' ? 'warning' :
-                        selectedDetailedRequest.status === 'under_review' ? 'info' :
-                        'default'
-                      }
+                      color={getStatusColorHelper(selectedDetailedRequest.status)}
                     />
                   </Box>
                   <Box>
@@ -3003,16 +2983,16 @@ export default function VendorRequests() {
         <DialogTitle 
           id="invoice-dialog-title"
           sx={{ 
-            color: selectedInvoiceRequest?.status === 'invoice rejected' ? 'error.main' : 'primary.main',
+            color: selectedInvoiceRequest?.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED ? 'error.main' : 'primary.main',
             fontWeight: 'bold',
           }}
         >
-          {selectedInvoiceRequest?.status === 'invoice rejected' 
+          {selectedInvoiceRequest?.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED 
             ? `Edit Invoice - Request #${selectedInvoiceRequest?.id}` 
             : `Share Invoice - Request #${selectedInvoiceRequest?.id}`}
         </DialogTitle>
         <DialogContent>
-          {selectedInvoiceRequest?.status === 'invoice rejected' && (
+          {selectedInvoiceRequest?.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED && (
             <Alert severity="warning" sx={{ mb: 2 }}>
               This invoice was rejected. Please review the rejection comments and update the invoice accordingly.
             </Alert>
@@ -3332,7 +3312,7 @@ export default function VendorRequests() {
           <Button 
             onClick={handleInvoiceSubmit}
             variant="contained"
-            color={selectedInvoiceRequest?.status === 'invoice rejected' ? 'error' : 'primary'}
+            color={selectedInvoiceRequest?.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED ? 'error' : 'primary'}
             disabled={invoiceLoading || (
               !invoiceFile && 
               !dealerAcknowledgmentFile && 
@@ -3344,7 +3324,7 @@ export default function VendorRequests() {
           >
             {invoiceLoading 
               ? 'Uploading...' 
-              : selectedInvoiceRequest?.status === 'invoice rejected' 
+              : selectedInvoiceRequest?.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED 
                 ? 'Resubmit Invoice' 
                 : 'Upload Invoice'}
           </Button>
