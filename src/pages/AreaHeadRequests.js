@@ -364,6 +364,7 @@ export default function AreaHeadRequests() {
     }
   }, [editModalOpen, editingRequest, loadDropdownData, loadAllowedRequestTypes]);
 
+
   // URL state synchronization
   const handlePaginationModelChange = React.useCallback(
     (model) => {
@@ -523,25 +524,18 @@ export default function AreaHeadRequests() {
     
     setEditingRequest(requestData);
     
-    // Process request items - use stored price_per_square_foot if available, otherwise calculate
+    // Process request items - preserve all values from database exactly as they are
     const processedItems = (requestData.requestItems || []).map(item => {
-      const widthFt = parseFloat(item.width) || 0;
-      const heightFt = parseFloat(item.height) || 0;
-      const areaSqft = widthFt * heightFt;
-      const price = parseFloat(item.price) || 0;
-      
-      // Use stored price_per_square_foot from backend if available, otherwise calculate
-      const price_per_sqft = item.price_per_square_foot 
-        ? parseFloat(item.price_per_square_foot).toFixed(2)
-        : (areaSqft > 0 ? (price / areaSqft).toFixed(2) : '');
-      
+      // Preserve all values exactly as they come from the database
       return {
         id: item.id, // Include the item ID to preserve it
         request_type_id: item.request_type_id,
-        width: item.width,
-        height: item.height,
+        width: item.width !== null && item.width !== undefined ? String(item.width) : '',
+        height: item.height !== null && item.height !== undefined ? String(item.height) : '',
         price: item.price,
-        price_per_sqft: price_per_sqft
+        price_per_sqft: item.price_per_square_foot !== null && item.price_per_square_foot !== undefined 
+          ? String(item.price_per_square_foot) 
+          : ''
       };
     });
     
@@ -4237,7 +4231,42 @@ export default function AreaHeadRequests() {
                       value={requestTypes.find(rt => rt.id === item.request_type_id) || null}
                       onChange={(event, newValue) => {
                         const newItems = [...editFormData.request_items];
-                        newItems[index] = { ...newItems[index], request_type_id: newValue?.id || '' };
+                        const selectedRequestType = requestTypes.find(rt => rt.id === newValue?.id);
+                        const isManual = selectedRequestType?.request_type === 'manual';
+                        
+                        if (isManual) {
+                          // For manual type: set price_per_sqft from API, keep existing width/height, calculate price
+                          const pricePerSqft = selectedRequestType?.price || '';
+                          const widthFt = parseFloat(newItems[index].width) || 0;
+                          const heightFt = parseFloat(newItems[index].height) || 0;
+                          const areaSqft = widthFt * heightFt;
+                          const pricePerSqftNum = parseFloat(pricePerSqft) || 0;
+                          const total = areaSqft * pricePerSqftNum;
+                          
+                          newItems[index] = { 
+                            ...newItems[index], 
+                            request_type_id: newValue?.id || '',
+                            price_per_sqft: pricePerSqft,
+                            price: isNaN(total) ? '' : Number(total.toFixed(2))
+                          };
+                        } else {
+                          // For fixed type: use existing behavior
+                          const pricePerSqft = selectedRequestType?.price || '';
+                          newItems[index] = { 
+                            ...newItems[index], 
+                            request_type_id: newValue?.id || '',
+                            price_per_sqft: pricePerSqft,
+                            // Recalculate price if width and height are already set
+                            price: (() => {
+                              const widthFt = parseFloat(newItems[index].width) || 0;
+                              const heightFt = parseFloat(newItems[index].height) || 0;
+                              const areaSqft = widthFt * heightFt;
+                              const pricePerSqftNum = parseFloat(pricePerSqft) || 0;
+                              const total = areaSqft * pricePerSqftNum;
+                              return isNaN(total) ? '' : Number(total.toFixed(2));
+                            })()
+                          };
+                        }
                         handleEditFormChange('request_items', newItems);
                       }}
                       renderInput={(params) => (
@@ -4256,9 +4285,10 @@ export default function AreaHeadRequests() {
                       <TextField
                         label="Width (ft)"
                         type="number"
-                        value={item.width || ''}
+                        value={item.width !== undefined && item.width !== null && item.width !== '' ? String(item.width) : ''}
                         onChange={(e) => {
                           const newItems = [...editFormData.request_items];
+                          const selectedRequestType = requestTypes.find(rt => rt.id === newItems[index].request_type_id);
                           newItems[index] = { ...newItems[index], width: e.target.value };
                           const widthFt = parseFloat(newItems[index].width) || 0;
                           const heightFt = parseFloat(newItems[index].height) || 0;
@@ -4276,9 +4306,10 @@ export default function AreaHeadRequests() {
                       <TextField
                         label="Height (ft)"
                         type="number"
-                        value={item.height || ''}
+                        value={item.height !== undefined && item.height !== null && item.height !== '' ? String(item.height) : ''}
                         onChange={(e) => {
                           const newItems = [...editFormData.request_items];
+                          const selectedRequestType = requestTypes.find(rt => rt.id === newItems[index].request_type_id);
                           newItems[index] = { ...newItems[index], height: e.target.value };
                           const widthFt = parseFloat(newItems[index].width) || 0;
                           const heightFt = parseFloat(newItems[index].height) || 0;
@@ -4294,13 +4325,13 @@ export default function AreaHeadRequests() {
                         inputProps={{ step: '0.01', min: '0' }}
                       />
                       <TextField
-                        label="Area (ft²)"
+                        label="Total Area (sqft)"
                         type="number"
                         value={(() => {
                           const widthFt = parseFloat(item.width) || 0;
                           const heightFt = parseFloat(item.height) || 0;
                           const areaSqft = widthFt * heightFt;
-                          return areaSqft > 0 ? areaSqft.toFixed(2) : '';
+                          return areaSqft.toFixed(2);
                         })()}
                         variant="outlined"
                         disabled
@@ -4308,11 +4339,12 @@ export default function AreaHeadRequests() {
                         helperText="Auto"
                       />
                       <TextField
-                        label="Price per ft²"
+                        label="Price Per (sqft)"
                         type="number"
-                        value={item.price_per_sqft || ''}
+                        value={item.price_per_sqft !== undefined && item.price_per_sqft !== null && item.price_per_sqft !== '' ? String(item.price_per_sqft) : ''}
                         onChange={(e) => {
                           const newItems = [...editFormData.request_items];
+                          const selectedRequestType = requestTypes.find(rt => rt.id === newItems[index].request_type_id);
                           newItems[index] = { ...newItems[index], price_per_sqft: e.target.value };
                           const widthFt = parseFloat(newItems[index].width) || 0;
                           const heightFt = parseFloat(newItems[index].height) || 0;
@@ -4327,24 +4359,28 @@ export default function AreaHeadRequests() {
                         sx={{ flex: 1, minWidth: 180 }}
                         inputProps={{ step: '0.01', min: '0' }}
                         InputProps={{ startAdornment: <InputAdornment position="start">₨</InputAdornment> }}
-                        helperText="per square foot"
+                        helperText={(() => {
+                          const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                          return selectedRequestType?.request_type === 'manual' ? 'Editable for manual type' : 'per square foot';
+                        })()}
                       />
                       <TextField
-                        label="Total Cost"
+                        label="Total Cost Per Item"
                         type="number"
                         value={(() => {
+                          // For both manual and fixed: calculate from area × price per sqft
                           const widthFt = parseFloat(item.width) || 0;
                           const heightFt = parseFloat(item.height) || 0;
                           const areaSqft = widthFt * heightFt;
                           const pricePerSqft = parseFloat(item.price_per_sqft) || 0;
                           const total = areaSqft * pricePerSqft;
-                          return total > 0 ? total.toFixed(2) : '';
+                          return isNaN(total) ? '0.00' : total.toFixed(2);
                         })()}
                         variant="outlined"
                         disabled
                         sx={{ minWidth: 180 }}
                         InputProps={{ startAdornment: <InputAdornment position="start">₨</InputAdornment> }}
-                        helperText="Area × price"
+                        helperText="Area × price per ft²"
                       />
                       <IconButton
                         onClick={() => {
@@ -4387,6 +4423,7 @@ export default function AreaHeadRequests() {
                       value={(() => {
                         if (!editFormData.request_items || !Array.isArray(editFormData.request_items)) return '0.00';
                         const total = editFormData.request_items.reduce((sum, it) => {
+                          // For both manual and fixed: calculate area × price_per_sqft
                           const widthFt = parseFloat(it.width) || 0;
                           const heightFt = parseFloat(it.height) || 0;
                           const areaSqft = widthFt * heightFt;
@@ -4450,30 +4487,6 @@ export default function AreaHeadRequests() {
                   shrink: true,
                 }}
                 disabled={isLoading}
-              />
-
-              {/* Total Cost - Auto Calculated */}
-              <TextField
-                label="Total Cost (Auto Calculated)"
-                type="number"
-                value={(() => {
-                  if (!editFormData.request_items || !Array.isArray(editFormData.request_items)) return '0.00';
-                  const total = editFormData.request_items.reduce((sum, item) => {
-                    const price = parseFloat(item.price) || 0;
-                    return sum + price;
-                  }, 0);
-                  return total.toFixed(2);
-                })()}
-                variant="outlined"
-                fullWidth
-                disabled={true}
-                helperText="Automatically calculated from request item prices"
-                sx={{
-                  '& .MuiInputBase-input': {
-                    color: '#1976d2',
-                    fontWeight: 'bold'
-                  }
-                }}
               />
 
               {/* Site Photos Upload */}
