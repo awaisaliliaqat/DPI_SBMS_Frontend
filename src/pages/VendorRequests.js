@@ -1378,8 +1378,8 @@ export default function VendorRequests() {
             }
           }
           
-          // Show share invoice button for ceo_approval status
-          if (row.status === SHOPBOARD_REQUEST_STATUS.CEO_APPROVAL && canRead) {
+          // Show share invoice button for ceo_approval and manual_approval status
+          if ((row.status === SHOPBOARD_REQUEST_STATUS.CEO_APPROVAL || row.status === SHOPBOARD_REQUEST_STATUS.MANUAL_APPROVAL) && canRead) {
             actions.push(
               <GridActionsCellItem
                 key="shareInvoice"
