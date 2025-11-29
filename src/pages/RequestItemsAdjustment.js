@@ -131,6 +131,30 @@ export default function RequestItemsAdjustment() {
     loadPricing();
   }, [loadPricing]);
 
+  // Update prices for fixed/fees types when requestTypes are loaded
+  React.useEffect(() => {
+    if (modalOpen && requestTypes.length > 0 && formData.requestItems.length > 0) {
+      const updatedItems = formData.requestItems.map(item => {
+        const requestType = requestTypes.find(rt => rt.id === item.request_type_id);
+        const isFixedOrFees = requestType?.request_type === 'manual' || requestType?.request_type === 'fees';
+        if (isFixedOrFees) {
+          return { ...item, price: '0' };
+        }
+        return item;
+      });
+      
+      // Only update if there were changes
+      const hasChanges = updatedItems.some((item, index) => {
+        const original = formData.requestItems[index];
+        return item.price !== original.price;
+      });
+      
+      if (hasChanges) {
+        setFormData(prev => ({ ...prev, requestItems: updatedItems }));
+      }
+    }
+  }, [requestTypes, modalOpen]); // Only depend on requestTypes and modalOpen
+
   // URL sync handlers
   const handlePaginationModelChange = React.useCallback((model) => {
     setPaginationModel(model);
@@ -241,17 +265,27 @@ export default function RequestItemsAdjustment() {
       return toast.error('At least one request type is required');
     }
 
-    // Validate that all items have prices
-    const invalidItems = formData.requestItems.filter(item => !item.price || item.price === '');
+    // Validate that all items have prices (skip fixed/fees types as they're always 0)
+    const invalidItems = formData.requestItems.filter(item => {
+      const requestType = requestTypes.find(rt => rt.id === item.request_type_id);
+      const isFixedOrFees = requestType?.request_type === 'manual' || requestType?.request_type === 'fees';
+      // Skip validation for fixed/fees types
+      if (isFixedOrFees) return false;
+      return !item.price || item.price === '';
+    });
     if (invalidItems.length > 0) {
       return toast.error('Please provide a price for all selected request types');
     }
 
     // Prepare request items with proper format
-    const requestItems = formData.requestItems.map(item => ({
-      request_type_id: item.request_type_id,
-      price: item.price === '' ? null : Number(item.price),
-    }));
+    const requestItems = formData.requestItems.map(item => {
+      const requestType = requestTypes.find(rt => rt.id === item.request_type_id);
+      const isFixedOrFees = requestType?.request_type === 'manual' || requestType?.request_type === 'fees';
+      return {
+        request_type_id: item.request_type_id,
+        price: isFixedOrFees ? 0 : (item.price === '' ? null : Number(item.price)),
+      };
+    });
 
     try {
       if (modalMode === 'create') {
@@ -290,15 +324,28 @@ export default function RequestItemsAdjustment() {
     // Update requestItems: remove deleted, keep existing, add new
     let updatedItems = formData.requestItems
       .filter(item => !removedIds.includes(item.request_type_id))
-      .map(item => ({ ...item }));
+      .map(item => {
+        // Check if this item's request type is fixed or fees, set price to 0
+        const requestType = requestTypes.find(rt => rt.id === item.request_type_id);
+        const isFixedOrFees = requestType?.request_type === 'manual' || requestType?.request_type === 'fees';
+        return {
+          ...item,
+          price: isFixedOrFees ? '0' : item.price
+        };
+      });
     
     // Add new items
     newTypes.forEach(id => {
-      updatedItems.push({ request_type_id: id, price: '' });
+      const requestType = requestTypes.find(rt => rt.id === id);
+      const isFixedOrFees = requestType?.request_type === 'manual' || requestType?.request_type === 'fees';
+      updatedItems.push({ 
+        request_type_id: id, 
+        price: isFixedOrFees ? '0' : '' 
+      });
     });
     
     setFormData(prev => ({ ...prev, requestItems: updatedItems }));
-  }, [formData.requestItems]);
+  }, [formData.requestItems, requestTypes]);
 
   // Handle price change for a specific request type
   const handlePriceChange = React.useCallback((requestTypeId, price) => {
@@ -506,6 +553,7 @@ export default function RequestItemsAdjustment() {
                   {formData.requestItems.map((item, idx) => {
                     const requestType = requestTypes.find(rt => rt.id === item.request_type_id);
                     const originalItem = selectedRow?.requestItems?.find(ri => ri.request_type_id === item.request_type_id);
+                    const isFixedOrFees = requestType?.request_type === 'manual' || requestType?.request_type === 'fees';
                     return (
                       <Paper
                         key={item.request_type_id}
@@ -521,10 +569,15 @@ export default function RequestItemsAdjustment() {
                         }}
                       >
                         <Grid container spacing={2} alignItems="center">
-                          <Grid item xs={12} sm={4}>
+                          <Grid item xs={isFixedOrFees ? 10 : 12} sm={isFixedOrFees ? 4 : 4}>
                             <Typography variant="body2" sx={{ fontWeight: 500, color: 'text.primary', mb: 0.5 }}>
                               {requestType?.name || 'Unknown Request Type'}
                             </Typography>
+                            {isFixedOrFees && (
+                              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                                Price: 0 (automatically set)
+                              </Typography>
+                            )}
                             {originalItem && (
                               <Box sx={{ mt: 1 }}>
                                 <Typography variant="caption" color="text.secondary" display="block">
@@ -536,26 +589,30 @@ export default function RequestItemsAdjustment() {
                               </Box>
                             )}
                           </Grid>
-                          <Grid item xs={10} sm={7}>
-                            <TextField
-                              label="Price"
-                              type="number"
-                              value={item.price}
-                              onChange={(e) => handlePriceChange(item.request_type_id, e.target.value)}
-                              variant="outlined"
-                              size="small"
-                              fullWidth
-                              inputProps={{ step: '0.01', min: '0' }}
-                              disabled={modalMode === 'view'}
-                              required
-                              error={modalMode !== 'view' && (!item.price || item.price === '')}
-                              helperText={
-                                modalMode !== 'view' && (!item.price || item.price === '')
-                                  ? 'Price is required'
-                                  : ''
-                              }
-                            />
-                          </Grid>
+                          {!isFixedOrFees && (
+                            <Grid item xs={10} sm={7}>
+                              <TextField
+                                label="Price"
+                                type="number"
+                                value={item.price}
+                                onChange={(e) => {
+                                  handlePriceChange(item.request_type_id, e.target.value);
+                                }}
+                                variant="outlined"
+                                size="small"
+                                fullWidth
+                                inputProps={{ step: '0.01', min: '0' }}
+                                disabled={modalMode === 'view'}
+                                required
+                                error={modalMode !== 'view' && (!item.price || item.price === '')}
+                                helperText={
+                                  modalMode !== 'view' && (!item.price || item.price === '')
+                                    ? 'Price is required'
+                                    : ''
+                                }
+                              />
+                            </Grid>
+                          )}
                           {modalMode !== 'view' && (
                             <Grid item xs={2} sm={1}>
                               <IconButton

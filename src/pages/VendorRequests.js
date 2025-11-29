@@ -274,12 +274,13 @@ export default function VendorRequests() {
     }
   }, [editModalOpen, editingRequest, loadDropdownData, loadAllowedRequestTypes]);
 
-  // Update items when requestTypes are loaded to handle manual types
+  // Update items when requestTypes are loaded to handle manual and fees types
   React.useEffect(() => {
     if (editModalOpen && requestTypes.length > 0 && editFormData.request_items) {
       const updatedItems = editFormData.request_items.map(item => {
         const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
         const isManual = selectedRequestType?.request_type === 'manual';
+        const isFees = selectedRequestType?.request_type === 'fees';
         
         if (isManual) {
           // For manual type: set price_per_sqft from API if not already set, calculate price
@@ -295,6 +296,16 @@ export default function VendorRequests() {
             price_per_sqft: pricePerSqft,
             price: isNaN(total) ? (item.price || '') : Number(total.toFixed(2))
           };
+        } else if (isFees) {
+          // For fees type: set width/height to 0, price_per_sqft from API, keep price (editable)
+          const pricePerSqft = selectedRequestType?.price || '';
+          return {
+            ...item,
+            width: '0',
+            height: '0',
+            price_per_sqft: pricePerSqft,
+            price: item.price || '' // Keep existing price, allow editing
+          };
         }
         return item;
       });
@@ -302,7 +313,9 @@ export default function VendorRequests() {
       // Only update if there were changes
       const hasChanges = updatedItems.some((item, index) => {
         const original = editFormData.request_items[index];
-        return item.price_per_sqft !== original.price_per_sqft ||
+        return item.width !== original.width ||
+               item.height !== original.height ||
+               item.price_per_sqft !== original.price_per_sqft ||
                item.price !== original.price;
       });
       
@@ -1949,6 +1962,7 @@ export default function VendorRequests() {
                         const newItems = [...editFormData.request_items];
                         const selectedRequestType = requestTypes.find(rt => rt.id === newValue?.id);
                         const isManual = selectedRequestType?.request_type === 'manual';
+                        const isFees = selectedRequestType?.request_type === 'fees';
                         
                         if (isManual) {
                           // For manual type: set price_per_sqft from API, keep existing width/height, calculate price
@@ -1964,6 +1978,17 @@ export default function VendorRequests() {
                             request_type_id: newValue?.id || '',
                             price_per_sqft: pricePerSqft,
                             price: isNaN(total) ? '' : Number(total.toFixed(2))
+                          };
+                        } else if (isFees) {
+                          // For fees type: set width/height to 0, price_per_sqft from API, keep existing price (editable)
+                          const pricePerSqft = selectedRequestType?.price || '';
+                          newItems[index] = { 
+                            ...newItems[index], 
+                            request_type_id: newValue?.id || '',
+                            width: '0',
+                            height: '0',
+                            price_per_sqft: pricePerSqft,
+                            price: newItems[index].price || '' // Keep existing price, allow editing
                           };
                         } else {
                           // For fixed type: use existing behavior
@@ -2001,10 +2026,20 @@ export default function VendorRequests() {
                     <TextField
                       label="Width (ft)"
                       type="number"
-                      value={item.width || ''}
+                      value={(() => {
+                        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                        const isFees = selectedRequestType?.request_type === 'fees';
+                        if (isFees) return '0';
+                        return item.width !== undefined && item.width !== null && item.width !== '' ? String(item.width) : '';
+                      })()}
                       onChange={(e) => {
                         const newItems = [...editFormData.request_items];
                         const selectedRequestType = requestTypes.find(rt => rt.id === newItems[index].request_type_id);
+                        const isFees = selectedRequestType?.request_type === 'fees';
+                        
+                        // Don't allow editing for fees type
+                        if (isFees) return;
+                        
                         newItems[index] = { ...newItems[index], width: e.target.value };
                         const widthFt = parseFloat(newItems[index].width) || 0;
                         const heightFt = parseFloat(newItems[index].height) || 0;
@@ -2015,17 +2050,30 @@ export default function VendorRequests() {
                         handleEditFormChange('request_items', newItems);
                       }}
                       variant="outlined"
-                      disabled={isLoading}
+                      disabled={isLoading || (() => {
+                        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                        return selectedRequestType?.request_type === 'fees';
+                      })()}
                       sx={{ mr: 1.5, minWidth: 140 }}
                       inputProps={{ step: '0.01', min: '0' }}
                     />
                     <TextField
                       label="Height (ft)"
                       type="number"
-                      value={item.height || ''}
+                      value={(() => {
+                        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                        const isFees = selectedRequestType?.request_type === 'fees';
+                        if (isFees) return '0';
+                        return item.height !== undefined && item.height !== null && item.height !== '' ? String(item.height) : '';
+                      })()}
                       onChange={(e) => {
                         const newItems = [...editFormData.request_items];
                         const selectedRequestType = requestTypes.find(rt => rt.id === newItems[index].request_type_id);
+                        const isFees = selectedRequestType?.request_type === 'fees';
+                        
+                        // Don't allow editing for fees type
+                        if (isFees) return;
+                        
                         newItems[index] = { ...newItems[index], height: e.target.value };
                         const widthFt = parseFloat(newItems[index].width) || 0;
                         const heightFt = parseFloat(newItems[index].height) || 0;
@@ -2036,7 +2084,10 @@ export default function VendorRequests() {
                         handleEditFormChange('request_items', newItems);
                       }}
                       variant="outlined"
-                      disabled={isLoading}
+                      disabled={isLoading || (() => {
+                        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                        return selectedRequestType?.request_type === 'fees';
+                      })()}
                       sx={{ mr: 1.5, minWidth: 140 }}
                       inputProps={{ step: '0.01', min: '0' }}
                     />
@@ -2047,7 +2098,7 @@ export default function VendorRequests() {
                         const widthFt = parseFloat(item.width) || 0;
                         const heightFt = parseFloat(item.height) || 0;
                         const areaSqft = widthFt * heightFt;
-                        return areaSqft > 0 ? areaSqft.toFixed(2) : '';
+                        return areaSqft.toFixed(2);
                       })()}
                       variant="outlined"
                       disabled
@@ -2057,14 +2108,15 @@ export default function VendorRequests() {
                     <TextField
                       label="Price Per (sqft)"
                       type="number"
-                      value={item.price_per_sqft || ''}
+                      value={item.price_per_sqft !== undefined && item.price_per_sqft !== null && item.price_per_sqft !== '' ? String(item.price_per_sqft) : ''}
                       onChange={(e) => {
                         const newItems = [...editFormData.request_items];
                         const selectedRequestType = requestTypes.find(rt => rt.id === newItems[index].request_type_id);
                         const isManual = selectedRequestType?.request_type === 'manual';
+                        const isFees = selectedRequestType?.request_type === 'fees';
                         
-                        // Only allow editing for manual types
-                        if (isManual) {
+                        // Only allow editing for manual types (not fees or fixed)
+                        if (isManual && !isFees) {
                           newItems[index] = { ...newItems[index], price_per_sqft: e.target.value };
                           const widthFt = parseFloat(newItems[index].width) || 0;
                           const heightFt = parseFloat(newItems[index].height) || 0;
@@ -2078,35 +2130,64 @@ export default function VendorRequests() {
                       variant="outlined"
                       disabled={isLoading || (() => {
                         const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
-                        return selectedRequestType?.request_type === 'fixed';
+                        return selectedRequestType?.request_type === 'fixed' || selectedRequestType?.request_type === 'fees';
                       })()}
                       sx={{ mr: 1.5, minWidth: 180 }}
                       InputProps={{ startAdornment: <InputAdornment position="start">₨</InputAdornment> }}
                       helperText={(() => {
                         const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
-                        return selectedRequestType?.request_type === 'manual' ? 'Editable for manual type' : 'From vendor pricing (read-only)';
+                        if (selectedRequestType?.request_type === 'manual') return 'Editable for manual type';
+                        if (selectedRequestType?.request_type === 'fees') return 'Read-only for fees type';
+                        return 'From vendor pricing (read-only)';
                       })()}
                       inputProps={{ step: '0.01', min: '0' }}
                     />
                     
-                    {/* Total Cost Field - Calculated for both manual and fixed */}
+                    {/* Total Cost Field - Calculated for manual and fixed, editable for fees */}
                     <TextField
                       label="Total Cost Per Item"
                       type="number"
                       value={(() => {
-                        // For both manual and fixed: calculate from area × price per sqft
+                        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                        const isFees = selectedRequestType?.request_type === 'fees';
+                        
+                        // For fees type: use the price directly (editable)
+                        if (isFees) {
+                          return item.price !== undefined && item.price !== null && item.price !== '' ? String(item.price) : '';
+                        }
+                        
+                        // For manual and fixed: calculate from area × price per sqft
                         const widthFt = parseFloat(item.width) || 0;
                         const heightFt = parseFloat(item.height) || 0;
                         const areaSqft = widthFt * heightFt;
                         const pricePerSqft = parseFloat(item.price_per_sqft) || 0;
                         const total = areaSqft * pricePerSqft;
-                        return total > 0 ? total.toFixed(2) : '';
+                        return isNaN(total) ? '0.00' : total.toFixed(2);
                       })()}
+                      onChange={(e) => {
+                        const newItems = [...editFormData.request_items];
+                        const selectedRequestType = requestTypes.find(rt => rt.id === newItems[index].request_type_id);
+                        const isFees = selectedRequestType?.request_type === 'fees';
+                        
+                        // Only allow editing for fees type
+                        if (isFees) {
+                          newItems[index] = { ...newItems[index], price: e.target.value };
+                          handleEditFormChange('request_items', newItems);
+                        }
+                      }}
                       variant="outlined"
-                      disabled
+                      disabled={isLoading || (() => {
+                        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                        return selectedRequestType?.request_type !== 'fees';
+                      })()}
                       sx={{ minWidth: 180 }}
                       InputProps={{ startAdornment: <InputAdornment position="start">₨</InputAdornment> }}
-                      helperText="Area × price per ft²"
+                      helperText={(() => {
+                        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                        if (selectedRequestType?.request_type === 'fees') return 'Editable for fees type';
+                        return 'Area × price per ft²';
+                      })()}
+                      inputProps={{ step: '0.01', min: '0' }}
                     />
                     
                     <IconButton
@@ -2148,7 +2229,16 @@ export default function VendorRequests() {
                       value={(() => {
                         if (!editFormData.request_items || !Array.isArray(editFormData.request_items)) return '0.00';
                         const total = editFormData.request_items.reduce((sum, it) => {
-                          // For both manual and fixed: calculate area × price_per_sqft
+                          const selectedRequestType = requestTypes.find(rt => rt.id === it.request_type_id);
+                          const isFees = selectedRequestType?.request_type === 'fees';
+                          
+                          // For fees type: use price directly
+                          if (isFees) {
+                            const price = parseFloat(it.price) || 0;
+                            return sum + (isNaN(price) ? 0 : price);
+                          }
+                          
+                          // For manual and fixed: calculate area × price_per_sqft
                           const widthFt = parseFloat(it.width) || 0;
                           const heightFt = parseFloat(it.height) || 0;
                           const areaSqft = widthFt * heightFt;
