@@ -47,7 +47,7 @@ import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
 import InvoiceViewer from '../components/InvoiceViewer';
 import RejectInvoiceModal from '../components/RejectInvoiceModal';
-import { BASE_URL } from "../constants/Constants";
+import { BASE_URL, BASENAME } from "../constants/Constants";
 import { 
   SHOPBOARD_REQUEST_STATUS, 
   getStatusDisplayName, 
@@ -856,12 +856,14 @@ export default function AreaHeadRequests() {
       }));
       
       // Prepare email template data
+      // Include BASENAME (/ShopBoard) in baseUrl for correct routing on Tomcat
+      const baseUrlWithPath = (window.location.origin || 'http://localhost:3000') + BASENAME;
       const templateData = {
         ceoName: 'CEO Name',
         senderName: 'Marketing Team',
         senderDesignation: 'Marketing Manager',
         department: 'Marketing Department',
-        baseUrl: window.location.origin || 'http://localhost:3000',
+        baseUrl: baseUrlWithPath,
         backendUrl: BASE_URL, // Backend API URL for reject endpoint
         requests: emailRequests
       };
