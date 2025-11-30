@@ -1366,8 +1366,10 @@ export default function VendorRequests() {
           const actions = [];
           
           // Show view action if user has read permission
-          // For ceo_approval status, show "Work Order" instead of "View Details"
+          // For ceo_approval status (which includes both ceo_approval and manual_approval after backend mapping),
+          // show "Work Order" instead of "View Details"
           if (canRead) {
+            // Backend maps both ceo_approval and manual_approval to ceo_approval
             const isWorkOrder = row.status === SHOPBOARD_REQUEST_STATUS.CEO_APPROVAL;
             actions.push(
               <GridActionsCellItem
@@ -1436,8 +1438,9 @@ export default function VendorRequests() {
             }
           }
           
-          // Show share invoice button for ceo_approval and manual_approval status
-          if ((row.status === SHOPBOARD_REQUEST_STATUS.CEO_APPROVAL || row.status === SHOPBOARD_REQUEST_STATUS.MANUAL_APPROVAL) && canRead) {
+          // Show share invoice button for ceo_approval status
+          // Note: Backend maps both ceo_approval and manual_approval to ceo_approval
+          if (row.status === SHOPBOARD_REQUEST_STATUS.CEO_APPROVAL && canRead) {
             actions.push(
               <GridActionsCellItem
                 key="shareInvoice"
