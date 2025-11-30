@@ -1772,7 +1772,13 @@ export default function AreaHeadRequests() {
       // Add form data
       formData.append('dealer_id', editFormData.dealer_id);
       formData.append('request_items', JSON.stringify(editFormData.request_items || []));
-      formData.append('warranty_status_id', editFormData.warranty_status_id);
+      // Only append warranty_status_id if it's a valid number, otherwise send empty string (backend will normalize to null)
+      const warrantyStatusId = editFormData.warranty_status_id;
+      if (warrantyStatusId !== null && warrantyStatusId !== undefined && warrantyStatusId !== '') {
+        formData.append('warranty_status_id', warrantyStatusId);
+      } else {
+        formData.append('warranty_status_id', '');
+      }
       formData.append('reason_for_replacement', editFormData.reason_for_replacement || '');
       formData.append('last_installation_date', editFormData.last_installation_date || '');
       formData.append('total_cost', editFormData.total_cost || '');
