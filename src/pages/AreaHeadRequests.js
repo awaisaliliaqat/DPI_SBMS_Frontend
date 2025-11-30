@@ -870,7 +870,7 @@ export default function AreaHeadRequests() {
       
       // Send email
       const emailResponse = await post('/api/email/shopboard-approval', {
-        to: 'ahmadraza46789@gmail.com', // Hardcoded email as per requirement
+        to: 'amir.iqbal@diamondpaints.com', // Hardcoded email as per requirement
         subject: 'Shop Board Request - Approval Required',
         templateData: templateData
       });
