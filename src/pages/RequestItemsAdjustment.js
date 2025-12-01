@@ -69,6 +69,8 @@ export default function RequestItemsAdjustment() {
     user_id: '',
     requestItems: [], // Array of { request_type_id, price }
   });
+  // Track original items when edit modal opens (to detect removals)
+  const [originalRequestItems, setOriginalRequestItems] = React.useState([]);
 
   // Load all dropdown data (vendors + request types) - for create modal
   // Only loads vendors that don't have active pricing (exclude_with_pricing=true)
@@ -191,6 +193,7 @@ export default function RequestItemsAdjustment() {
     if (!canCreate) return;
     setSelectedRow(null);
     setFormData({ user_id: '', requestItems: [] });
+    setOriginalRequestItems([]); // No original items for create mode
     setModalMode('create');
     setModalOpen(true);
     // Load dropdowns when modal opens
@@ -208,6 +211,7 @@ export default function RequestItemsAdjustment() {
         price: item.price ?? '',
       })),
     });
+    setOriginalRequestItems([]); // No need to track for view mode
     setModalMode('view');
     setModalOpen(true);
     // Only load request types (vendor is already known and can't be changed)
@@ -218,13 +222,20 @@ export default function RequestItemsAdjustment() {
     if (!canUpdate) return;
     // Use data directly from row - no API call needed
     setSelectedRow(row);
+    const initialItems = (row.requestItems || []).map(item => ({
+      request_type_id: item.request_type_id,
+      price: item.price ?? '',
+      id: item.id, // Store the database ID for tracking removals
+    }));
     setFormData({
       user_id: row.user_id || '',
-      requestItems: (row.requestItems || []).map(item => ({
-        request_type_id: item.request_type_id,
-        price: item.price ?? '',
-      })),
+      requestItems: initialItems,
     });
+    // Store original items to track what was removed
+    setOriginalRequestItems(initialItems.map(item => ({
+      request_type_id: item.request_type_id,
+      id: item.id,
+    })));
     setModalMode('edit');
     setModalOpen(true);
     // Only load request types (vendor is already known and can't be changed)
@@ -287,6 +298,18 @@ export default function RequestItemsAdjustment() {
       };
     });
 
+    // Calculate removed items (only for edit mode)
+    let removedItems = [];
+    if (modalMode === 'edit' && originalRequestItems.length > 0) {
+      const currentRequestTypeIds = formData.requestItems.map(item => item.request_type_id);
+      removedItems = originalRequestItems
+        .filter(original => !currentRequestTypeIds.includes(original.request_type_id))
+        .map(original => ({
+          id: original.id,
+          request_type_id: original.request_type_id,
+        }));
+    }
+
     try {
       if (modalMode === 'create') {
         await post('/api/vendor-request-pricing', {
@@ -296,11 +319,11 @@ export default function RequestItemsAdjustment() {
         toast.success('Created successfully');
         loadPricing();
       } else if (modalMode === 'edit' && selectedRow) {
-        // For edit, create new items with updated prices
-        // The backend will automatically close existing active items
+        // For edit, send both new/updated items and removed items
         await post('/api/vendor-request-pricing', {
           user_id: formData.user_id,
           requestItems: requestItems,
+          removedItems: removedItems, // Send removed items to backend
         });
         toast.success('Updated successfully');
         loadPricing();
@@ -430,7 +453,10 @@ export default function RequestItemsAdjustment() {
 
       <Dialog 
         open={modalOpen} 
-        onClose={() => setModalOpen(false)} 
+        onClose={() => {
+          setModalOpen(false);
+          setOriginalRequestItems([]); // Reset when modal closes
+        }} 
         aria-labelledby="pricing-dialog-title" 
         maxWidth="md"
         fullWidth
