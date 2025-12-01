@@ -198,15 +198,25 @@ export default function VendorRequests() {
   }, [get]);
 
   // Load allowed request types for vendor
-  const loadAllowedRequestTypes = React.useCallback(async (vendorCode) => {
+  // existingRequestTypeIds: optional array of request type IDs that should be included even if is_allowed=false
+  const loadAllowedRequestTypes = React.useCallback(async (vendorCode, existingRequestTypeIds = null) => {
     if (!vendorCode) {
       setRequestTypes([]);
       return;
     }
 
     try {
+      // Build query string
+      let queryString = `vendor_code=${encodeURIComponent(vendorCode)}`;
+      
+      // If existing request type IDs are provided, include them in the query
+      if (existingRequestTypeIds && Array.isArray(existingRequestTypeIds) && existingRequestTypeIds.length > 0) {
+        const idsString = existingRequestTypeIds.map(id => String(id)).join(',');
+        queryString += `&existing_request_type_ids=${encodeURIComponent(idsString)}`;
+      }
+      
       // Use vendor_code query parameter (vendorCode is the vendor_code from shopboard request)
-      const response = await get(`/api/vendor-request-pricing/allowed-request-types?vendor_code=${encodeURIComponent(vendorCode)}`);
+      const response = await get(`/api/vendor-request-pricing/allowed-request-types?${queryString}`);
       
       if (response?.success && Array.isArray(response.data)) {
         setRequestTypes(response.data);
@@ -257,9 +267,15 @@ export default function VendorRequests() {
       }
       
       // Load allowed request types for this vendor
+      // Include existing request type IDs from the request items (even if is_allowed=false)
       const vendorCode = editingRequest.vendor_code || editingRequest.vendor?.code;
       if (vendorCode) {
-        loadAllowedRequestTypes(vendorCode);
+        // Extract existing request type IDs from requestItems
+        const existingRequestTypeIds = (editingRequest.requestItems || [])
+          .map(item => item.request_type_id)
+          .filter(id => id != null);
+        
+        loadAllowedRequestTypes(vendorCode, existingRequestTypeIds.length > 0 ? existingRequestTypeIds : null);
       } else {
         setRequestTypes([]);
         toast.warning('Vendor code not found for this request', {
@@ -1955,10 +1971,16 @@ export default function VendorRequests() {
                     No allowed request types found for this vendor. Please contact administrator to add request types for this vendor.
                   </Alert>
                 ) : null}
-                {editFormData.request_items?.map((item, index) => (
+                {editFormData.request_items?.map((item, index) => {
+                  // Filter options: show only is_allowed=true OR the currently selected item (even if is_allowed=false)
+                  const filteredOptions = requestTypes.filter(rt => 
+                    rt.is_allowed === true || rt.id === item.request_type_id
+                  );
+                  
+                  return (
                   <Paper key={index} variant="outlined" sx={{ p: 2, mb: 1.5, borderRadius: 2, backgroundColor: '#fafafa' }}>
                     <Autocomplete
-                      options={requestTypes}
+                      options={filteredOptions}
                       getOptionLabel={(option) => option.name || ''}
                       value={requestTypes.find(rt => rt.id === item.request_type_id) || null}
                       onChange={(event, newValue) => {
@@ -2022,7 +2044,7 @@ export default function VendorRequests() {
                           required
                         />
                       )}
-                      disabled={isLoading || requestTypes.length === 0}
+                      disabled={isLoading || filteredOptions.length === 0}
                       sx={{ mb: 1.5 }}
                     />
                     
@@ -2204,7 +2226,8 @@ export default function VendorRequests() {
                       <DeleteIcon />
                     </IconButton>
                   </Paper>
-                ))}
+                  );
+                })}
                 <Button
                   variant="outlined"
                   onClick={() => {
