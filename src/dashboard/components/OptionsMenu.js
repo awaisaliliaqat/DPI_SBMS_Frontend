@@ -9,8 +9,10 @@ import ListItemText from '@mui/material/ListItemText';
 import ListItemIcon, { listItemIconClasses } from '@mui/material/ListItemIcon';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded';
+import LockRoundedIcon from '@mui/icons-material/LockRounded';
 import MenuButton from './MenuButton';
 import { useAuth } from '../../auth/AuthContext'; // Import the useAuth hook
+import ChangePasswordDialog from './ChangePasswordDialog';
 
 const MenuItem = styled(MuiMenuItem)({
   margin: '2px 0',
@@ -18,6 +20,7 @@ const MenuItem = styled(MuiMenuItem)({
 
 export default function OptionsMenu() {
   const [anchorEl, setAnchorEl] = React.useState(null);
+  const [changePasswordOpen, setChangePasswordOpen] = React.useState(false);
   const open = Boolean(anchorEl);
   const { logout } = useAuth(); // Get the logout function from Auth context
 
@@ -27,6 +30,11 @@ export default function OptionsMenu() {
 
   const handleClose = () => {
     setAnchorEl(null);
+  };
+
+  const handleChangePassword = () => {
+    handleClose(); // Close the menu first
+    setChangePasswordOpen(true);
   };
 
   const handleLogout = () => {
@@ -70,6 +78,20 @@ export default function OptionsMenu() {
         <MenuItem onClick={handleClose}>Settings</MenuItem> */}
         {/* <Divider /> */}
         <MenuItem
+          onClick={handleChangePassword}
+          sx={{
+            [`& .${listItemIconClasses.root}`]: {
+              ml: 'auto',
+              minWidth: 0,
+            },
+          }}
+        >
+          <ListItemText>Change Password</ListItemText>
+          <ListItemIcon>
+            <LockRoundedIcon fontSize="small" />
+          </ListItemIcon>
+        </MenuItem>
+        <MenuItem
           onClick={handleLogout} // Use handleLogout instead of handleClose
           sx={{
             [`& .${listItemIconClasses.root}`]: {
@@ -84,6 +106,10 @@ export default function OptionsMenu() {
           </ListItemIcon>
         </MenuItem>
       </Menu>
+      <ChangePasswordDialog
+        open={changePasswordOpen}
+        onClose={() => setChangePasswordOpen(false)}
+      />
     </React.Fragment>
   );
 }

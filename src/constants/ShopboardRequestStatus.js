@@ -23,7 +23,7 @@ export const SHOPBOARD_REQUEST_STATUS = {
   SUBMITTED_FOR_PAYMENT: 'Submitted for Payment',
   INVOICE_REJECTED: 'invoice rejected',
   PAYMENT_SUCCESSFUL: 'payment successful',
-  REJECTED: 'rejected',
+  // REJECTED: 'rejected',
   MANUAL_APPROVAL: 'manual_approval',
 };
 

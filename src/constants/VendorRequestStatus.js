@@ -11,10 +11,13 @@
 // Import base status constants (we use the same values from database)
 import { SHOPBOARD_REQUEST_STATUS } from './ShopboardRequestStatus';
 
+// Vendor-specific status constant for approval status (mapped from ceo_approval/manual_approval)
+export const VENDOR_APPROVAL_STATUS = 'approval';
+
 // Vendor-specific display names mapping
 // Note: Status mapping is handled by the backend API:
-// - under_review/ceo_pending -> quotation sent
-// - manual_approval -> ceo_approval (both represent "approved for work")
+// - ceo_approval/manual_approval -> approval (both represent "approved for work")
+// - under_review/ceo_pending/payment_released/payment_successful are excluded from vendor view
 // The backend returns the mapped status, so we just need to provide display names here
 export const VENDOR_REQUEST_STATUS_DISPLAY = {
   [SHOPBOARD_REQUEST_STATUS.NOT_DECIDED]: 'Not Decided',
@@ -23,27 +26,20 @@ export const VENDOR_REQUEST_STATUS_DISPLAY = {
   [SHOPBOARD_REQUEST_STATUS.RFQ]: 'RFQ',
   [SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT]: 'Quotation Sent',
   [SHOPBOARD_REQUEST_STATUS.RFQ_NOT_ACCEPTED]: 'RFQ Not Accepted',
-  // Note: UNDER_REVIEW and CEO_PENDING are mapped to QUOTATION_SENT by backend, so these won't be used
-  [SHOPBOARD_REQUEST_STATUS.UNDER_REVIEW]: 'Quotation Sent',
-  [SHOPBOARD_REQUEST_STATUS.CEO_PENDING]: 'Quotation Sent',
-  // Note: MANUAL_APPROVAL is mapped to CEO_APPROVAL by backend, so both show "Approved for work"
-  [SHOPBOARD_REQUEST_STATUS.CEO_APPROVAL]: 'Approved for work',
+  // Note: APPROVAL is the mapped status from ceo_approval/manual_approval
+  [VENDOR_APPROVAL_STATUS]: 'Approved for work',
   [SHOPBOARD_REQUEST_STATUS.COMPLETED]: 'Completed',
   [SHOPBOARD_REQUEST_STATUS.INVOICE_SENT]: 'Invoice Sent',
-  [SHOPBOARD_REQUEST_STATUS.PAYMENT_RELEASED]: 'Payment Released',
   [SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT]: 'Submitted for Payment',
   [SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED]: 'Invoice Rejected',
-  [SHOPBOARD_REQUEST_STATUS.PAYMENT_SUCCESSFUL]: 'Payment Successful',
   [SHOPBOARD_REQUEST_STATUS.REJECTED]: 'Rejected',
-  // Note: MANUAL_APPROVAL is mapped to CEO_APPROVAL by backend, but keeping this for backward compatibility
-  [SHOPBOARD_REQUEST_STATUS.MANUAL_APPROVAL]: 'Approved for work',
 };
 
 /**
  * Get vendor-specific display name for a status
  * Note: Status mapping is handled by the backend API:
- * - under_review/ceo_pending -> quotation sent
- * - manual_approval -> ceo_approval (both represent "approved for work")
+ * - ceo_approval/manual_approval -> approval (both represent "approved for work")
+ * - under_review/ceo_pending/payment_released/payment_successful are excluded
  * @param {string} status - The status value from API (already mapped by backend)
  * @returns {string} Vendor-specific display name for the status
  */
@@ -58,8 +54,8 @@ export const getVendorStatusDisplayName = (status) => {
  * Get vendor-specific status color (for Material-UI Chip component)
  * Uses vendor-appropriate color scheme
  * Note: Status mapping is handled by the backend API:
- * - under_review/ceo_pending -> quotation sent
- * - manual_approval -> ceo_approval (both represent "approved for work")
+ * - ceo_approval/manual_approval -> approval (both represent "approved for work")
+ * - under_review/ceo_pending/payment_released/payment_successful are excluded
  * @param {string} status - The status value from API (already mapped by backend)
  * @returns {string} Material-UI color name
  */
@@ -83,15 +79,12 @@ export const getVendorStatusColor = (status) => {
       return 'primary';
     case SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT:
       return 'info';
-    case SHOPBOARD_REQUEST_STATUS.PAYMENT_RELEASED:
-    case SHOPBOARD_REQUEST_STATUS.PAYMENT_SUCCESSFUL:
     case SHOPBOARD_REQUEST_STATUS.COMPLETED:
       return 'success';
     case SHOPBOARD_REQUEST_STATUS.NOT_DECIDED:
       return 'warning';
-    // Note: MANUAL_APPROVAL is mapped to CEO_APPROVAL by backend, so both use 'success'
-    case SHOPBOARD_REQUEST_STATUS.CEO_APPROVAL:
-    case SHOPBOARD_REQUEST_STATUS.MANUAL_APPROVAL:
+    // Note: APPROVAL is the mapped status from ceo_approval/manual_approval
+    case VENDOR_APPROVAL_STATUS:
       return 'success';
     default:
       return 'default';
@@ -101,8 +94,8 @@ export const getVendorStatusColor = (status) => {
 /**
  * Map status for vendor view
  * Note: Status mapping is now handled by the backend API:
- * - under_review/ceo_pending -> quotation sent
- * - manual_approval -> ceo_approval (both represent "approved for work")
+ * - ceo_approval/manual_approval -> approval (both represent "approved for work")
+ * - under_review/ceo_pending/payment_released/payment_successful are excluded
  * This function is kept for backward compatibility but just returns the status as-is
  * @param {string} status - The status value from API (already mapped by backend)
  * @returns {string} Status (already mapped by backend)

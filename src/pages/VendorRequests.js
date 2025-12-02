@@ -44,7 +44,8 @@ import {
   SHOPBOARD_REQUEST_STATUS, 
   getVendorStatusDisplayName, 
   getVendorStatusColor,
-  mapStatusForVendor
+  mapStatusForVendor,
+  VENDOR_APPROVAL_STATUS
 } from "../constants/VendorRequestStatus";
 import { useApi } from '../hooks/useApi';
 
@@ -565,6 +566,23 @@ export default function VendorRequests() {
   const confirmInvoiceUpload = React.useCallback(async () => {
     if (!selectedInvoiceRequest) return;
     
+    // Validate status before proceeding
+    const isResubmission = selectedInvoiceRequest.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED;
+    const isInitialUpload = selectedInvoiceRequest.status === VENDOR_APPROVAL_STATUS;
+    
+    // Only allow upload if status is either invoice_rejected (resubmission) or approval (initial upload)
+    if (!isResubmission && !isInitialUpload) {
+      toast.error(`Cannot upload invoice. Request must be in 'Approved for work' or 'Invoice Rejected' status. Current status: ${getVendorStatusDisplayName(selectedInvoiceRequest.status)}`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+    
     setIsLoading(true);
     
     try {
@@ -575,6 +593,11 @@ export default function VendorRequests() {
       // Add basic data - set status to invoice_sent (works for both initial upload and resubmission after rejection)
       formData.append('status', SHOPBOARD_REQUEST_STATUS.INVOICE_SENT);
       formData.append('updated_by', user.id);
+      
+      // Add flag to indicate if this is a resubmission
+      if (isResubmission) {
+        formData.append('is_resubmission', 'true');
+      }
 
 
       // Get existing invoice data or create empty structure
@@ -625,7 +648,6 @@ export default function VendorRequests() {
 
       await response.json();
 
-      const isResubmission = selectedInvoiceRequest.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED;
       toast.success(isResubmission ? 'Invoice resubmitted successfully!' : 'Invoice sent successfully!', {
         position: "top-right",
         autoClose: 3000,
@@ -774,11 +796,12 @@ export default function VendorRequests() {
     }
   }, [get]);
 
-  // Fetch history for a specific request
+  // Fetch history for a specific request (vendor-specific API - already filtered for item_changes)
   const fetchRequestHistory = React.useCallback(async (requestId) => {
     setLoadingHistory(true);
     try {
-      const response = await get(`/api/shopboard-logs/request/${requestId}`);
+      // Use vendor-specific API endpoint that filters item_changes on backend
+      const response = await get(`/api/shopboard-logs/vendor/request/${requestId}`);
       if (response.success && response.data) {
         const sorted = [...response.data].sort((a, b) => {
           // CURRENT records always come first
@@ -791,14 +814,10 @@ export default function VendorRequests() {
           return db - da;
         });
         
-        // Filter logs to only show those with item_changes
-        const filteredLogs = sorted.filter(log => 
-          log.item_changes && Array.isArray(log.item_changes) && log.item_changes.length > 0
-        );
-        
+        // Backend already filters for item_changes, so no need to filter again
         // Fetch dealer names for logs that have dealer_id
         const logsWithDealerNames = await Promise.all(
-          filteredLogs.map(async (log) => {
+          sorted.map(async (log) => {
             if (log.main_changes?.dealer_id && !log.main_changes?.dealer_name) {
               try {
                 // Fetch dealer by code
@@ -1382,11 +1401,11 @@ export default function VendorRequests() {
           const actions = [];
           
           // Show view action if user has read permission
-          // For ceo_approval status (which includes both ceo_approval and manual_approval after backend mapping),
+          // For approval status (which includes both ceo_approval and manual_approval after backend mapping),
           // show "Work Order" instead of "View Details"
           if (canRead) {
-            // Backend maps both ceo_approval and manual_approval to ceo_approval
-            const isWorkOrder = row.status === SHOPBOARD_REQUEST_STATUS.CEO_APPROVAL;
+            // Backend maps both ceo_approval and manual_approval to approval
+            const isWorkOrder = row.status === VENDOR_APPROVAL_STATUS;
             actions.push(
               <GridActionsCellItem
                 key="view"
@@ -1454,9 +1473,9 @@ export default function VendorRequests() {
             }
           }
           
-          // Show share invoice button for ceo_approval status
-          // Note: Backend maps both ceo_approval and manual_approval to ceo_approval
-          if (row.status === SHOPBOARD_REQUEST_STATUS.CEO_APPROVAL && canRead) {
+          // Show share invoice button for approval status
+          // Note: Backend maps both ceo_approval and manual_approval to approval
+          if (row.status === VENDOR_APPROVAL_STATUS && canRead) {
             actions.push(
               <GridActionsCellItem
                 key="shareInvoice"
@@ -1597,7 +1616,7 @@ export default function VendorRequests() {
             fontWeight: 'bold',
           }}
         >
-          {selectedRequest?.status === SHOPBOARD_REQUEST_STATUS.CEO_APPROVAL 
+          {selectedRequest?.status === VENDOR_APPROVAL_STATUS 
             ? `Work Order #${selectedRequest?.id}`
             : `Request Details #${selectedRequest?.id}`}
         </DialogTitle>
@@ -2775,7 +2794,7 @@ export default function VendorRequests() {
             mb: 1,
           }}
         >
-          {selectedDetailedRequest?.status === SHOPBOARD_REQUEST_STATUS.CEO_APPROVAL 
+          {selectedDetailedRequest?.status === VENDOR_APPROVAL_STATUS 
             ? `Work Order - #${selectedDetailedRequest?.id}`
             : `Request Details - #${selectedDetailedRequest?.id}`}
         </DialogTitle>
