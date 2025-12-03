@@ -48,6 +48,7 @@ import DynamicModal from '../components/DynamicModel';
 import InvoiceViewer from '../components/InvoiceViewer';
 import RejectInvoiceModal from '../components/RejectInvoiceModal';
 import PaymentProofModal from '../components/PaymentProofModal';
+import ShopboardRequestFilters from '../components/ShopboardRequestFilters';
 import { BASE_URL, BASENAME } from "../constants/Constants";
 import { 
   SHOPBOARD_REQUEST_STATUS, 
@@ -89,6 +90,33 @@ export default function AreaHeadRequests() {
     rows: [],
     rowCount: 0,
   });
+
+  // Filter state
+  const [filters, setFilters] = React.useState({
+    vendor: null,
+    status: null,
+  });
+
+  // Helper function to get vendor name from request data
+  // Backend should include vendor information in the shopboard request response
+  const getVendorName = React.useCallback((row) => {
+    // Check if vendor object exists in the response (backend should include this)
+    if (row.vendor && row.vendor.card_name) {
+      return row.vendor.card_name;
+    }
+    // Fallback: check if vendor_name exists directly
+    if (row.vendor_name) {
+      return row.vendor_name;
+    }
+    // If vendor_code exists but no vendor info, show "Not Assigned"
+    if (row.vendor_code) {
+      return 'Not Assigned';
+    }
+    return 'Not Assigned';
+  }, []);
+  
+  // Use rowsState.rows directly since filtering is done on backend
+  const filteredRows = rowsState.rows;
 
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState(null);
@@ -446,7 +474,23 @@ export default function AreaHeadRequests() {
     try {
       const { page, pageSize } = paginationModel;
       
-      const apiUrl = `/api/shopboard-requests?page=${page}&size=${pageSize}`;
+      // Build query parameters
+      const queryParams = new URLSearchParams({
+        page: page.toString(),
+        size: pageSize.toString(),
+      });
+      
+      // Add vendor filter if selected
+      if (filters.vendor && filters.vendor.id) {
+        queryParams.append('vendor_id', filters.vendor.id.toString());
+      }
+      
+      // Add status filter if selected
+      if (filters.status && filters.status.value) {
+        queryParams.append('status', filters.status.value);
+      }
+      
+      const apiUrl = `/api/shopboard-requests?${queryParams.toString()}`;
       
       const requestData = await get(apiUrl);
       
@@ -497,9 +541,12 @@ export default function AreaHeadRequests() {
       }
 
       // Update state with filtered data
+      // Use totalCount from API response if available, otherwise use data length
+      const totalCount = requestData.totalCount || requestData.count || requestsData.length;
+      
       setRowsState({
         rows: requestsData,
-        rowCount: requestsData.length,
+        rowCount: totalCount,
       });
 
       // Check if any request has ceo_pending OR invoice_sent status to show selection column
@@ -521,7 +568,7 @@ export default function AreaHeadRequests() {
     } finally {
       setIsLoading(false);
     }
-  }, [paginationModel, get, canRead, onlyReadApprovedRequest]);
+  }, [paginationModel, get, canRead, onlyReadApprovedRequest, filters]);
 
   // Load data when component mounts or pagination changes
   React.useEffect(() => {
@@ -822,7 +869,7 @@ export default function AreaHeadRequests() {
     if (!selectedRequests || selectedRequests.length === 0) return;
     
     // Get selected request objects
-    const selectedRequestObjects = rowsState.rows.filter(row => selectedRequests.includes(row.id));
+    const selectedRequestObjects = filteredRows.filter(row => selectedRequests.includes(row.id));
     
     // Filter to only ceo_pending status requests (as per button logic)
     const ceoPendingRequests = selectedRequestObjects.filter(req => req.status === 'ceo_pending');
@@ -932,14 +979,14 @@ export default function AreaHeadRequests() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedRequests, rowsState.rows, post, loadRequests]);
+  }, [selectedRequests, filteredRows, post, loadRequests, get]);
 
   // Bulk release payment handler
   const handleBulkReleasePayment = React.useCallback(async () => {
     if (!selectedRequests || selectedRequests.length === 0) return;
     
     setIsLoading(true);
-    const selectedRequestObjects = rowsState.rows.filter(row => selectedRequests.includes(row.id));
+    const selectedRequestObjects = filteredRows.filter(row => selectedRequests.includes(row.id));
     
     // Filter to only invoice_sent status requests
     const invoiceSentRequests = selectedRequestObjects.filter(req => req.status === 'invoice_sent');
@@ -1010,7 +1057,7 @@ export default function AreaHeadRequests() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedRequests, rowsState.rows, patch, user.id, loadRequests]);
+  }, [selectedRequests, filteredRows, patch, user.id, loadRequests]);
 
   // Selection handlers with event propagation prevention
   const handleSelectRequest = React.useCallback((requestId, event) => {
@@ -1020,7 +1067,7 @@ export default function AreaHeadRequests() {
     }
     
     // Get the request being selected/deselected
-    const request = rowsState.rows.find(row => row.id === requestId);
+    const request = filteredRows.find(row => row.id === requestId);
     if (!request) return;
     
     setSelectedRequests(prev => {
@@ -1032,7 +1079,7 @@ export default function AreaHeadRequests() {
         if (prev.length > 0) {
           // Get the status of already selected requests
           const selectedRequestIds = prev;
-          const selectedRequests = rowsState.rows.filter(row => selectedRequestIds.includes(row.id));
+          const selectedRequests = filteredRows.filter(row => selectedRequestIds.includes(row.id));
           const existingStatus = selectedRequests[0]?.status;
           
           // Check if trying to select different status
@@ -1052,7 +1099,7 @@ export default function AreaHeadRequests() {
         return [...prev, requestId];
       }
     });
-  }, [rowsState.rows]);
+  }, [filteredRows]);
 
   const handleSelectAll = React.useCallback((event) => {
     // Prevent event propagation to avoid triggering row click
@@ -1060,7 +1107,7 @@ export default function AreaHeadRequests() {
       event.stopPropagation();
     }
     
-    const selectableRequests = rowsState.rows
+    const selectableRequests = filteredRows
       .filter(row => row.status === 'ceo_pending' || row.status === 'invoice_sent')
       .map(row => row.id);
     
@@ -1069,7 +1116,7 @@ export default function AreaHeadRequests() {
     } else {
       setSelectedRequests(selectableRequests);
     }
-  }, [rowsState.rows, selectedRequests.length]);
+  }, [filteredRows, selectedRequests.length]);
 
   // Fetch comments for a specific request
   const fetchRequestComments = React.useCallback(async (requestId) => {
@@ -3017,22 +3064,9 @@ export default function AreaHeadRequests() {
     return fields;
   };
 
-  // Helper function to get vendor name from request data
-  // Backend should include vendor information in the shopboard request response
-  const getVendorName = React.useCallback((row) => {
-    // Check if vendor object exists in the response (backend should include this)
-    if (row.vendor && row.vendor.card_name) {
-      return row.vendor.card_name;
-    }
-    // Fallback: check if vendor_name exists directly
-    if (row.vendor_name) {
-      return row.vendor_name;
-    }
-    // If vendor_code exists but no vendor info, show "Not Assigned"
-    if (row.vendor_code) {
-      return 'Not Assigned';
-    }
-    return 'Not Assigned';
+  // Handle filter changes
+  const handleFilterChange = React.useCallback((newFilters) => {
+    setFilters(newFilters);
   }, []);
 
   // Column definitions for shopboard requests (showing only 4 key fields)
@@ -3048,7 +3082,7 @@ export default function AreaHeadRequests() {
           filterable: false,
           disableColumnMenu: true,
           renderHeader: () => {
-            const selectableRows = rowsState.rows.filter(row => row.status === 'ceo_pending' || row.status === 'invoice_sent');
+            const selectableRows = filteredRows.filter(row => row.status === 'ceo_pending' || row.status === 'invoice_sent');
             return (
               <Checkbox
                 checked={selectedRequests.length > 0 && selectedRequests.length === selectableRows.length}
@@ -3539,7 +3573,7 @@ export default function AreaHeadRequests() {
 
     return baseColumns;
     },
-    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, canPaymentRelease, showSelectionColumn, selectedRequests, rowsState.rows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleViewInvoice, handleOpenPaymentProof, handleSelectAll, handleSelectRequest, handleBulkReleasePayment, getVendorName],
+    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, canPaymentRelease, showSelectionColumn, selectedRequests, filteredRows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleViewInvoice, handleOpenPaymentProof, handleSelectAll, handleSelectRequest, handleBulkReleasePayment, getVendorName],
   );
 
   const pageTitle = 'Area Head Requests';
@@ -3583,12 +3617,18 @@ export default function AreaHeadRequests() {
         </Alert>
       )}
 
+      {/* Search Filters */}
+      <ShopboardRequestFilters
+        onFilterChange={handleFilterChange}
+        loading={isLoading}
+      />
+
       {/* Top toolbar actions (above table) */}
       {canManualApproval && showSelectionColumn && selectedRequests.length > 0 && (
         <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-start', gap: 2 }}>
           {/* Determine button states based on selected request statuses */}
           {(() => {
-            const selectedRequestObjects = rowsState.rows.filter(row => selectedRequests.includes(row.id));
+            const selectedRequestObjects = filteredRows.filter(row => selectedRequests.includes(row.id));
             const hasCeoPending = selectedRequestObjects.some(req => req.status === 'ceo_pending');
             const hasInvoiceSent = selectedRequestObjects.some(req => req.status === 'invoice_sent');
             const hasMixedSelection = hasCeoPending && hasInvoiceSent;
@@ -3620,7 +3660,7 @@ export default function AreaHeadRequests() {
       )}
 
       <ReusableDataTable
-        data={rowsState.rows}
+        data={filteredRows}
         columns={columns}
         loading={isLoading}
         error={error}
@@ -3628,7 +3668,7 @@ export default function AreaHeadRequests() {
         // Pagination
         paginationModel={paginationModel}
         onPaginationModelChange={handlePaginationModelChange}
-        rowCount={rowsState.rowCount}
+        rowCount={filteredRows.length}
         paginationMode="server"
         
         // Sorting
