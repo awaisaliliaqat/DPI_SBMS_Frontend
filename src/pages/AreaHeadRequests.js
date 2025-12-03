@@ -47,6 +47,7 @@ import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
 import InvoiceViewer from '../components/InvoiceViewer';
 import RejectInvoiceModal from '../components/RejectInvoiceModal';
+import PaymentProofModal from '../components/PaymentProofModal';
 import { BASE_URL, BASENAME } from "../constants/Constants";
 import { 
   SHOPBOARD_REQUEST_STATUS, 
@@ -80,6 +81,7 @@ export default function AreaHeadRequests() {
   const canAddComment = user?.permissions?.shopboardRequest?.includes('add_comment') || false;
   const canPrint = user?.permissions?.shopboardRequest?.includes('print') || false;
   const canManualApproval = user?.permissions?.shopboardRequest?.includes('manual_approval') || false;
+  const canPaymentRelease = user?.permissions?.shopboardRequest?.includes('payment_release') || false;
 
   const { get, post, put, patch, del } = useApi();
 
@@ -120,6 +122,10 @@ export default function AreaHeadRequests() {
   // Reject invoice modal state
   const [rejectInvoiceModalOpen, setRejectInvoiceModalOpen] = React.useState(false);
   const [rejectInvoiceTarget, setRejectInvoiceTarget] = React.useState(null);
+  
+  // Payment proof modal state
+  const [paymentProofModalOpen, setPaymentProofModalOpen] = React.useState(false);
+  const [paymentProofTarget, setPaymentProofTarget] = React.useState(null);
   
   // File upload state for edit modal
   const [sitePhotos, setSitePhotos] = React.useState([]);
@@ -708,6 +714,12 @@ export default function AreaHeadRequests() {
     setRejectInvoiceTarget(requestData);
     setRejectInvoiceModalOpen(true);
   }, [canManualApproval]);
+
+  const handleOpenPaymentProof = React.useCallback((requestData) => {
+    if (!canPaymentRelease) return;
+    setPaymentProofTarget(requestData);
+    setPaymentProofModalOpen(true);
+  }, [canPaymentRelease]);
 
   const handleConfirmRejectInvoice = React.useCallback(async (comment) => {
     if (!rejectInvoiceTarget) return;
@@ -3493,6 +3505,20 @@ export default function AreaHeadRequests() {
             }
           }
 
+          // Show Add Payment Proof button for "Submitted for Payment" status with payment_release permission
+          const isSubmittedForPayment = row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT;
+          if (isSubmittedForPayment && canPaymentRelease) {
+            actions.push(
+              <GridActionsCellItem
+                key="addPaymentProof"
+                icon={<Tooltip title="Add Payment Proof"><PaymentIcon /></Tooltip>}
+                label="Add Payment Proof"
+                onClick={() => handleOpenPaymentProof(row)}
+                color="success"
+              />
+            );
+          }
+
           // Show history action for all requests
           if (canRead) {
             actions.push(
@@ -3513,7 +3539,7 @@ export default function AreaHeadRequests() {
 
     return baseColumns;
     },
-    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, showSelectionColumn, selectedRequests, rowsState.rows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleViewInvoice, handleSelectAll, handleSelectRequest, handleBulkReleasePayment, getVendorName],
+    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, canPaymentRelease, showSelectionColumn, selectedRequests, rowsState.rows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleViewInvoice, handleOpenPaymentProof, handleSelectAll, handleSelectRequest, handleBulkReleasePayment, getVendorName],
   );
 
   const pageTitle = 'Area Head Requests';
@@ -5813,6 +5839,14 @@ export default function AreaHeadRequests() {
         onClose={() => { setRejectInvoiceModalOpen(false); setRejectInvoiceTarget(null); }}
         onReject={handleConfirmRejectInvoice}
         request={rejectInvoiceTarget}
+        submitting={isLoading}
+      />
+
+      {/* Payment Proof Modal */}
+      <PaymentProofModal
+        open={paymentProofModalOpen}
+        onClose={() => { setPaymentProofModalOpen(false); setPaymentProofTarget(null); }}
+        request={paymentProofTarget}
         submitting={isLoading}
       />
 
