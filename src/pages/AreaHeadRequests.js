@@ -95,6 +95,11 @@ export default function AreaHeadRequests() {
   const [filters, setFilters] = React.useState({
     vendor: null,
     status: null,
+    region: null,
+    parentDealer: null,
+    childDealer: null,
+    startDate: null,
+    endDate: null,
   });
 
   // Helper function to get vendor name from request data
@@ -488,6 +493,31 @@ export default function AreaHeadRequests() {
       // Add status filter if selected
       if (filters.status && filters.status.value) {
         queryParams.append('status', filters.status.value);
+      }
+      
+      // Add region filter if selected
+      if (filters.region && filters.region.name) {
+        queryParams.append('region', filters.region.name);
+      }
+      
+      // Add parent dealer filter if selected
+      if (filters.parentDealer && filters.parentDealer.code) {
+        queryParams.append('parent_dealer_code', filters.parentDealer.code);
+      }
+      
+      // Add child dealer filter if selected
+      if (filters.childDealer && filters.childDealer.code) {
+        queryParams.append('child_dealer_code', filters.childDealer.code);
+      }
+      
+      // Add start date filter if selected
+      if (filters.startDate) {
+        queryParams.append('start_date', filters.startDate);
+      }
+      
+      // Add end date filter if selected
+      if (filters.endDate) {
+        queryParams.append('end_date', filters.endDate);
       }
       
       const apiUrl = `/api/shopboard-requests?${queryParams.toString()}`;
@@ -3245,13 +3275,15 @@ export default function AreaHeadRequests() {
             displayStatus = 'Invoice Received';
           }
           
+          const statusColor = getStatusColorHelper(status);
+          
           return (
             <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
               <Chip 
                 label={displayStatus} 
                 variant="filled" 
                 size="small"
-                color={getStatusColorHelper(status)}
+                color={statusColor}
               />
             </Box>
           );
@@ -3668,7 +3700,7 @@ export default function AreaHeadRequests() {
         // Pagination
         paginationModel={paginationModel}
         onPaginationModelChange={handlePaginationModelChange}
-        rowCount={filteredRows.length}
+        rowCount={rowsState.rowCount}
         paginationMode="server"
         
         // Sorting

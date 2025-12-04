@@ -84,6 +84,8 @@ export const getStatusColor = (status) => {
       return 'warning';
     case SHOPBOARD_REQUEST_STATUS.CEO_PENDING:
       return 'warning';
+    case SHOPBOARD_REQUEST_STATUS.CEO_APPROVAL:
+      return 'success'; // Will be styled as light green in the component
     default:
       return 'default';
   }
