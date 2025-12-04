@@ -6,7 +6,23 @@ import {
   Grid,
   Chip,
   CircularProgress,
+  Typography,
+  Button,
+  IconButton,
+  Popover,
+  Paper,
 } from '@mui/material';
+import {
+  Business as VendorIcon,
+  CheckCircle as StatusIcon,
+  LocationOn as RegionIcon,
+  AccountTree as ParentDealerIcon,
+  Person as ChildDealerIcon,
+  CalendarToday as DateIcon,
+  FilterList as FilterListIcon,
+  Clear as ClearIcon,
+  Close as CloseIcon,
+} from '@mui/icons-material';
 import { STATUS_OPTIONS, getStatusDisplayName } from '../constants/ShopboardRequestStatus';
 import { useApi } from '../hooks/useApi';
 
@@ -21,6 +37,7 @@ const ShopboardRequestFilters = ({
   const [selectedChildDealer, setSelectedChildDealer] = React.useState(null);
   const [startDate, setStartDate] = React.useState(null);
   const [endDate, setEndDate] = React.useState(null);
+  const [dateRangeAnchor, setDateRangeAnchor] = React.useState(null);
   const [vendors, setVendors] = React.useState([]);
   const [regions, setRegions] = React.useState([]);
   const [parentDealers, setParentDealers] = React.useState([]);
@@ -172,9 +189,71 @@ const ShopboardRequestFilters = ({
 
   const hasActiveFilters = selectedVendor !== null || selectedStatus !== null || selectedRegion !== null || selectedParentDealer !== null || selectedChildDealer !== null || startDate !== null || endDate !== null;
 
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const handleDateRangeClick = (event) => {
+    setDateRangeAnchor(event.currentTarget);
+  };
+
+  const handleDateRangeClose = () => {
+    setDateRangeAnchor(null);
+  };
+
+  const dateRangeOpen = Boolean(dateRangeAnchor);
+
   return (
-    <Box sx={{ mb: 2, p: 2, backgroundColor: '#f8f9fa', borderRadius: 2, border: '1px solid #e0e0e0' }}>
-      <Grid container spacing={2} alignItems="center">
+    <Box sx={{ 
+      mb: 3, 
+      p: 3, 
+      backgroundColor: '#ffffff', 
+      borderRadius: 3, 
+      border: '1px solid #e0e7ff',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+    }}>
+      {/* Filter Header */}
+      <Box sx={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        mb: 2.5,
+        pb: 2,
+        borderBottom: '2px solid #f0f4ff'
+      }}>
+        <Typography variant="h6" sx={{ 
+          fontWeight: 600, 
+          color: '#1a237e',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          fontSize: '1.1rem'
+        }}>
+          <FilterListIcon sx={{ fontSize: '1.3rem' }} />
+          Filters
+        </Typography>
+        {hasActiveFilters && (
+          <Button
+            size="small"
+            onClick={handleClearFilters}
+            startIcon={<ClearIcon />}
+            sx={{ 
+              textTransform: 'none',
+              color: '#666',
+              '&:hover': {
+                backgroundColor: '#f5f5f5'
+              }
+            }}
+          >
+            Clear All
+          </Button>
+        )}
+      </Box>
+
+      {/* Filter Grid - Row 1: Primary Filters */}
+      <Grid container spacing={2.5} sx={{ mb: 2 }}>
         {/* Vendor Name Filter */}
         <Grid item xs={12} sm={6} md={3}>
           <Autocomplete
@@ -193,6 +272,27 @@ const ShopboardRequestFilters = ({
                 variant="outlined"
                 fullWidth
                 disabled={loading}
+                InputProps={{
+                  ...params.InputProps,
+                  startAdornment: (
+                    <>
+                      <VendorIcon sx={{ mr: 1, color: 'action.active', fontSize: '1.2rem' }} />
+                      {params.InputProps.startAdornment}
+                    </>
+                  ),
+                }}
+                sx={{
+                  minWidth: '280px',
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: '#fafbff',
+                    '&:hover': {
+                      backgroundColor: '#f5f7ff',
+                    },
+                    '&.Mui-focused': {
+                      backgroundColor: '#ffffff',
+                    }
+                  }
+                }}
               />
             )}
             isOptionEqualToValue={(option, value) => option.id === value?.id}
@@ -225,6 +325,27 @@ const ShopboardRequestFilters = ({
                 variant="outlined"
                 fullWidth
                 disabled={loading}
+                InputProps={{
+                  ...params.InputProps,
+                  startAdornment: (
+                    <>
+                      <StatusIcon sx={{ mr: 1, color: 'action.active', fontSize: '1.2rem' }} />
+                      {params.InputProps.startAdornment}
+                    </>
+                  ),
+                }}
+                sx={{
+                  minWidth: '280px',
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: '#fafbff',
+                    '&:hover': {
+                      backgroundColor: '#f5f7ff',
+                    },
+                    '&.Mui-focused': {
+                      backgroundColor: '#ffffff',
+                    }
+                  }
+                }}
               />
             )}
             isOptionEqualToValue={(option, value) => option.value === value?.value}
@@ -257,6 +378,27 @@ const ShopboardRequestFilters = ({
                 variant="outlined"
                 fullWidth
                 disabled={loading}
+                InputProps={{
+                  ...params.InputProps,
+                  startAdornment: (
+                    <>
+                      <RegionIcon sx={{ mr: 1, color: 'action.active', fontSize: '1.2rem' }} />
+                      {params.InputProps.startAdornment}
+                    </>
+                  ),
+                }}
+                sx={{
+                  minWidth: '280px',
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: '#fafbff',
+                    '&:hover': {
+                      backgroundColor: '#f5f7ff',
+                    },
+                    '&.Mui-focused': {
+                      backgroundColor: '#ffffff',
+                    }
+                  }
+                }}
               />
             )}
             isOptionEqualToValue={(option, value) => option.id === value?.id}
@@ -271,6 +413,115 @@ const ShopboardRequestFilters = ({
           />
         </Grid>
 
+        {/* Date Range Filter - Combined (Moved to Row 1) */}
+        <Grid item xs={12} sm={6} md={3}>
+          <TextField
+            size="small"
+            label="Date Range"
+            placeholder="Select date range"
+            value={startDate && endDate ? `${formatDate(startDate)} - ${formatDate(endDate)}` : startDate ? `${formatDate(startDate)} - ...` : endDate ? `... - ${formatDate(endDate)}` : ''}
+            onClick={handleDateRangeClick}
+            variant="outlined"
+            fullWidth
+            disabled={loading}
+            InputProps={{
+              startAdornment: <DateIcon sx={{ mr: 1, color: 'action.active', fontSize: '1.2rem' }} />,
+              readOnly: true,
+              endAdornment: (startDate || endDate) && (
+                <IconButton
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setStartDate(null);
+                    setEndDate(null);
+                  }}
+                  sx={{ mr: 0.5 }}
+                >
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              ),
+            }}
+            sx={{
+              cursor: 'pointer',
+              minWidth: '280px',
+              '& .MuiOutlinedInput-root': {
+                backgroundColor: '#fafbff',
+                '&:hover': {
+                  backgroundColor: '#f5f7ff',
+                },
+                '&.Mui-focused': {
+                  backgroundColor: '#ffffff',
+                }
+              }
+            }}
+          />
+          <Popover
+            open={dateRangeOpen}
+            anchorEl={dateRangeAnchor}
+            onClose={handleDateRangeClose}
+            anchorOrigin={{
+              vertical: 'bottom',
+              horizontal: 'left',
+            }}
+            transformOrigin={{
+              vertical: 'top',
+              horizontal: 'left',
+            }}
+          >
+            <Paper sx={{ p: 2, minWidth: 300 }}>
+              <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                  Select Date Range
+                </Typography>
+                <IconButton size="small" onClick={handleDateRangeClose}>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Box>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <TextField
+                  size="small"
+                  label="Start Date"
+                  type="date"
+                  value={startDate || ''}
+                  onChange={(e) => setStartDate(e.target.value || null)}
+                  variant="outlined"
+                  fullWidth
+                  InputLabelProps={{
+                    shrink: true,
+                  }}
+                />
+                <TextField
+                  size="small"
+                  label="End Date"
+                  type="date"
+                  value={endDate || ''}
+                  onChange={(e) => setEndDate(e.target.value || null)}
+                  variant="outlined"
+                  fullWidth
+                  InputLabelProps={{
+                    shrink: true,
+                  }}
+                  inputProps={{
+                    min: startDate || undefined
+                  }}
+                />
+                <Button
+                  variant="contained"
+                  onClick={handleDateRangeClose}
+                  fullWidth
+                  sx={{ mt: 1 }}
+                >
+                  Apply
+                </Button>
+              </Box>
+            </Paper>
+          </Popover>
+        </Grid>
+
+      </Grid>
+
+      {/* Filter Grid - Row 2: Secondary Filters */}
+      <Grid container spacing={2.5}>
         {/* Parent Dealer Filter - Only enabled when region is selected */}
         <Grid item xs={12} sm={6} md={3}>
           <Autocomplete
@@ -289,6 +540,27 @@ const ShopboardRequestFilters = ({
                 variant="outlined"
                 fullWidth
                 disabled={loading || !selectedRegion}
+                InputProps={{
+                  ...params.InputProps,
+                  startAdornment: (
+                    <>
+                      <ParentDealerIcon sx={{ mr: 1, color: 'action.active', fontSize: '1.2rem' }} />
+                      {params.InputProps.startAdornment}
+                    </>
+                  ),
+                }}
+                sx={{
+                  minWidth: '280px',
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: '#fafbff',
+                    '&:hover': {
+                      backgroundColor: '#f5f7ff',
+                    },
+                    '&.Mui-focused': {
+                      backgroundColor: '#ffffff',
+                    }
+                  }
+                }}
               />
             )}
             isOptionEqualToValue={(option, value) => option.code === value?.code}
@@ -321,6 +593,27 @@ const ShopboardRequestFilters = ({
                 variant="outlined"
                 fullWidth
                 disabled={loading || !selectedParentDealer}
+                InputProps={{
+                  ...params.InputProps,
+                  startAdornment: (
+                    <>
+                      <ChildDealerIcon sx={{ mr: 1, color: 'action.active', fontSize: '1.2rem' }} />
+                      {params.InputProps.startAdornment}
+                    </>
+                  ),
+                }}
+                sx={{
+                  minWidth: '280px',
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: '#fafbff',
+                    '&:hover': {
+                      backgroundColor: '#f5f7ff',
+                    },
+                    '&.Mui-focused': {
+                      backgroundColor: '#ffffff',
+                    }
+                  }
+                }}
               />
             )}
             isOptionEqualToValue={(option, value) => option.code === value?.code}
@@ -334,136 +627,120 @@ const ShopboardRequestFilters = ({
             }}
           />
         </Grid>
-
-        {/* Start Date Filter */}
-        <Grid item xs={12} sm={6} md={3}>
-          <TextField
-            size="small"
-            label="Start Date"
-            type="date"
-            value={startDate || ''}
-            onChange={(e) => setStartDate(e.target.value || null)}
-            variant="outlined"
-            fullWidth
-            disabled={loading}
-            InputLabelProps={{
-              shrink: true,
-            }}
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                backgroundColor: '#ffffff',
-              }
-            }}
-          />
-        </Grid>
-
-        {/* End Date Filter */}
-        <Grid item xs={12} sm={6} md={3}>
-          <TextField
-            size="small"
-            label="End Date"
-            type="date"
-            value={endDate || ''}
-            onChange={(e) => setEndDate(e.target.value || null)}
-            variant="outlined"
-            fullWidth
-            disabled={loading}
-            InputLabelProps={{
-              shrink: true,
-            }}
-            inputProps={{
-              min: startDate || undefined
-            }}
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                backgroundColor: '#ffffff',
-              }
-            }}
-          />
-        </Grid>
       </Grid>
 
-      {/* Active Filters Display */}
+      {/* Active Filters Display - Enhanced */}
       {hasActiveFilters && (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', mt: 2 }}>
-              {selectedVendor && (
-                <Chip
-                  label={`Vendor: ${selectedVendor.name}`}
-                  onDelete={() => setSelectedVendor(null)}
-                  color="primary"
-                  variant="outlined"
-                  size="small"
-                />
-              )}
-              {selectedStatus && (
-                <Chip
-                  label={`Status: ${selectedStatus.label}`}
-                  onDelete={() => setSelectedStatus(null)}
-                  color="secondary"
-                  variant="outlined"
-                  size="small"
-                />
-              )}
-              {selectedRegion && (
-                <Chip
-                  label={`Region: ${selectedRegion.code ? `${selectedRegion.name} (${selectedRegion.code})` : selectedRegion.name}`}
-                  onDelete={() => setSelectedRegion(null)}
-                  color="info"
-                  variant="outlined"
-                  size="small"
-                />
-              )}
-              {selectedParentDealer && (
-                <Chip
-                  label={`Parent: ${selectedParentDealer.name || selectedParentDealer.code}`}
-                  onDelete={() => setSelectedParentDealer(null)}
-                  color="warning"
-                  variant="outlined"
-                  size="small"
-                />
-              )}
-              {selectedChildDealer && (
-                <Chip
-                  label={`Child: ${selectedChildDealer.name || selectedChildDealer.code}`}
-                  onDelete={() => setSelectedChildDealer(null)}
-                  color="success"
-                  variant="outlined"
-                  size="small"
-                />
-              )}
-              {startDate && (
-                <Chip
-                  label={`From: ${new Date(startDate).toLocaleDateString()}`}
-                  onDelete={() => setStartDate(null)}
-                  color="info"
-                  variant="outlined"
-                  size="small"
-                />
-              )}
-              {endDate && (
-                <Chip
-                  label={`To: ${new Date(endDate).toLocaleDateString()}`}
-                  onDelete={() => setEndDate(null)}
-                  color="info"
-                  variant="outlined"
-                  size="small"
-                />
-              )}
-              {(selectedVendor || selectedStatus || selectedRegion || selectedParentDealer || selectedChildDealer || startDate || endDate) && (
-                <Chip
-                  label="Clear All"
-                  onClick={handleClearFilters}
-                  color="default"
-                  variant="outlined"
-                  size="small"
-                  sx={{ 
-                    cursor: 'pointer',
-                    '&:hover': {
-                      backgroundColor: '#f5f5f5',
-                    }
-                  }}
-                />
-              )}
+        <Box sx={{ 
+          mt: 3, 
+          pt: 2.5, 
+          borderTop: '1px solid #e0e7ff',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 1.5,
+          alignItems: 'center'
+        }}>
+          <Typography variant="caption" sx={{ 
+            color: '#666', 
+            fontWeight: 500,
+            mr: 1,
+            fontSize: '0.85rem'
+          }}>
+            Active Filters:
+          </Typography>
+          {selectedVendor && (
+            <Chip
+              label={`Vendor: ${selectedVendor.name}`}
+              onDelete={() => setSelectedVendor(null)}
+              color="primary"
+              variant="filled"
+              size="small"
+              sx={{
+                fontWeight: 500,
+                '& .MuiChip-deleteIcon': {
+                  fontSize: '1rem'
+                }
+              }}
+            />
+          )}
+          {selectedStatus && (
+            <Chip
+              label={`Status: ${selectedStatus.label}`}
+              onDelete={() => setSelectedStatus(null)}
+              color="secondary"
+              variant="filled"
+              size="small"
+              sx={{
+                fontWeight: 500,
+                '& .MuiChip-deleteIcon': {
+                  fontSize: '1rem'
+                }
+              }}
+            />
+          )}
+          {selectedRegion && (
+            <Chip
+              label={`Region: ${selectedRegion.code ? `${selectedRegion.name} (${selectedRegion.code})` : selectedRegion.name}`}
+              onDelete={() => setSelectedRegion(null)}
+              color="info"
+              variant="filled"
+              size="small"
+              sx={{
+                fontWeight: 500,
+                '& .MuiChip-deleteIcon': {
+                  fontSize: '1rem'
+                }
+              }}
+            />
+          )}
+          {selectedParentDealer && (
+            <Chip
+              label={`Parent: ${selectedParentDealer.name || selectedParentDealer.code}`}
+              onDelete={() => setSelectedParentDealer(null)}
+              color="warning"
+              variant="filled"
+              size="small"
+              sx={{
+                fontWeight: 500,
+                '& .MuiChip-deleteIcon': {
+                  fontSize: '1rem'
+                }
+              }}
+            />
+          )}
+          {selectedChildDealer && (
+            <Chip
+              label={`Child: ${selectedChildDealer.name || selectedChildDealer.code}`}
+              onDelete={() => setSelectedChildDealer(null)}
+              color="success"
+              variant="filled"
+              size="small"
+              sx={{
+                fontWeight: 500,
+                '& .MuiChip-deleteIcon': {
+                  fontSize: '1rem'
+                }
+              }}
+            />
+          )}
+          {(startDate || endDate) && (
+            <Chip
+              label={`Date: ${startDate ? formatDate(startDate) : '...'} - ${endDate ? formatDate(endDate) : '...'}`}
+              onDelete={() => {
+                setStartDate(null);
+                setEndDate(null);
+              }}
+              color="info"
+              variant="filled"
+              size="small"
+              sx={{
+                fontWeight: 500,
+                '& .MuiChip-deleteIcon': {
+                  fontSize: '1rem'
+                }
+              }}
+            />
+          )}
         </Box>
       )}
     </Box>

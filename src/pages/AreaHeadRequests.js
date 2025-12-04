@@ -3717,7 +3717,7 @@ export default function AreaHeadRequests() {
         onView={null} // Disable default view action
         onEdit={null} // Disable default edit action
         onDelete={null} // Disable default delete action
-        onRefresh={canRead ? handleRefresh : null}
+        onRefresh={null}
         
         // Row interaction
         onRowClick={canRead ? handleRowClick : null}
