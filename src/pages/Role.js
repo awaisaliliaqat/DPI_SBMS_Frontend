@@ -238,13 +238,17 @@ export default function RoleManagement() {
   };
 
   // Update available permissions when feature is selected
+  // Use only standard CRUD permissions (create, read, update, delete)
   React.useEffect(() => {
     if (selectedFeature) {
-      const selectedFeatureObj = features.find(f => f.id === parseInt(selectedFeature));
-      // Get feature name from originalData.name (database name) or name property
-      const featureName = selectedFeatureObj?.originalData?.name || selectedFeatureObj?.name;
-      const permissions = getPermissionsForFeature(featureName);
-      setAvailablePermissions(permissions);
+      // Always use standard CRUD permissions only
+      const crudPermissions = [
+        { id: 'create', name: 'Create' },
+        { id: 'read', name: 'Read' },
+        { id: 'update', name: 'Update' },
+        { id: 'delete', name: 'Delete' },
+      ];
+      setAvailablePermissions(crudPermissions);
       
       // Auto-select "read" permission by default
       setSelectedPermissions({ read: true });

@@ -30,6 +30,12 @@ export const NAVIGATION_CONFIG = {
     icon: '💵',
     requiredPermission: 'read'
   },
+  requestTypes: {
+    displayName: 'Request Types Management',
+    routerLink: '/request-types',
+    icon: '📝',
+    requiredPermission: 'read'
+  },
   vendorAssignment: {
     displayName: 'SAP User Management',
     routerLink: '/vendor-assignment',

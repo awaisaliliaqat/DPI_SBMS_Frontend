@@ -11,6 +11,7 @@ import UserManagement from '../pages/UserManagement';
 import AreaHeadRequests from '../pages/AreaHeadRequests';
 import VendorRequests from '../pages/VendorRequests';
 import RequestItemsAdjustment from '../pages/RequestItemsAdjustment';
+import RequestTypesManagement from '../pages/RequestTypesManagement';
 import VendorAssignment from '../pages/VendorAssignment';
 import RequestPrintView from '../pages/RequestPrintView';
 // import Reports from '../pages/Reports';
@@ -68,6 +69,7 @@ const AppRoutesContent = () => {
         <Route path="area-head-requests" element={<AreaHeadRequests />} />
         <Route path="vendor-requests" element={<VendorRequests />} />
         <Route path="request-items-adjustment" element={<RequestItemsAdjustment />} />
+        <Route path="request-types" element={<RequestTypesManagement />} />
         <Route path="vendor-assignment" element={<VendorAssignment />} />
         {/* <Route path="users" element={<FeatureManagement />} /> */}
         <Route index element={<RedirectToSignin />} />
