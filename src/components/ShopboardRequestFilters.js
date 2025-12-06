@@ -563,7 +563,22 @@ const ShopboardRequestFilters = ({
           <Autocomplete
             size="small"
             options={parentDealers}
-            getOptionLabel={(option) => option.name || option.code || ''}
+            getOptionLabel={(option) => {
+              if (!option) return '';
+              const name = option.name || '';
+              const code = option.code || '';
+              return code ? `${name} (${code})` : name;
+            }}
+            filterOptions={(options, { inputValue }) => {
+              const searchValue = inputValue.toLowerCase().trim();
+              if (!searchValue) return options;
+              
+              return options.filter(option => {
+                const name = (option.name || '').toLowerCase();
+                const code = (option.code || '').toLowerCase();
+                return name.includes(searchValue) || code.includes(searchValue);
+              });
+            }}
             value={selectedParentDealer}
             onChange={(event, newValue) => {
               setSelectedParentDealer(newValue);
@@ -616,7 +631,22 @@ const ShopboardRequestFilters = ({
           <Autocomplete
             size="small"
             options={childDealers}
-            getOptionLabel={(option) => option.name || option.code || ''}
+            getOptionLabel={(option) => {
+              if (!option) return '';
+              const name = option.name || '';
+              const code = option.code || '';
+              return code ? `${name} (${code})` : name;
+            }}
+            filterOptions={(options, { inputValue }) => {
+              const searchValue = inputValue.toLowerCase().trim();
+              if (!searchValue) return options;
+              
+              return options.filter(option => {
+                const name = (option.name || '').toLowerCase();
+                const code = (option.code || '').toLowerCase();
+                return name.includes(searchValue) || code.includes(searchValue);
+              });
+            }}
             value={selectedChildDealer}
             onChange={(event, newValue) => {
               setSelectedChildDealer(newValue);
@@ -731,7 +761,7 @@ const ShopboardRequestFilters = ({
           )}
           {selectedParentDealer && (
             <Chip
-              label={`Parent: ${selectedParentDealer.name || selectedParentDealer.code}`}
+              label={`Parent: ${selectedParentDealer.code ? `${selectedParentDealer.name} (${selectedParentDealer.code})` : selectedParentDealer.name || selectedParentDealer.code}`}
               onDelete={() => setSelectedParentDealer(null)}
               color="warning"
               variant="filled"
@@ -746,7 +776,7 @@ const ShopboardRequestFilters = ({
           )}
           {selectedChildDealer && (
             <Chip
-              label={`Child: ${selectedChildDealer.name || selectedChildDealer.code}`}
+              label={`Child: ${selectedChildDealer.code ? `${selectedChildDealer.name} (${selectedChildDealer.code})` : selectedChildDealer.name || selectedChildDealer.code}`}
               onDelete={() => setSelectedChildDealer(null)}
               color="success"
               variant="filled"
