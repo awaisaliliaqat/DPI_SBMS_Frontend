@@ -1092,7 +1092,7 @@ export default function VendorRequests() {
             if (!isNaN(num) && num > 0) {
               return (
                 <Typography key={`${key}-${idx}`} variant="body2" sx={{ color: '#333', mb: 0.5 }}>
-                  Total Cost: ${num.toFixed(2)}
+                  Total Cost: Rs {num.toFixed(2)}
                 </Typography>
               );
             }
@@ -2737,7 +2737,7 @@ export default function VendorRequests() {
                             )}
                             {item.price && (
                               <Typography variant="body2" sx={{ color: '#333', mb: 0.5 }}>
-                                Price: ${parseFloat(item.price).toFixed(2)}
+                                Price: Rs {parseFloat(item.price).toFixed(2)}
                               </Typography>
                             )}
                           </Box>

@@ -5147,7 +5147,7 @@ export default function AreaHeadRequests() {
                             )}
                             {item.price && (
                               <Typography variant="body2" sx={{ color: '#333', mb: 0.5 }}>
-                                Price: ${parseFloat(item.price).toFixed(2)}
+                                Price: Rs {parseFloat(item.price).toFixed(2)}
                               </Typography>
                             )}
                           </Box>
