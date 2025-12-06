@@ -3256,6 +3256,52 @@ export default function AreaHeadRequests() {
         },
       },
       {
+        field: 'approval_date',
+        headerName: 'Approval Date',
+        minWidth: 170,
+        align: 'left',
+        headerAlign: 'left',
+        renderCell: (params) => {
+          const approvalDate = params.value;
+          if (!approvalDate) {
+            return (
+              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                <Typography variant="body2" sx={{ color: '#999', fontStyle: 'italic' }}>
+                  N/A
+                </Typography>
+              </Box>
+            );
+          }
+          
+          try {
+            const date = new Date(approvalDate);
+            return (
+              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                <Typography variant="body2">
+                  {date.toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                  }) + ' ' + date.toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                  })}
+                </Typography>
+              </Box>
+            );
+          } catch (error) {
+            return (
+              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                <Typography variant="body2" sx={{ color: '#999', fontStyle: 'italic' }}>
+                  N/A
+                </Typography>
+              </Box>
+            );
+          }
+        },
+      },
+      {
         field: 'status',
         headerName: 'Status',
         width: 100,
