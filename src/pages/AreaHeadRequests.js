@@ -646,6 +646,7 @@ export default function AreaHeadRequests() {
       // Preserve all values exactly as they come from the database
       return {
         id: item.id, // Include the item ID to preserve it
+        temp_id: item.temp_id, // Preserve temp_id if it exists (for newly added items)
         request_type_id: item.request_type_id,
         width: item.width !== null && item.width !== undefined ? String(item.width) : '',
         height: item.height !== null && item.height !== undefined ? String(item.height) : '',
@@ -1718,7 +1719,7 @@ export default function AreaHeadRequests() {
             if (!isNaN(num) && num > 0) {
               return (
                 <Typography key={`${key}-${idx}`} variant="body2" sx={{ color: '#333', mb: 0.5 }}>
-                  Total Cost: ${num.toFixed(2)}
+                  Total Cost: Rs {num.toFixed(2)}
                 </Typography>
               );
             }
@@ -4654,7 +4655,12 @@ export default function AreaHeadRequests() {
                       />
                       <IconButton
                         onClick={() => {
-                          const newItems = editFormData.request_items.filter((_, i) => i !== index);
+                          // Remove item by ID or temp_id, not by index
+                          const itemToRemove = editFormData.request_items[index];
+                          const itemIdentifier = itemToRemove.id || itemToRemove.temp_id;
+                          const newItems = editFormData.request_items.filter(item => 
+                            (item.id || item.temp_id) !== itemIdentifier
+                          );
                           handleEditFormChange('request_items', newItems);
                         }}
                         color="error"
@@ -4670,7 +4676,14 @@ export default function AreaHeadRequests() {
                   <Button
                     variant="outlined"
                     onClick={() => {
-                      const newItems = [...(editFormData.request_items || []), { request_type_id: '', width: '', height: '', price: '', price_per_sqft: '' }];
+                      const newItems = [...(editFormData.request_items || []), { 
+                        temp_id: `temp_${Date.now()}_${Math.random()}`, // Unique temporary ID for new items
+                        request_type_id: '', 
+                        width: '', 
+                        height: '', 
+                        price: '', 
+                        price_per_sqft: '' 
+                      }];
                       handleEditFormChange('request_items', newItems);
                     }}
                     disabled={isLoading || requestTypes.length === 0}
