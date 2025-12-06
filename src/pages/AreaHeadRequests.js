@@ -116,6 +116,7 @@ export default function AreaHeadRequests() {
     region: null,
     parentDealer: null,
     childDealer: null,
+    salesHead: null,
     startDate: null,
     endDate: null,
   });
@@ -536,6 +537,11 @@ export default function AreaHeadRequests() {
       // Add end date filter if selected
       if (filters.endDate) {
         queryParams.append('end_date', filters.endDate);
+      }
+      
+      // Add sales head filter if selected - pass the first code
+      if (filters.salesHead && filters.salesHead.sh_codes && filters.salesHead.sh_codes[0]) {
+        queryParams.append('sales_head_code', filters.salesHead.sh_codes[0]);
       }
       
       const apiUrl = `/api/shopboard-requests?${queryParams.toString()}`;

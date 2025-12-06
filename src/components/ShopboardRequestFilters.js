@@ -22,6 +22,7 @@ import {
   FilterList as FilterListIcon,
   Clear as ClearIcon,
   Close as CloseIcon,
+  Group as SalesHeadIcon,
 } from '@mui/icons-material';
 import { useApi } from '../hooks/useApi';
 
@@ -34,6 +35,7 @@ const ShopboardRequestFilters = ({
   const [selectedRegion, setSelectedRegion] = React.useState(null);
   const [selectedParentDealer, setSelectedParentDealer] = React.useState(null);
   const [selectedChildDealer, setSelectedChildDealer] = React.useState(null);
+  const [selectedSalesHead, setSelectedSalesHead] = React.useState(null);
   const [startDate, setStartDate] = React.useState(null);
   const [endDate, setEndDate] = React.useState(null);
   const [dateRangeAnchor, setDateRangeAnchor] = React.useState(null);
@@ -41,11 +43,13 @@ const ShopboardRequestFilters = ({
   const [regions, setRegions] = React.useState([]);
   const [parentDealers, setParentDealers] = React.useState([]);
   const [childDealers, setChildDealers] = React.useState([]);
+  const [salesHeads, setSalesHeads] = React.useState([]);
   const [statuses, setStatuses] = React.useState([]);
   const [loadingVendors, setLoadingVendors] = React.useState(false);
   const [loadingRegions, setLoadingRegions] = React.useState(false);
   const [loadingParentDealers, setLoadingParentDealers] = React.useState(false);
   const [loadingChildDealers, setLoadingChildDealers] = React.useState(false);
+  const [loadingSalesHeads, setLoadingSalesHeads] = React.useState(false);
   const [loadingStatuses, setLoadingStatuses] = React.useState(false);
   const { get } = useApi();
 
@@ -123,6 +127,26 @@ const ShopboardRequestFilters = ({
     fetchStatuses();
   }, [get]);
 
+  // Fetch sales heads from API
+  React.useEffect(() => {
+    const fetchSalesHeads = async () => {
+      setLoadingSalesHeads(true);
+      try {
+        const response = await get('/api/all-areaheads');
+        if (response.success && Array.isArray(response.data)) {
+          setSalesHeads(response.data);
+        }
+      } catch (error) {
+        console.error('Error fetching sales heads:', error);
+        setSalesHeads([]);
+      } finally {
+        setLoadingSalesHeads(false);
+      }
+    };
+
+    fetchSalesHeads();
+  }, [get]);
+
   // Fetch parent dealers when region is selected
   React.useEffect(() => {
     if (selectedRegion) {
@@ -192,11 +216,12 @@ const ShopboardRequestFilters = ({
         region: selectedRegion,
         parentDealer: selectedParentDealer,
         childDealer: selectedChildDealer,
+        salesHead: selectedSalesHead,
         startDate: startDate,
         endDate: endDate
       });
     }
-  }, [selectedVendor, selectedStatus, selectedRegion, selectedParentDealer, selectedChildDealer, startDate, endDate, onFilterChange]);
+  }, [selectedVendor, selectedStatus, selectedRegion, selectedParentDealer, selectedChildDealer, selectedSalesHead, startDate, endDate, onFilterChange]);
 
   const handleClearFilters = () => {
     setSelectedVendor(null);
@@ -204,11 +229,12 @@ const ShopboardRequestFilters = ({
     setSelectedRegion(null);
     setSelectedParentDealer(null);
     setSelectedChildDealer(null);
+    setSelectedSalesHead(null);
     setStartDate(null);
     setEndDate(null);
   };
 
-  const hasActiveFilters = selectedVendor !== null || selectedStatus !== null || selectedRegion !== null || selectedParentDealer !== null || selectedChildDealer !== null || startDate !== null || endDate !== null;
+  const hasActiveFilters = selectedVendor !== null || selectedStatus !== null || selectedRegion !== null || selectedParentDealer !== null || selectedChildDealer !== null || selectedSalesHead !== null || startDate !== null || endDate !== null;
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -693,6 +719,64 @@ const ShopboardRequestFilters = ({
             }}
           />
         </Grid>
+
+        {/* Sales Head Filter */}
+        <Grid item xs={12} sm={6} md={3}>
+          <Autocomplete
+            size="small"
+            options={salesHeads}
+            getOptionLabel={(option) => {
+              if (!option) return '';
+              const name = option.sh_name || '';
+              const firstCode = option.sh_codes?.[0] || '';
+              return firstCode ? `${name} (${firstCode})` : name;
+            }}
+            value={selectedSalesHead}
+            onChange={(event, newValue) => {
+              setSelectedSalesHead(newValue);
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Sales Head"
+                placeholder="Select sales head..."
+                variant="outlined"
+                fullWidth
+                disabled={loading}
+                InputProps={{
+                  ...params.InputProps,
+                  startAdornment: (
+                    <>
+                      <SalesHeadIcon sx={{ mr: 1, color: 'action.active', fontSize: '1.2rem' }} />
+                      {params.InputProps.startAdornment}
+                    </>
+                  ),
+                }}
+                sx={{
+                  minWidth: '280px',
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: '#fafbff',
+                    '&:hover': {
+                      backgroundColor: '#f5f7ff',
+                    },
+                    '&.Mui-focused': {
+                      backgroundColor: '#ffffff',
+                    }
+                  }
+                }}
+              />
+            )}
+            isOptionEqualToValue={(option, value) => option.sh_name === value?.sh_name}
+            noOptionsText="No sales heads found"
+            loading={loadingSalesHeads}
+            componentsProps={{
+              popper: {
+                style: { zIndex: 1305 },
+                placement: 'bottom-start'
+              }
+            }}
+          />
+        </Grid>
       </Grid>
 
       {/* Active Filters Display - Enhanced */}
@@ -779,6 +863,21 @@ const ShopboardRequestFilters = ({
               label={`Child: ${selectedChildDealer.code ? `${selectedChildDealer.name} (${selectedChildDealer.code})` : selectedChildDealer.name || selectedChildDealer.code}`}
               onDelete={() => setSelectedChildDealer(null)}
               color="success"
+              variant="filled"
+              size="small"
+              sx={{
+                fontWeight: 500,
+                '& .MuiChip-deleteIcon': {
+                  fontSize: '1rem'
+                }
+              }}
+            />
+          )}
+          {selectedSalesHead && (
+            <Chip
+              label={`Sales Head: ${selectedSalesHead.sh_name}`}
+              onDelete={() => setSelectedSalesHead(null)}
+              color="error"
               variant="filled"
               size="small"
               sx={{
