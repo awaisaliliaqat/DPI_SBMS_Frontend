@@ -13,6 +13,7 @@ import {
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { GridToolbarContainer, GridToolbarColumnsButton } from '@mui/x-data-grid';
 import { useAuth } from '../auth/AuthContext';
 import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
@@ -21,6 +22,23 @@ import { BASE_URL } from "../constants/Constants";
 import { useApi } from '../hooks/useApi';
 
 const INITIAL_PAGE_SIZE = 10;
+
+// Custom toolbar with only columns button
+function CustomToolbar() {
+  return (
+    <GridToolbarContainer>
+      <GridToolbarColumnsButton 
+        sx={{
+          color: '#757575', // Light grey color to match default
+          '&:hover': {
+            color: '#424242', // Slightly darker on hover
+            backgroundColor: 'rgba(0, 0, 0, 0.04)',
+          },
+        }}
+      />
+    </GridToolbarContainer>
+  );
+}
 
 export default function UserManagement() {
   const { pathname } = useLocation();
@@ -860,6 +878,11 @@ export default function UserManagement() {
         // Configuration
         pageSizeOptions={[5, 10, 25, 50]}
         showToolbar={true}
+        disableColumnFilter={true}
+        disableColumnMenu={true}
+        slots={{
+          toolbar: CustomToolbar
+        }}
       />
 
       {/* Dynamic Modal for User CRUD */}

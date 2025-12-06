@@ -277,7 +277,7 @@ const ReusableDataTable = ({
             
               // Configuration
               initialState={initialState}
-              showToolbar={ true}
+              showToolbar={showToolbar}
               sx={defaultSx}
             
 

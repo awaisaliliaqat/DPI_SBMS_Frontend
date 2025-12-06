@@ -32,6 +32,7 @@ import {
   Assignment as WorkOrderIcon,
 } from '@mui/icons-material';
 import { GridActionsCellItem } from '@mui/x-data-grid';
+import { GridToolbarContainer, GridToolbarColumnsButton } from '@mui/x-data-grid';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -51,6 +52,23 @@ import {
 import { useApi } from '../hooks/useApi';
 
 const INITIAL_PAGE_SIZE = 10;
+
+// Custom toolbar with only columns button
+function CustomToolbar() {
+  return (
+    <GridToolbarContainer>
+      <GridToolbarColumnsButton 
+        sx={{
+          color: '#757575', // Light grey color to match default
+          '&:hover': {
+            color: '#424242', // Slightly darker on hover
+            backgroundColor: 'rgba(0, 0, 0, 0.04)',
+          },
+        }}
+      />
+    </GridToolbarContainer>
+  );
+}
 
 export default function VendorRequests() {
   const { pathname } = useLocation();
@@ -1677,6 +1695,11 @@ export default function VendorRequests() {
         pageSizeOptions={[5, 10, 25, 50]}
         showToolbar={true}
         hideCreateButton={true} // Hide create button for this view
+        disableColumnFilter={true}
+        disableColumnMenu={true}
+        slots={{
+          toolbar: CustomToolbar
+        }}
       />
 
       {/* View Request Details Modal - Detailed View */}
