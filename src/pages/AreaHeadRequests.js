@@ -1749,44 +1749,18 @@ export default function AreaHeadRequests() {
           if (key === 'approvals') {
             return (
               <Box key={`${key}-${idx}`} sx={{ mb: 1 }}>
-                <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>Approvals:</Typography>
                 {value.map((message, msgIndex) => {
                   // Check if it's "Approval needed from" message
                   if (message.includes('Approval needed from:')) {
                     const usernames = message.replace('Approval needed from: ', '').split(', ');
-                    const emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
                     
                     return (
-                      <Box key={`approval-${msgIndex}`} sx={{ mb: 1 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5, color: '#1976d2' }}>
-                          Approval sequence:
-                        </Typography>
-                        <Box sx={{ 
-                          display: 'flex', 
-                          flexWrap: 'wrap', 
-                          gap: 1, 
-                          alignItems: 'center',
-                          p: 1,
-                          backgroundColor: '#f0f7ff',
-                          borderRadius: 1,
-                          border: '1px solid #d0e6ff'
-                        }}>
-                          {usernames.map((username, userIndex) => (
-                            <Box key={userIndex} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                              <Typography variant="body2" sx={{ fontSize: '1.1rem' }}>
-                                {emojis[userIndex] || `${userIndex + 1}.`}
-                              </Typography>
-                              <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#1976d2' }}>
-                                {username.trim()}
-                              </Typography>
-                              {userIndex < usernames.length - 1 && (
-                                <Typography variant="body2" sx={{ color: '#666', mx: 0.5 }}>
-                                  →
-                                </Typography>
-                              )}
-                            </Box>
-                          ))}
-                        </Box>
+                      <Box key={`approval-${msgIndex}`}>
+                        {usernames.map((username, userIndex) => (
+                          <Typography key={userIndex} variant="body2" sx={{ color: '#333', mb: 0.5 }}>
+                            Approval needed from {username.trim()}
+                          </Typography>
+                        ))}
                       </Box>
                     );
                   }
