@@ -39,6 +39,7 @@ import { useAuth } from '../auth/AuthContext';
 import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
+import InvoiceViewer from '../components/InvoiceViewer';
 import { BASE_URL } from "../constants/Constants";
 import { 
   SHOPBOARD_REQUEST_STATUS, 
@@ -92,6 +93,10 @@ export default function VendorRequests() {
   // Per-item site photos for invoice modal: { [itemId]: File[] }
   const [sitePhotosPerItem, setSitePhotosPerItem] = React.useState({});
   const [invoiceLoading, setInvoiceLoading] = React.useState(false);
+  
+  // Invoice viewer modal state
+  const [invoiceViewerModalOpen, setInvoiceViewerModalOpen] = React.useState(false);
+  const [selectedInvoiceViewerRequest, setSelectedInvoiceViewerRequest] = React.useState(null);
   
   // Existing invoice files state (for display when editing)
   const [existingInvoiceFiles, setExistingInvoiceFiles] = React.useState([]);
@@ -467,6 +472,13 @@ export default function VendorRequests() {
     setSelectedDetailedRequest(requestData);
     setDetailedViewModalOpen(true);
   }, []);
+
+  const handleViewInvoice = React.useCallback((requestData) => {
+    if (!canRead) return;
+    
+    setSelectedInvoiceViewerRequest(requestData);
+    setInvoiceViewerModalOpen(true);
+  }, [canRead]);
 
   const handleShareInvoice = React.useCallback((requestData) => {
     setSelectedInvoiceRequest(requestData);
@@ -1555,11 +1567,38 @@ export default function VendorRequests() {
             );
           }
           
+          // Show invoice viewer if invoice data exists and status is invoice_sent
+          if (canRead && row.status === SHOPBOARD_REQUEST_STATUS.INVOICE_SENT && row.invoice) {
+            try {
+              const invoiceData = typeof row.invoice === 'string' ? JSON.parse(row.invoice) : row.invoice;
+              const hasInvoiceData = invoiceData && (
+                (invoiceData.invoice_files && invoiceData.invoice_files.length > 0) ||
+                (invoiceData.dealer_acknowledgment_files && invoiceData.dealer_acknowledgment_files.length > 0) ||
+                (invoiceData.site_photos && invoiceData.site_photos.length > 0) ||
+                (invoiceData.site_photos_by_item && Object.keys(invoiceData.site_photos_by_item).length > 0)
+              );
+              
+              if (hasInvoiceData) {
+                actions.push(
+                  <GridActionsCellItem
+                    key="viewInvoice"
+                    icon={<Tooltip title="View Invoice Documents"><InvoiceIcon /></Tooltip>}
+                    label="View Invoice"
+                    onClick={() => handleViewInvoice(row)}
+                    color="info"
+                  />
+                );
+              }
+            } catch (error) {
+              console.error('Error parsing invoice data:', error);
+            }
+          }
+          
           return actions;
         },
       },
     ],
-    [canApprove, canUpdate, canRead, handleViewDetails, handleEdit, handleApprove, handleViewComments, handleViewHistory, handleShareInvoice, handleViewRejectionComments, handleEditInvoiceAfterRejection],
+    [canApprove, canUpdate, canRead, handleViewDetails, handleEdit, handleApprove, handleViewComments, handleViewHistory, handleShareInvoice, handleViewRejectionComments, handleEditInvoiceAfterRejection, handleViewInvoice],
   );
 
   const pageTitle = 'Vendor Requests';
@@ -3740,6 +3779,15 @@ export default function VendorRequests() {
           )}
         </DialogActions>
       </Dialog>
+
+      {/* Invoice Viewer Modal */}
+      <InvoiceViewer
+        open={invoiceViewerModalOpen}
+        onClose={() => setInvoiceViewerModalOpen(false)}
+        invoiceData={selectedInvoiceViewerRequest?.invoice}
+        requestId={selectedInvoiceViewerRequest?.id}
+        requestItems={selectedInvoiceViewerRequest?.requestItems}
+      />
 
       {/* React Toastify Container */}
       <ToastContainer
