@@ -1648,9 +1648,6 @@ export default function AreaHeadRequests() {
     if (entries.length === 0) return null;
     return (
       <Box sx={{ mb: 2 }}>
-        <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-          Main Request Changes:
-        </Typography>
         {entries.map(([key, value], idx) => {
           if (key === 'assigned_vm') return null;
           if (value === null || value === undefined) return null;
@@ -5174,7 +5171,11 @@ export default function AreaHeadRequests() {
                 >
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                     <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                      {log.changed_by ? log.changed_by.username : 'Unknown User'}
+                      {log.changed_by 
+                        ? (log.changed_by.card_name && log.changed_by.user_type === 'vendor'
+                          ? `${log.changed_by.card_name} (${log.changed_by.username})`
+                          : log.changed_by.username)
+                        : 'Unknown User'}
                     </Typography>
                     <Typography variant="caption" sx={{ color: '#666' }}>
                       {log.changed_at ? new Date(log.changed_at).toLocaleString() : 'Unknown Date'}
@@ -5197,7 +5198,7 @@ export default function AreaHeadRequests() {
                     {log.item_changes && log.item_changes.length > 0 && (
                       <Box sx={{ mt: 1, p: 1, backgroundColor: '#f0f0f0', borderRadius: 1 }}>
                         <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-                          Request Item Changes:
+                          Request items:
                         </Typography>
                         {log.item_changes.map((item, index) => (
                           <Box key={index} sx={{ mb: 1, p: 1, backgroundColor: '#ffffff', borderRadius: 0.5 }}>
