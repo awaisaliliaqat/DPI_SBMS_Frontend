@@ -5192,19 +5192,28 @@ export default function AreaHeadRequests() {
                             <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
                               {item.action}: {item.request_type}
                             </Typography>
-                            {item.width && (
+                            {/* Only show width if it exists and is greater than 0 */}
+                            {item.width !== null && item.width !== undefined && parseFloat(item.width) > 0 && (
                               <Typography variant="body2" sx={{ color: '#333', mb: 0.5 }}>
                                 Width: {item.width} ft
                               </Typography>
                             )}
-                            {item.height && (
+                            {/* Only show height if it exists and is greater than 0 */}
+                            {item.height !== null && item.height !== undefined && parseFloat(item.height) > 0 && (
                               <Typography variant="body2" sx={{ color: '#333', mb: 0.5 }}>
                                 Height: {item.height} ft
                               </Typography>
                             )}
+                            {/* Show price per sqft if available and greater than 0 */}
+                            {item.price_per_sqft !== null && item.price_per_sqft !== undefined && parseFloat(item.price_per_sqft) > 0 && (
+                              <Typography variant="body2" sx={{ color: '#333', mb: 0.5 }}>
+                                Price per sqft: Rs {parseFloat(item.price_per_sqft).toFixed(2)}
+                              </Typography>
+                            )}
+                            {/* Always show total price if available */}
                             {item.price && (
                               <Typography variant="body2" sx={{ color: '#333', mb: 0.5 }}>
-                                Price: Rs {parseFloat(item.price).toFixed(2)}
+                                Total Price: Rs {parseFloat(item.price).toFixed(2)}
                               </Typography>
                             )}
                           </Box>
