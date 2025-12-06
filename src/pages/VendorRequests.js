@@ -1154,6 +1154,51 @@ export default function VendorRequests() {
               </Typography>
             );
           }
+          // Display approvals array
+          if (key === 'approvals') {
+            if (!Array.isArray(value) || value.length === 0) return null;
+            return (
+              <Box key={`${key}-${idx}`} sx={{ mb: 1 }}>
+                {value.map((message, msgIndex) => (
+                  <Box key={`approval-${msgIndex}`} sx={{ mb: 1 }}>
+                    <Typography variant="body2" sx={{ 
+                      color: '#2e7d32', 
+                      fontWeight: 'bold',
+                      backgroundColor: '#e8f5e8',
+                      p: 1,
+                      borderRadius: 1,
+                      border: '1px solid #c8e6c9',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1
+                    }}>
+                      ✅ {message}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            );
+          }
+          // Display approval_date
+          if (key === 'approval_date') {
+            return (
+              <Typography key={`${key}-${idx}`} variant="body2" sx={{ 
+                color: '#2e7d32',
+                fontWeight: 'bold',
+                mb: 0.5
+              }}>
+                Approved on: {new Date(value).toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric'
+                }) + ' at ' + new Date(value).toLocaleTimeString('en-US', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true
+                })}
+              </Typography>
+            );
+          }
           if (key === 'approvals') {
             return (
               <Box key={`${key}-${idx}`} sx={{ mb: 1 }}>
