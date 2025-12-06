@@ -1355,6 +1355,52 @@ export default function VendorRequests() {
           }
         },
       },
+      {
+        field: 'approval_date',
+        headerName: 'Approval Date',
+        minWidth: 170,
+        align: 'left',
+        headerAlign: 'left',
+        renderCell: (params) => {
+          const approvalDate = params.value;
+          if (!approvalDate) {
+            return (
+              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                <Typography variant="body2" sx={{ color: '#999', fontStyle: 'italic' }}>
+                  N/A
+                </Typography>
+              </Box>
+            );
+          }
+          
+          try {
+            const date = new Date(approvalDate);
+            return (
+              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                <Typography variant="body2">
+                  {date.toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                  }) + ' ' + date.toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                  })}
+                </Typography>
+              </Box>
+            );
+          } catch (error) {
+            return (
+              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                <Typography variant="body2" sx={{ color: '#999', fontStyle: 'italic' }}>
+                  N/A
+                </Typography>
+              </Box>
+            );
+          }
+        },
+      },
       // {
       //   field: 'requestItems',
       //   headerName: 'Request Types',
@@ -3170,6 +3216,30 @@ export default function VendorRequests() {
                       {selectedDetailedRequest.survey_date ? 
                         new Date(selectedDetailedRequest.survey_date).toLocaleDateString() : 
                         new Date().toLocaleDateString()}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Approval Date
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.approval_date ? 
+                        (() => {
+                          try {
+                            const date = new Date(selectedDetailedRequest.approval_date);
+                            return date.toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric'
+                            }) + ' ' + date.toLocaleTimeString('en-US', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true
+                            });
+                          } catch (error) {
+                            return 'N/A';
+                          }
+                        })() : 'N/A'}
                     </Typography>
                   </Box>
                 </Box>

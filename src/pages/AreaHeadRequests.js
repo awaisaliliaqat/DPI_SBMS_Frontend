@@ -5821,6 +5821,30 @@ export default function AreaHeadRequests() {
                         new Date().toLocaleDateString()}
                     </Typography>
                   </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Approval Date
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.approval_date ? 
+                        (() => {
+                          try {
+                            const date = new Date(selectedDetailedRequest.approval_date);
+                            return date.toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric'
+                            }) + ' ' + date.toLocaleTimeString('en-US', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true
+                            });
+                          } catch (error) {
+                            return 'N/A';
+                          }
+                        })() : 'N/A'}
+                    </Typography>
+                  </Box>
                 </Box>
               </Paper>
             </Box>
