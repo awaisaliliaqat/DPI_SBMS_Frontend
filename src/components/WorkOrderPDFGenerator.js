@@ -199,6 +199,9 @@ const WorkOrderPDFGenerator = {
             padding: 8px;
             border-radius: 3px;
             margin-top: 6px;
+            margin-left: 0;
+            margin-right: 0;
+            width: 100%;
         }
 
         .reason-label {
@@ -333,9 +336,11 @@ const WorkOrderPDFGenerator = {
                     <div class="field-value" id="last-installation-date">-</div>
                 </div>
             </div>
-            <div class="reason-box">
-                <div class="reason-label">Reason for Replacement:</div>
-                <div class="reason-text" id="replacement-reason">No reason provided</div>
+            <div class="fields-row">
+                <div class="field full-width">
+                    <div class="field-label">Reason for Replacement:</div>
+                    <div class="field-value" id="replacement-reason">No reason provided</div>
+                </div>
             </div>
         </div>
 
