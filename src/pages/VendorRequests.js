@@ -741,6 +741,7 @@ export default function VendorRequests() {
       
       return {
         id: item.id, // Include the item ID to preserve it
+        temp_id: item.temp_id, // Preserve temp_id if it exists (for newly added items)
         request_type_id: item.request_type_id,
         width: item.width,
         height: item.height,
@@ -2358,7 +2359,12 @@ export default function VendorRequests() {
                     
                     <IconButton
                       onClick={() => {
-                        const newItems = editFormData.request_items.filter((_, i) => i !== index);
+                        // Remove item by ID or temp_id, not by index
+                        const itemToRemove = editFormData.request_items[index];
+                        const itemIdentifier = itemToRemove.id || itemToRemove.temp_id;
+                        const newItems = editFormData.request_items.filter(item => 
+                          (item.id || item.temp_id) !== itemIdentifier
+                        );
                         handleEditFormChange('request_items', newItems);
                       }}
                       color="error"
@@ -2372,7 +2378,14 @@ export default function VendorRequests() {
                 <Button
                   variant="outlined"
                   onClick={() => {
-                    const newItems = [...(editFormData.request_items || []), { request_type_id: '', width: '', height: '', price: '', price_per_sqft: '' }];
+                    const newItems = [...(editFormData.request_items || []), { 
+                      temp_id: `temp_${Date.now()}_${Math.random()}`, // Unique temporary ID for new items
+                      request_type_id: '', 
+                      width: '', 
+                      height: '', 
+                      price: '', 
+                      price_per_sqft: '' 
+                    }];
                     handleEditFormChange('request_items', newItems);
                   }}
                   disabled={isLoading || requestTypes.length === 0}
