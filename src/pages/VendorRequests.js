@@ -1585,8 +1585,8 @@ export default function VendorRequests() {
             );
           }
           
-          // Show invoice viewer if invoice data exists and status is invoice_sent
-          if (canRead && row.status === SHOPBOARD_REQUEST_STATUS.INVOICE_SENT && row.invoice) {
+          // Show invoice viewer if invoice data exists and status is invoice_sent or Submitted for Payment
+          if (canRead && (row.status === SHOPBOARD_REQUEST_STATUS.INVOICE_SENT || row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT) && row.invoice) {
             try {
               const invoiceData = typeof row.invoice === 'string' ? JSON.parse(row.invoice) : row.invoice;
               const hasInvoiceData = invoiceData && (

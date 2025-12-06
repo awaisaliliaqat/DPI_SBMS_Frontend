@@ -17,7 +17,9 @@ export const VENDOR_APPROVAL_STATUS = 'approval';
 // Vendor-specific display names mapping
 // Note: Status mapping is handled by the backend API:
 // - ceo_approval/manual_approval -> approval (both represent "approved for work")
-// - under_review/ceo_pending/payment_released/payment_successful are excluded from vendor view
+// - under_review/ceo_pending -> quotation sent
+// - payment_released -> invoice_sent
+// - Submitted for Payment -> kept as-is (displayed as "Invoice Approved")
 // The backend returns the mapped status, so we just need to provide display names here
 export const VENDOR_REQUEST_STATUS_DISPLAY = {
   [SHOPBOARD_REQUEST_STATUS.NOT_DECIDED]: 'Not Decided',
@@ -30,7 +32,7 @@ export const VENDOR_REQUEST_STATUS_DISPLAY = {
   [VENDOR_APPROVAL_STATUS]: 'Approved for work',
   [SHOPBOARD_REQUEST_STATUS.COMPLETED]: 'Completed',
   [SHOPBOARD_REQUEST_STATUS.INVOICE_SENT]: 'Invoice Sent',
-  [SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT]: 'Submitted for Payment',
+  [SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT]: 'Invoice Approved',
   [SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED]: 'Invoice Rejected',
   [SHOPBOARD_REQUEST_STATUS.REJECTED]: 'Rejected',
 };
@@ -78,7 +80,7 @@ export const getVendorStatusColor = (status) => {
     case SHOPBOARD_REQUEST_STATUS.INVOICE_SENT:
       return 'primary';
     case SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT:
-      return 'info';
+      return 'success'; // Green color for "Invoice Approved"
     case SHOPBOARD_REQUEST_STATUS.COMPLETED:
       return 'success';
     case SHOPBOARD_REQUEST_STATUS.NOT_DECIDED:
