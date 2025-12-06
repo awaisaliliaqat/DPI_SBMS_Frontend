@@ -23,7 +23,6 @@ import {
   Clear as ClearIcon,
   Close as CloseIcon,
 } from '@mui/icons-material';
-import { STATUS_OPTIONS, getStatusDisplayName } from '../constants/ShopboardRequestStatus';
 import { useApi } from '../hooks/useApi';
 
 const ShopboardRequestFilters = ({ 
@@ -42,10 +41,12 @@ const ShopboardRequestFilters = ({
   const [regions, setRegions] = React.useState([]);
   const [parentDealers, setParentDealers] = React.useState([]);
   const [childDealers, setChildDealers] = React.useState([]);
+  const [statuses, setStatuses] = React.useState([]);
   const [loadingVendors, setLoadingVendors] = React.useState(false);
   const [loadingRegions, setLoadingRegions] = React.useState(false);
   const [loadingParentDealers, setLoadingParentDealers] = React.useState(false);
   const [loadingChildDealers, setLoadingChildDealers] = React.useState(false);
+  const [loadingStatuses, setLoadingStatuses] = React.useState(false);
   const { get } = useApi();
 
   // Fetch vendors from API
@@ -56,9 +57,11 @@ const ShopboardRequestFilters = ({
         const response = await get('/api/users/vendors');
         if (response.success && Array.isArray(response.data)) {
           // Transform vendors to include user_id for filtering
+          // API returns: { id: username (CardCode), name: card_name, user_id: user.id }
           const transformedVendors = response.data.map(vendor => ({
             id: vendor.user_id, // Use user_id for filtering (matches vendor_code in shopboard_requests)
-            name: vendor.name || 'Unknown Vendor',
+            name: vendor.name || 'Unknown Vendor', // card_name from API
+            username: vendor.id || '', // username (CardCode) from API - this is the 'id' field in API response
             user_id: vendor.user_id
           }));
           setVendors(transformedVendors);
@@ -94,13 +97,31 @@ const ShopboardRequestFilters = ({
     fetchRegions();
   }, [get]);
 
-  // Get statuses from constants
-  const statuses = React.useMemo(() => {
-    return STATUS_OPTIONS.map(status => ({
-      value: status.value,
-      label: status.label
-    })).sort((a, b) => a.label.localeCompare(b.label));
-  }, []);
+  // Fetch statuses from API
+  React.useEffect(() => {
+    const fetchStatuses = async () => {
+      setLoadingStatuses(true);
+      try {
+        const response = await get('/api/shopboard-requests/statuses');
+        if (response.success && Array.isArray(response.data)) {
+          // Transform API response to match filter format
+          // Maintain the order from API (no sorting) - slug is used for filtering, displayName for display
+          const transformedStatuses = response.data.map(status => ({
+            value: status.slug, // slug is the original status name (used for backend filtering)
+            label: status.displayName // displayName is the human-readable name (shown in dropdown)
+          }));
+          setStatuses(transformedStatuses);
+        }
+      } catch (error) {
+        console.error('Error fetching statuses:', error);
+        setStatuses([]);
+      } finally {
+        setLoadingStatuses(false);
+      }
+    };
+
+    fetchStatuses();
+  }, [get]);
 
   // Fetch parent dealers when region is selected
   React.useEffect(() => {
@@ -259,7 +280,22 @@ const ShopboardRequestFilters = ({
           <Autocomplete
             size="small"
             options={vendors}
-            getOptionLabel={(option) => option.name || ''}
+            getOptionLabel={(option) => {
+              if (!option) return '';
+              const cardName = option.name || '';
+              const username = option.username || '';
+              return username ? `${cardName} (${username})` : cardName;
+            }}
+            filterOptions={(options, { inputValue }) => {
+              const searchValue = inputValue.toLowerCase().trim();
+              if (!searchValue) return options;
+              
+              return options.filter(option => {
+                const cardName = (option.name || '').toLowerCase();
+                const username = (option.username || '').toLowerCase();
+                return cardName.includes(searchValue) || username.includes(searchValue);
+              });
+            }}
             value={selectedVendor}
             onChange={(event, newValue) => {
               setSelectedVendor(newValue);
@@ -350,7 +386,7 @@ const ShopboardRequestFilters = ({
             )}
             isOptionEqualToValue={(option, value) => option.value === value?.value}
             noOptionsText="No statuses found"
-            loading={false}
+            loading={loadingStatuses}
             componentsProps={{
               popper: {
                 style: { zIndex: 1301 },
@@ -365,7 +401,7 @@ const ShopboardRequestFilters = ({
           <Autocomplete
             size="small"
             options={regions}
-            getOptionLabel={(option) => option.code ? `${option.name} (${option.code})` : option.name || ''}
+            getOptionLabel={(option) => option.name || ''}
             value={selectedRegion}
             onChange={(event, newValue) => {
               setSelectedRegion(newValue);
@@ -680,7 +716,7 @@ const ShopboardRequestFilters = ({
           )}
           {selectedRegion && (
             <Chip
-              label={`Region: ${selectedRegion.code ? `${selectedRegion.name} (${selectedRegion.code})` : selectedRegion.name}`}
+              label={`Region: ${selectedRegion.name || ''}`}
               onDelete={() => setSelectedRegion(null)}
               color="info"
               variant="filled"
