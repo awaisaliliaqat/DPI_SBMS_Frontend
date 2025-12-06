@@ -5524,10 +5524,10 @@ export default function AreaHeadRequests() {
                           </Box>
                           <Box>
                             <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
-                              Price per ft²
+                              Price per (sqft)
                             </Typography>
                             <Typography variant="body2">
-                              {item.price_per_sqft ? `₨${parseFloat(item.price_per_sqft).toFixed(2)}` : 'N/A'}
+                              {item.price_per_square_foot ? `₨${parseFloat(item.price_per_square_foot).toFixed(2)}` : 'N/A'}
                             </Typography>
                           </Box>
                           <Box>
@@ -5754,7 +5754,7 @@ export default function AreaHeadRequests() {
                       Assigned Vendor
                     </Typography>
                     <Typography variant="body1">
-                      {selectedDetailedRequest.vendor?.name || 'Not assigned'}
+                      {getVendorName(selectedDetailedRequest) || 'Not assigned'}
                     </Typography>
                   </Box>
                   <Box>

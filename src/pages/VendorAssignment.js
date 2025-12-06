@@ -733,7 +733,7 @@ export default function VendorAssignment() {
                     {selected.map((regionId) => {
                       const region = regions.find(r => r.id === regionId);
                       return region ? (
-                        <Chip key={regionId} label={`${region.name}${region.code ? ` (${region.code})` : ''}`} size="small" />
+                        <Chip key={regionId} label={region.name} size="small" />
                       ) : null;
                     })}
                   </Box>
@@ -749,7 +749,7 @@ export default function VendorAssignment() {
                 ) : (
                   regions.map(region => (
                     <MenuItem key={region.id} value={region.id}>
-                      {region.name} {region.code ? `(${region.code})` : ''}
+                      {region.name}
                     </MenuItem>
                   ))
                 )}

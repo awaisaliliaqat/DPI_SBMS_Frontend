@@ -222,7 +222,7 @@ export default function UserManagement() {
       tooltip: 'Please select one or more regions (optional)',
       options: regions.map(region => ({
         value: region.id,
-        label: `${region.name} (${region.code})`
+        label: region.name
       })),
       loading: loadingRegions,
       error: regionsError,
@@ -429,7 +429,7 @@ export default function UserManagement() {
     
     // Transform user data for view mode
     const regionsDisplay = userData.regions && userData.regions.length > 0
-      ? userData.regions.map(r => `${r.name} (${r.code})`).join(', ')
+      ? userData.regions.map(r => r.name).join(', ')
       : 'No Regions';
     
     const transformedUserData = {
