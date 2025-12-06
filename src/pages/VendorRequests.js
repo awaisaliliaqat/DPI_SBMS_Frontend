@@ -30,6 +30,7 @@ import {
   Visibility as ViewIcon,
   Receipt as InvoiceIcon,
   Assignment as WorkOrderIcon,
+  Print as PrintIcon,
 } from '@mui/icons-material';
 import { GridActionsCellItem } from '@mui/x-data-grid';
 import { GridToolbarContainer, GridToolbarColumnsButton } from '@mui/x-data-grid';
@@ -41,6 +42,7 @@ import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
 import InvoiceViewer from '../components/InvoiceViewer';
+import WorkOrderPDFGenerator from '../components/WorkOrderPDFGenerator';
 import { BASE_URL } from "../constants/Constants";
 import { 
   SHOPBOARD_REQUEST_STATUS, 
@@ -798,6 +800,11 @@ export default function VendorRequests() {
     setRequestToAction(requestData);
     setHistoryDialogOpen(true);
     fetchRequestHistory(requestData.id);
+  }, [canRead]);
+
+  const handlePrintWorkOrder = React.useCallback((requestData) => {
+    if (!canRead) return;
+    WorkOrderPDFGenerator.generate(requestData);
   }, [canRead]);
 
   // Fetch comments for a specific request
@@ -1561,6 +1568,16 @@ export default function VendorRequests() {
                 color="primary"
               />
             );
+            // Show print work order button for approval status
+            actions.push(
+              <GridActionsCellItem
+                key="printWorkOrder"
+                icon={<Tooltip title="Print Work Order"><PrintIcon /></Tooltip>}
+                label="Print Work Order"
+                onClick={() => handlePrintWorkOrder(row)}
+                color="secondary"
+              />
+            );
           }
           
           // Show rejection comments and edit invoice button for invoice rejected status
@@ -1616,7 +1633,7 @@ export default function VendorRequests() {
         },
       },
     ],
-    [canApprove, canUpdate, canRead, handleViewDetails, handleEdit, handleApprove, handleViewComments, handleViewHistory, handleShareInvoice, handleViewRejectionComments, handleEditInvoiceAfterRejection, handleViewInvoice],
+    [canApprove, canUpdate, canRead, handleViewDetails, handleEdit, handleApprove, handleViewComments, handleViewHistory, handleShareInvoice, handleViewRejectionComments, handleEditInvoiceAfterRejection, handleViewInvoice, handlePrintWorkOrder],
   );
 
   const pageTitle = 'Vendor Requests';
