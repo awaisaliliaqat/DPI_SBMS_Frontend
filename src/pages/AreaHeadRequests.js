@@ -3695,6 +3695,8 @@ export default function AreaHeadRequests() {
       <ShopboardRequestFilters
         onFilterChange={handleFilterChange}
         loading={isLoading}
+        filteredCount={rowsState.rowCount}
+        showFilteredCount={!!(filters.vendor || filters.status || filters.region || filters.parentDealer || filters.childDealer || filters.salesHead || filters.startDate || filters.endDate)}
       />
 
       {/* Top toolbar actions (above table) */}

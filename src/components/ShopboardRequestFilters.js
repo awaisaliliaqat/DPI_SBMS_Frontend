@@ -28,7 +28,9 @@ import { useApi } from '../hooks/useApi';
 
 const ShopboardRequestFilters = ({ 
   onFilterChange,
-  loading = false 
+  loading = false,
+  filteredCount = 0,
+  showFilteredCount = false
 }) => {
   const [selectedVendor, setSelectedVendor] = React.useState(null);
   const [selectedStatus, setSelectedStatus] = React.useState(null);
@@ -777,6 +779,29 @@ const ShopboardRequestFilters = ({
             }}
           />
         </Grid>
+
+        {/* Filtered Results Count */}
+        {showFilteredCount && hasActiveFilters && (
+          <Grid item xs={12} sm={6} md={3}>
+            <Box 
+              sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                height: '100%',
+                minHeight: '40px',
+                px: 2,
+                py: 1,
+                backgroundColor: '#e3f2fd',
+                borderRadius: 1,
+                border: '1px solid #90caf9'
+              }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 600, color: '#1976d2' }}>
+                {filteredCount} result{filteredCount !== 1 ? 's' : ''} found
+              </Typography>
+            </Box>
+          </Grid>
+        )}
       </Grid>
 
       {/* Active Filters Display - Enhanced */}
