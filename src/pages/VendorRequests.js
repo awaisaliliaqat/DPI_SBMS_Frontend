@@ -33,6 +33,7 @@ import {
   Assignment as WorkOrderIcon,
   Print as PrintIcon,
   Group as SalesHeadIcon,
+  Store as DealerIcon,
   FilterList as FilterListIcon,
   Clear as ClearIcon,
 } from '@mui/icons-material';
@@ -109,9 +110,14 @@ export default function VendorRequests() {
   const [salesHeads, setSalesHeads] = React.useState([]);
   const [loadingSalesHeads, setLoadingSalesHeads] = React.useState(false);
   
+  const [selectedDealer, setSelectedDealer] = React.useState(null);
+  const [filterDealers, setFilterDealers] = React.useState([]);
+  const [loadingDealers, setLoadingDealers] = React.useState(false);
+  
   // Use filters state for API calls
   const [filters, setFilters] = React.useState({
     salesHead: null,
+    dealer: null,
   });
   
   // Use ref to store current filters to avoid recreating loadRequests
@@ -150,19 +156,50 @@ export default function VendorRequests() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount
   
-  // Update filters when selectedSalesHead changes
+  // Fetch dealers from API - run once on mount
+  // Fetch for all users - backend will return empty array for non-vendors
+  React.useEffect(() => {
+    const fetchDealers = async () => {
+      if (!canRead) {
+        setLoadingDealers(false);
+        setFilterDealers([]);
+        return;
+      }
+      
+      setLoadingDealers(true);
+      try {
+        const response = await get('/api/shopboard-requests/vendor/dealers');
+        if (response.success && Array.isArray(response.data)) {
+          setFilterDealers(response.data);
+        } else {
+          setFilterDealers([]);
+        }
+      } catch (error) {
+        console.error('Error fetching dealers:', error);
+        setFilterDealers([]);
+      } finally {
+        setLoadingDealers(false);
+      }
+    };
+
+    fetchDealers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
+  
+  // Update filters when selectedSalesHead or selectedDealer changes
   React.useEffect(() => {
     setFilters({
-      salesHead: selectedSalesHead
+      salesHead: selectedSalesHead,
+      dealer: selectedDealer
     });
     // Reset to first page when filter changes
-    if (selectedSalesHead !== null) {
+    if (selectedSalesHead !== null || selectedDealer !== null) {
       setPaginationModel(prev => {
         if (prev.page === 0) return prev;
         return { ...prev, page: 0 };
       });
     }
-  }, [selectedSalesHead]);
+  }, [selectedSalesHead, selectedDealer]);
   
   // Modal state for viewing request details
   const [modalOpen, setModalOpen] = React.useState(false);
@@ -515,6 +552,11 @@ export default function VendorRequests() {
       // Add sales head filter if selected
       if (currentFilters.salesHead && currentFilters.salesHead.id) {
         queryParams.append('sales_head_id', currentFilters.salesHead.id.toString());
+      }
+      
+      // Add dealer filter if selected
+      if (currentFilters.dealer && currentFilters.dealer.id) {
+        queryParams.append('dealer_id', currentFilters.dealer.id.toString());
       }
       
       const apiUrl = `/api/shopboard-requests/vendor?${queryParams.toString()}`;
@@ -1454,6 +1496,7 @@ export default function VendorRequests() {
   // Handle clear filters
   const handleClearFilters = () => {
     setSelectedSalesHead(null);
+    setSelectedDealer(null);
   };
 
   const handleRowClick = React.useCallback(
@@ -1844,7 +1887,7 @@ export default function VendorRequests() {
               <FilterListIcon sx={{ fontSize: '1.3rem' }} />
               Filters
             </Typography>
-            {selectedSalesHead && (
+            {(selectedSalesHead || selectedDealer) && (
               <Button
                 size="small"
                 onClick={handleClearFilters}
@@ -1932,8 +1975,77 @@ export default function VendorRequests() {
               />
             </Grid>
 
+            {/* Dealer Filter */}
+            <Grid item xs={12} sm={6} md={4}>
+              <Autocomplete
+                size="small"
+                options={filterDealers}
+                getOptionLabel={(option) => {
+                  if (!option) return '';
+                  const name = option.name || '';
+                  const code = option.code || '';
+                  return code && name !== code ? `${name} (${code})` : name || code || 'Unknown';
+                }}
+                filterOptions={(options, { inputValue }) => {
+                  const searchValue = inputValue.toLowerCase().trim();
+                  if (!searchValue) return options;
+                  
+                  return options.filter(option => {
+                    const name = (option.name || '').toLowerCase();
+                    const code = (option.code || '').toLowerCase();
+                    const city = (option.city || '').toLowerCase();
+                    return name.includes(searchValue) || code.includes(searchValue) || city.includes(searchValue);
+                  });
+                }}
+                value={selectedDealer}
+                onChange={(event, newValue) => {
+                  setSelectedDealer(newValue);
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Dealer"
+                    placeholder={filterDealers.length === 0 ? "No dealers available" : "Select dealer..."}
+                    variant="outlined"
+                    fullWidth
+                    disabled={loadingDealers || filterDealers.length === 0}
+                    InputProps={{
+                      ...params.InputProps,
+                      startAdornment: (
+                        <>
+                          <DealerIcon sx={{ mr: 1, color: 'action.active', fontSize: '1.2rem' }} />
+                          {params.InputProps.startAdornment}
+                        </>
+                      ),
+                    }}
+                    sx={{
+                      minWidth: '280px',
+                      '& .MuiOutlinedInput-root': {
+                        backgroundColor: '#fafbff',
+                        '&:hover': {
+                          backgroundColor: '#f5f7ff',
+                        },
+                        '&.Mui-focused': {
+                          backgroundColor: '#ffffff',
+                        }
+                      }
+                    }}
+                  />
+                )}
+                isOptionEqualToValue={(option, value) => option.id === value?.id}
+                noOptionsText={filterDealers.length === 0 ? "No dealers have requests assigned to you" : "No dealers found"}
+                loading={loadingDealers}
+                componentsProps={{
+                  popper: {
+                    style: { zIndex: 1300 },
+                    placement: 'bottom-start'
+                  }
+                }}
+              />
+            </Grid>
+
             {/* Filtered Results Count */}
-            {selectedSalesHead && (
+            {(selectedSalesHead || selectedDealer) && (
               <Grid item xs={12} sm={6} md={4}>
                 <Box 
                   sx={{ 
@@ -1957,7 +2069,7 @@ export default function VendorRequests() {
           </Grid>
 
           {/* Active Filters Display */}
-          {selectedSalesHead && (
+          {(selectedSalesHead || selectedDealer) && (
             <Box sx={{ 
               mt: 3, 
               pt: 2.5, 
@@ -1975,19 +2087,36 @@ export default function VendorRequests() {
               }}>
                 Active Filters:
               </Typography>
-              <Chip
-                label={`Sales Head: ${selectedSalesHead.name || selectedSalesHead.username || 'Unknown'}`}
-                onDelete={() => setSelectedSalesHead(null)}
-                color="error"
-                variant="filled"
-                size="small"
-                sx={{
-                  fontWeight: 500,
-                  '& .MuiChip-deleteIcon': {
-                    fontSize: '1rem'
-                  }
-                }}
-            />
+              {selectedSalesHead && (
+                <Chip
+                  label={`Sales Head: ${selectedSalesHead.name || selectedSalesHead.username || 'Unknown'}`}
+                  onDelete={() => setSelectedSalesHead(null)}
+                  color="error"
+                  variant="filled"
+                  size="small"
+                  sx={{
+                    fontWeight: 500,
+                    '& .MuiChip-deleteIcon': {
+                      fontSize: '1rem'
+                    }
+                  }}
+                />
+              )}
+              {selectedDealer && (
+                <Chip
+                  label={`Dealer: ${selectedDealer.name || selectedDealer.code || 'Unknown'}`}
+                  onDelete={() => setSelectedDealer(null)}
+                  color="error"
+                  variant="filled"
+                  size="small"
+                  sx={{
+                    fontWeight: 500,
+                    '& .MuiChip-deleteIcon': {
+                      fontSize: '1rem'
+                    }
+                  }}
+                />
+              )}
           </Box>
         )}
       </Box>
