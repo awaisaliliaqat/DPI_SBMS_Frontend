@@ -16,6 +16,7 @@ import {
   Divider,
   InputAdornment,
   Paper,
+  Grid,
 } from '@mui/material';
 import {
   CheckCircle as ApproveIcon,
@@ -31,6 +32,9 @@ import {
   Receipt as InvoiceIcon,
   Assignment as WorkOrderIcon,
   Print as PrintIcon,
+  Group as SalesHeadIcon,
+  FilterList as FilterListIcon,
+  Clear as ClearIcon,
 } from '@mui/icons-material';
 import { GridActionsCellItem } from '@mui/x-data-grid';
 import { GridToolbarContainer, GridToolbarColumnsButton } from '@mui/x-data-grid';
@@ -79,6 +83,9 @@ export default function VendorRequests() {
   
   const { user, hasPermission, token } = useAuth();
   
+  // Check if user is a vendor (not admin or other user types)
+  const isVendor = user?.user_type === 'vendor';
+  
   // Check user permissions - using vendorRequests permissions
   const canRead = user?.permissions?.vendorRequests?.includes('read') || false;
   const canUpdate = user?.permissions?.vendorRequests?.includes('update') || false;
@@ -96,6 +103,66 @@ export default function VendorRequests() {
 
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState(null);
+  
+  // Filter state - inline filter management
+  const [selectedSalesHead, setSelectedSalesHead] = React.useState(null);
+  const [salesHeads, setSalesHeads] = React.useState([]);
+  const [loadingSalesHeads, setLoadingSalesHeads] = React.useState(false);
+  
+  // Use filters state for API calls
+  const [filters, setFilters] = React.useState({
+    salesHead: null,
+  });
+  
+  // Use ref to store current filters to avoid recreating loadRequests
+  const filtersRef = React.useRef(filters);
+  React.useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
+  
+  // Fetch sales heads from API - run once on mount
+  // Fetch for all users - backend will return empty array for non-vendors
+  React.useEffect(() => {
+    const fetchSalesHeads = async () => {
+      if (!canRead) {
+        setLoadingSalesHeads(false);
+        setSalesHeads([]);
+        return;
+      }
+      
+      setLoadingSalesHeads(true);
+      try {
+        const response = await get('/api/shopboard-requests/vendor/sales-heads');
+        if (response.success && Array.isArray(response.data)) {
+          setSalesHeads(response.data);
+        } else {
+          setSalesHeads([]);
+        }
+      } catch (error) {
+        console.error('Error fetching sales heads:', error);
+        setSalesHeads([]);
+      } finally {
+        setLoadingSalesHeads(false);
+      }
+    };
+
+    fetchSalesHeads();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
+  
+  // Update filters when selectedSalesHead changes
+  React.useEffect(() => {
+    setFilters({
+      salesHead: selectedSalesHead
+    });
+    // Reset to first page when filter changes
+    if (selectedSalesHead !== null) {
+      setPaginationModel(prev => {
+        if (prev.page === 0) return prev;
+        return { ...prev, page: 0 };
+      });
+    }
+  }, [selectedSalesHead]);
   
   // Modal state for viewing request details
   const [modalOpen, setModalOpen] = React.useState(false);
@@ -175,6 +242,12 @@ export default function VendorRequests() {
       ? Number(searchParams.get('pageSize'))
       : INITIAL_PAGE_SIZE,
   });
+  
+  // Use refs to track pagination and filters to avoid recreating loadRequests
+  const paginationModelRef = React.useRef(paginationModel);
+  React.useEffect(() => {
+    paginationModelRef.current = paginationModel;
+  }, [paginationModel]);
 
   const [filterModel, setFilterModel] = React.useState(
     searchParams.get('filter')
@@ -199,7 +272,7 @@ export default function VendorRequests() {
         draggable: true,
       });
     }
-  }, [canRead, navigate]);
+  }, [canRead]);
 
   // Load dropdown data for edit form (warranty statuses only - dealer is already in editingRequest)
   const loadDropdownData = React.useCallback(async () => {
@@ -421,6 +494,7 @@ export default function VendorRequests() {
   );
 
   // API call to fetch vendor shopboard requests
+  // Not using useCallback to avoid dependency issues - will be recreated but that's okay
   const loadRequests = React.useCallback(async () => {
     if (!canRead) return;
     
@@ -428,9 +502,22 @@ export default function VendorRequests() {
     setIsLoading(true);
 
     try {
+      // Use current state values directly (not refs) since this function will be recreated when needed
       const { page, pageSize } = paginationModel;
+      const currentFilters = filters;
       
-      const apiUrl = `/api/shopboard-requests/vendor?page=${page}&size=${pageSize}`;
+      // Build query parameters
+      const queryParams = new URLSearchParams({
+        page: page.toString(),
+        size: pageSize.toString()
+      });
+      
+      // Add sales head filter if selected
+      if (currentFilters.salesHead && currentFilters.salesHead.id) {
+        queryParams.append('sales_head_id', currentFilters.salesHead.id.toString());
+      }
+      
+      const apiUrl = `/api/shopboard-requests/vendor?${queryParams.toString()}`;
       
       const requestData = await get(apiUrl);
       
@@ -473,12 +560,15 @@ export default function VendorRequests() {
     } finally {
       setIsLoading(false);
     }
-  }, [paginationModel, get, canRead]);
+  }, [paginationModel, filters, get, canRead]);
 
-  // Load data when component mounts or pagination changes
+  // Load data when component mounts, pagination changes, or filters change
   React.useEffect(() => {
-    loadRequests();
-  }, [loadRequests]);
+    if (canRead) {
+      loadRequests();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paginationModel, filters]); // Watch pagination and filters directly, not loadRequests or canRead to avoid loops
 
   // Action handlers
   const handleView = React.useCallback((requestData) => {
@@ -1361,6 +1451,11 @@ export default function VendorRequests() {
     }
   }, [isLoading, loadRequests, canRead]);
 
+  // Handle clear filters
+  const handleClearFilters = () => {
+    setSelectedSalesHead(null);
+  };
+
   const handleRowClick = React.useCallback(
     ({ row }) => {
       handleView(row);
@@ -1719,6 +1814,183 @@ export default function VendorRequests() {
           {error}
         </Alert>
       )}
+
+      {/* Vendor Request Filters - Show for everyone */}
+      <Box sx={{ 
+          mb: 3, 
+          p: 3, 
+          backgroundColor: '#ffffff', 
+          borderRadius: 3, 
+          border: '1px solid #e0e7ff',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+        }}>
+          {/* Filter Header */}
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            mb: 2.5,
+            pb: 2,
+            borderBottom: '2px solid #f0f4ff'
+          }}>
+            <Typography variant="h6" sx={{ 
+              fontWeight: 600, 
+              color: '#1a237e',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              fontSize: '1.1rem'
+            }}>
+              <FilterListIcon sx={{ fontSize: '1.3rem' }} />
+              Filters
+            </Typography>
+            {selectedSalesHead && (
+              <Button
+                size="small"
+                onClick={handleClearFilters}
+                startIcon={<ClearIcon />}
+                sx={{ 
+                  textTransform: 'none',
+                  color: '#666',
+                  '&:hover': {
+                    backgroundColor: '#f5f5f5'
+                  }
+                }}
+              >
+                Clear All
+              </Button>
+            )}
+          </Box>
+
+          {/* Filter Grid */}
+          <Grid container spacing={2.5}>
+            {/* Sales Head Filter */}
+            <Grid item xs={12} sm={6} md={4}>
+              <Autocomplete
+                size="small"
+                options={salesHeads}
+                getOptionLabel={(option) => {
+                  if (!option) return '';
+                  const name = option.name || option.username || '';
+                  const username = option.username || '';
+                  return username && name !== username ? `${name} (${username})` : name || username || 'Unknown';
+                }}
+                filterOptions={(options, { inputValue }) => {
+                  const searchValue = inputValue.toLowerCase().trim();
+                  if (!searchValue) return options;
+                  
+                  return options.filter(option => {
+                    const name = (option.name || '').toLowerCase();
+                    const username = (option.username || '').toLowerCase();
+                    const email = (option.email || '').toLowerCase();
+                    return name.includes(searchValue) || username.includes(searchValue) || email.includes(searchValue);
+                  });
+                }}
+                value={selectedSalesHead}
+                onChange={(event, newValue) => {
+                  setSelectedSalesHead(newValue);
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Sales Head"
+                    placeholder="Select sales head..."
+                    variant="outlined"
+                    fullWidth
+                    disabled={isLoading}
+                    InputProps={{
+                      ...params.InputProps,
+                      startAdornment: (
+                        <>
+                          <SalesHeadIcon sx={{ mr: 1, color: 'action.active', fontSize: '1.2rem' }} />
+                          {params.InputProps.startAdornment}
+                        </>
+                      ),
+                    }}
+                    sx={{
+                      minWidth: '280px',
+                      '& .MuiOutlinedInput-root': {
+                        backgroundColor: '#fafbff',
+                        '&:hover': {
+                          backgroundColor: '#f5f7ff',
+                        },
+                        '&.Mui-focused': {
+                          backgroundColor: '#ffffff',
+                        }
+                      }
+                    }}
+                  />
+                )}
+                isOptionEqualToValue={(option, value) => option.id === value?.id}
+                noOptionsText="No sales heads found"
+                componentsProps={{
+                  popper: {
+                    style: { zIndex: 1300 },
+                    placement: 'bottom-start'
+                  }
+                }}
+              />
+            </Grid>
+
+            {/* Filtered Results Count */}
+            {selectedSalesHead && (
+              <Grid item xs={12} sm={6} md={4}>
+                <Box 
+                  sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    height: '100%',
+                    minHeight: '40px',
+                    px: 2,
+                    py: 1,
+                    backgroundColor: '#e3f2fd',
+                    borderRadius: 1,
+                    border: '1px solid #90caf9'
+                  }}
+                >
+                  <Typography variant="body2" sx={{ fontWeight: 600, color: '#1976d2' }}>
+                    {rowsState.rowCount} result{rowsState.rowCount !== 1 ? 's' : ''} found
+                  </Typography>
+                </Box>
+              </Grid>
+            )}
+          </Grid>
+
+          {/* Active Filters Display */}
+          {selectedSalesHead && (
+            <Box sx={{ 
+              mt: 3, 
+              pt: 2.5, 
+              borderTop: '1px solid #e0e7ff',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 1.5,
+              alignItems: 'center'
+            }}>
+              <Typography variant="caption" sx={{ 
+                color: '#666', 
+                fontWeight: 500,
+                mr: 1,
+                fontSize: '0.85rem'
+              }}>
+                Active Filters:
+              </Typography>
+              <Chip
+                label={`Sales Head: ${selectedSalesHead.name || selectedSalesHead.username || 'Unknown'}`}
+                onDelete={() => setSelectedSalesHead(null)}
+                color="error"
+                variant="filled"
+                size="small"
+                sx={{
+                  fontWeight: 500,
+                  '& .MuiChip-deleteIcon': {
+                    fontSize: '1rem'
+                  }
+                }}
+            />
+          </Box>
+        )}
+      </Box>
 
       <ReusableDataTable
         data={rowsState.rows}

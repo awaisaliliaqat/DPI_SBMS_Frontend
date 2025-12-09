@@ -29,7 +29,8 @@ import { useAuth } from '../auth/AuthContext';
 import { useApi } from '../hooks/useApi';
 import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
-import { Visibility, VisibilityOff, Refresh } from '@mui/icons-material';
+import { Visibility, VisibilityOff, Refresh, CloudSync } from '@mui/icons-material';
+import { BASE_URL } from '../constants/Constants';
 
 const INITIAL_PAGE_SIZE = 10;
 
@@ -87,6 +88,31 @@ export default function VendorAssignment() {
   // Delete confirmation state
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [userToDelete, setUserToDelete] = React.useState(null);
+  
+  // Refresh sales head data state
+  const [refreshingSalesHead, setRefreshingSalesHead] = React.useState(false);
+  const [refreshProgressDialog, setRefreshProgressDialog] = React.useState(false);
+  const [refreshProgress, setRefreshProgress] = React.useState({
+    stage: '',
+    message: '',
+    startTime: null
+  });
+  const [elapsedTime, setElapsedTime] = React.useState(0);
+
+  // Update elapsed time while operation is running
+  React.useEffect(() => {
+    let interval = null;
+    if (refreshProgressDialog && refreshProgress.startTime && refreshProgress.stage !== 'completed' && refreshProgress.stage !== 'error') {
+      interval = setInterval(() => {
+        setElapsedTime(Math.floor((Date.now() - refreshProgress.startTime) / 1000));
+      }, 1000);
+    } else {
+      setElapsedTime(0);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [refreshProgressDialog, refreshProgress.startTime, refreshProgress.stage]);
 
   // Load vendors from SAP
   const loadVendors = React.useCallback(async (excludeAssigned = false) => {
@@ -391,6 +417,101 @@ export default function VendorAssignment() {
     }
   }, [isLoading, canRead, loadSapUsers]);
 
+  // Handle refresh sales head data
+  const handleRefreshSalesHeadData = React.useCallback(async () => {
+    const startTime = Date.now();
+    setRefreshingSalesHead(true);
+    setRefreshProgressDialog(true);
+    setRefreshProgress({
+      stage: 'starting',
+      message: 'Initializing refresh process...',
+      startTime: startTime
+    });
+
+    // Create AbortController for timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 900000); // 15 minutes timeout
+
+    try {
+      // Use fetch directly with longer timeout
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${BASE_URL}/api/sap-users/refresh-sales-head-data`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data?.success) {
+        const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(0);
+        setRefreshProgress({
+          stage: 'completed',
+          message: `Successfully refreshed ${data.data?.recordsInserted || 0} records in ${elapsedTime} seconds`,
+          startTime: startTime
+        });
+        
+        // Wait a moment to show success message
+        setTimeout(() => {
+          setRefreshProgressDialog(false);
+          toast.success(
+            `Sales head data refreshed successfully! ${data.data?.recordsInserted || 0} records inserted in ${elapsedTime} seconds.`,
+            {
+              position: "top-right",
+              autoClose: 7000,
+              hideProgressBar: false,
+              closeOnClick: true,
+              pauseOnHover: true,
+              draggable: true,
+            }
+          );
+        }, 2000);
+      } else {
+        throw new Error(data?.message || 'Failed to refresh sales head data');
+      }
+    } catch (error) {
+      clearTimeout(timeoutId);
+      console.error('Error refreshing sales head data:', error);
+      
+      let errorMessage = 'Failed to refresh sales head data';
+      if (error.name === 'AbortError') {
+        errorMessage = 'Request timed out. This operation can take up to 15 minutes. Please try again.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      setRefreshProgress({
+        stage: 'error',
+        message: errorMessage,
+        startTime: startTime
+      });
+
+      setTimeout(() => {
+        setRefreshProgressDialog(false);
+        toast.error(errorMessage, {
+          position: "top-right",
+          autoClose: 8000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      }, 2000);
+    } finally {
+      setRefreshingSalesHead(false);
+    }
+  }, []);
+
   // Submit handler
   const handleSubmit = async () => {
     if (!validateForm()) {
@@ -600,6 +721,20 @@ export default function VendorAssignment() {
           {error}
         </Alert>
       )}
+
+      {/* Refresh Sales Head Data Button */}
+      <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
+        <Button
+          variant="outlined"
+          color="primary"
+          startIcon={refreshingSalesHead ? <CircularProgress size={20} /> : <CloudSync />}
+          onClick={handleRefreshSalesHeadData}
+          disabled={refreshingSalesHead}
+          sx={{ minWidth: 200 }}
+        >
+          {refreshingSalesHead ? 'Refreshing...' : 'Refresh Sales Head Data'}
+        </Button>
+      </Box>
 
       <ReusableDataTable
         data={rowsState.rows}
@@ -948,6 +1083,65 @@ export default function VendorAssignment() {
           >
             {isLoading ? 'Deleting...' : 'Delete'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Refresh Progress Dialog */}
+      <Dialog
+        open={refreshProgressDialog}
+        onClose={() => {}} // Prevent closing during operation
+        aria-labelledby="refresh-progress-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '400px',
+            maxWidth: '500px',
+          }
+        }}
+      >
+        <DialogTitle id="refresh-progress-dialog-title" sx={{ fontWeight: 'bold' }}>
+          Refreshing Sales Head Data
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, py: 2 }}>
+            <CircularProgress size={60} thickness={4} />
+            <Box sx={{ textAlign: 'center', width: '100%' }}>
+              <Typography variant="h6" sx={{ mb: 1, color: '#1976d2' }}>
+                {refreshProgress.stage === 'starting' && 'Initializing...'}
+                {refreshProgress.stage === 'completed' && '✓ Completed!'}
+                {refreshProgress.stage === 'error' && '✗ Error'}
+                {!['starting', 'completed', 'error'].includes(refreshProgress.stage) && 'Processing...'}
+              </Typography>
+              <Typography variant="body1" sx={{ color: '#666', mb: 2 }}>
+                {refreshProgress.message || 'This may take several minutes. Please do not close this window.'}
+              </Typography>
+              {refreshProgress.startTime && refreshProgress.stage !== 'completed' && refreshProgress.stage !== 'error' && (
+                <Typography variant="body2" sx={{ color: '#999', fontStyle: 'italic' }}>
+                  Elapsed time: {elapsedTime} seconds
+                </Typography>
+              )}
+              {refreshProgress.stage === 'starting' && (
+                <Typography variant="body2" sx={{ color: '#666', mt: 2, fontStyle: 'italic' }}>
+                  Fetching data from SAP database...
+                </Typography>
+              )}
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, justifyContent: 'center' }}>
+          {refreshProgress.stage === 'completed' || refreshProgress.stage === 'error' ? (
+            <Button 
+              onClick={() => setRefreshProgressDialog(false)} 
+              variant="contained"
+              color={refreshProgress.stage === 'completed' ? 'primary' : 'error'}
+            >
+              Close
+            </Button>
+          ) : (
+            <Typography variant="body2" sx={{ color: '#999', fontStyle: 'italic' }}>
+              Please wait... This operation may take up to 15 minutes
+            </Typography>
+          )}
         </DialogActions>
       </Dialog>
 
