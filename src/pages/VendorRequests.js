@@ -36,6 +36,7 @@ import {
   Store as DealerIcon,
   FilterList as FilterListIcon,
   Clear as ClearIcon,
+  Label as StatusIcon,
 } from '@mui/icons-material';
 import { GridActionsCellItem } from '@mui/x-data-grid';
 import { GridToolbarContainer, GridToolbarColumnsButton } from '@mui/x-data-grid';
@@ -114,10 +115,15 @@ export default function VendorRequests() {
   const [filterDealers, setFilterDealers] = React.useState([]);
   const [loadingDealers, setLoadingDealers] = React.useState(false);
   
+  const [selectedStatus, setSelectedStatus] = React.useState(null);
+  const [statusOptions, setStatusOptions] = React.useState([]);
+  const [loadingStatusOptions, setLoadingStatusOptions] = React.useState(false);
+  
   // Use filters state for API calls
   const [filters, setFilters] = React.useState({
     salesHead: null,
     dealer: null,
+    status: null,
   });
   
   // Use ref to store current filters to avoid recreating loadRequests
@@ -186,20 +192,50 @@ export default function VendorRequests() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount
   
-  // Update filters when selectedSalesHead or selectedDealer changes
+  // Fetch status options from API - run once on mount
+  React.useEffect(() => {
+    const fetchStatusOptions = async () => {
+      if (!canRead) {
+        setLoadingStatusOptions(false);
+        setStatusOptions([]);
+        return;
+      }
+      
+      setLoadingStatusOptions(true);
+      try {
+        const response = await get('/api/shopboard-requests/vendor/status-options');
+        if (response.success && Array.isArray(response.data)) {
+          setStatusOptions(response.data);
+        } else {
+          setStatusOptions([]);
+        }
+      } catch (error) {
+        console.error('Error fetching status options:', error);
+        setStatusOptions([]);
+      } finally {
+        setLoadingStatusOptions(false);
+      }
+    };
+
+    fetchStatusOptions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
+  
+  // Update filters when selectedSalesHead, selectedDealer, or selectedStatus changes
   React.useEffect(() => {
     setFilters({
       salesHead: selectedSalesHead,
-      dealer: selectedDealer
+      dealer: selectedDealer,
+      status: selectedStatus
     });
     // Reset to first page when filter changes
-    if (selectedSalesHead !== null || selectedDealer !== null) {
+    if (selectedSalesHead !== null || selectedDealer !== null || selectedStatus !== null) {
       setPaginationModel(prev => {
         if (prev.page === 0) return prev;
         return { ...prev, page: 0 };
       });
     }
-  }, [selectedSalesHead, selectedDealer]);
+  }, [selectedSalesHead, selectedDealer, selectedStatus]);
   
   // Modal state for viewing request details
   const [modalOpen, setModalOpen] = React.useState(false);
@@ -557,6 +593,11 @@ export default function VendorRequests() {
       // Add dealer filter if selected
       if (currentFilters.dealer && currentFilters.dealer.id) {
         queryParams.append('dealer_id', currentFilters.dealer.id.toString());
+      }
+      
+      // Add status filter if selected
+      if (currentFilters.status && currentFilters.status.value) {
+        queryParams.append('status', currentFilters.status.value.toString());
       }
       
       const apiUrl = `/api/shopboard-requests/vendor?${queryParams.toString()}`;
@@ -1497,6 +1538,7 @@ export default function VendorRequests() {
   const handleClearFilters = () => {
     setSelectedSalesHead(null);
     setSelectedDealer(null);
+    setSelectedStatus(null);
   };
 
   const handleRowClick = React.useCallback(
@@ -1887,7 +1929,7 @@ export default function VendorRequests() {
               <FilterListIcon sx={{ fontSize: '1.3rem' }} />
               Filters
             </Typography>
-            {(selectedSalesHead || selectedDealer) && (
+            {(selectedSalesHead || selectedDealer || selectedStatus) && (
               <Button
                 size="small"
                 onClick={handleClearFilters}
@@ -2044,8 +2086,74 @@ export default function VendorRequests() {
               />
             </Grid>
 
+            {/* Status Filter */}
+            <Grid item xs={12} sm={6} md={4}>
+              <Autocomplete
+                size="small"
+                options={statusOptions}
+                getOptionLabel={(option) => {
+                  if (!option) return '';
+                  return option.displayName || option.value || 'Unknown';
+                }}
+                filterOptions={(options, { inputValue }) => {
+                  const searchValue = inputValue.toLowerCase().trim();
+                  if (!searchValue) return options;
+                  
+                  return options.filter(option => {
+                    const displayName = (option.displayName || '').toLowerCase();
+                    const value = (option.value || '').toLowerCase();
+                    return displayName.includes(searchValue) || value.includes(searchValue);
+                  });
+                }}
+                value={selectedStatus}
+                onChange={(event, newValue) => {
+                  setSelectedStatus(newValue);
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Status"
+                    placeholder={statusOptions.length === 0 ? "No statuses available" : "Select status..."}
+                    variant="outlined"
+                    fullWidth
+                    disabled={loadingStatusOptions || statusOptions.length === 0}
+                    InputProps={{
+                      ...params.InputProps,
+                      startAdornment: (
+                        <>
+                          <StatusIcon sx={{ mr: 1, color: 'action.active', fontSize: '1.2rem' }} />
+                          {params.InputProps.startAdornment}
+                        </>
+                      ),
+                    }}
+                    sx={{
+                      minWidth: '280px',
+                      '& .MuiOutlinedInput-root': {
+                        backgroundColor: '#fafbff',
+                        '&:hover': {
+                          backgroundColor: '#f5f7ff',
+                        },
+                        '&.Mui-focused': {
+                          backgroundColor: '#ffffff',
+                        }
+                      }
+                    }}
+                  />
+                )}
+                isOptionEqualToValue={(option, value) => option.value === value?.value}
+                noOptionsText={statusOptions.length === 0 ? "No statuses available" : "No statuses found"}
+                loading={loadingStatusOptions}
+                componentsProps={{
+                  popper: {
+                    style: { zIndex: 1300 },
+                    placement: 'bottom-start'
+                  }
+                }}
+              />
+            </Grid>
+
             {/* Filtered Results Count */}
-            {(selectedSalesHead || selectedDealer) && (
+            {(selectedSalesHead || selectedDealer || selectedStatus) && (
               <Grid item xs={12} sm={6} md={4}>
                 <Box 
                   sx={{ 
@@ -2069,7 +2177,7 @@ export default function VendorRequests() {
           </Grid>
 
           {/* Active Filters Display */}
-          {(selectedSalesHead || selectedDealer) && (
+          {(selectedSalesHead || selectedDealer || selectedStatus) && (
             <Box sx={{ 
               mt: 3, 
               pt: 2.5, 
@@ -2106,6 +2214,21 @@ export default function VendorRequests() {
                 <Chip
                   label={`Dealer: ${selectedDealer.name || selectedDealer.code || 'Unknown'}`}
                   onDelete={() => setSelectedDealer(null)}
+                  color="error"
+                  variant="filled"
+                  size="small"
+                  sx={{
+                    fontWeight: 500,
+                    '& .MuiChip-deleteIcon': {
+                      fontSize: '1rem'
+                    }
+                  }}
+                />
+              )}
+              {selectedStatus && (
+                <Chip
+                  label={`Status: ${selectedStatus.displayName || selectedStatus.value || 'Unknown'}`}
+                  onDelete={() => setSelectedStatus(null)}
                   color="error"
                   variant="filled"
                   size="small"
