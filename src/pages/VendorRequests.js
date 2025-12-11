@@ -17,6 +17,7 @@ import {
   InputAdornment,
   Paper,
   Grid,
+  Popover,
 } from '@mui/material';
 import {
   CheckCircle as ApproveIcon,
@@ -37,6 +38,8 @@ import {
   FilterList as FilterListIcon,
   Clear as ClearIcon,
   Label as StatusIcon,
+  CalendarToday as DateIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import { GridActionsCellItem } from '@mui/x-data-grid';
 import { GridToolbarContainer, GridToolbarColumnsButton } from '@mui/x-data-grid';
@@ -119,11 +122,17 @@ export default function VendorRequests() {
   const [statusOptions, setStatusOptions] = React.useState([]);
   const [loadingStatusOptions, setLoadingStatusOptions] = React.useState(false);
   
+  const [startDate, setStartDate] = React.useState(null);
+  const [endDate, setEndDate] = React.useState(null);
+  const [dateRangeAnchor, setDateRangeAnchor] = React.useState(null);
+  
   // Use filters state for API calls
   const [filters, setFilters] = React.useState({
     salesHead: null,
     dealer: null,
     status: null,
+    startDate: null,
+    endDate: null,
   });
   
   // Use ref to store current filters to avoid recreating loadRequests
@@ -221,21 +230,23 @@ export default function VendorRequests() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only run once on mount
   
-  // Update filters when selectedSalesHead, selectedDealer, or selectedStatus changes
+  // Update filters when selectedSalesHead, selectedDealer, selectedStatus, startDate, or endDate changes
   React.useEffect(() => {
     setFilters({
       salesHead: selectedSalesHead,
       dealer: selectedDealer,
-      status: selectedStatus
+      status: selectedStatus,
+      startDate: startDate,
+      endDate: endDate
     });
     // Reset to first page when filter changes
-    if (selectedSalesHead !== null || selectedDealer !== null || selectedStatus !== null) {
+    if (selectedSalesHead !== null || selectedDealer !== null || selectedStatus !== null || startDate !== null || endDate !== null) {
       setPaginationModel(prev => {
         if (prev.page === 0) return prev;
         return { ...prev, page: 0 };
       });
     }
-  }, [selectedSalesHead, selectedDealer, selectedStatus]);
+  }, [selectedSalesHead, selectedDealer, selectedStatus, startDate, endDate]);
   
   // Modal state for viewing request details
   const [modalOpen, setModalOpen] = React.useState(false);
@@ -598,6 +609,12 @@ export default function VendorRequests() {
       // Add status filter if selected
       if (currentFilters.status && currentFilters.status.value) {
         queryParams.append('status', currentFilters.status.value.toString());
+      }
+      
+      // Add date range filter if both start and end dates are provided
+      if (currentFilters.startDate && currentFilters.endDate) {
+        queryParams.append('start_date', currentFilters.startDate);
+        queryParams.append('end_date', currentFilters.endDate);
       }
       
       const apiUrl = `/api/shopboard-requests/vendor?${queryParams.toString()}`;
@@ -1539,6 +1556,25 @@ export default function VendorRequests() {
     setSelectedSalesHead(null);
     setSelectedDealer(null);
     setSelectedStatus(null);
+    setStartDate(null);
+    setEndDate(null);
+  };
+  
+  // Date range handlers
+  const handleDateRangeClick = (event) => {
+    setDateRangeAnchor(event.currentTarget);
+  };
+
+  const handleDateRangeClose = () => {
+    setDateRangeAnchor(null);
+  };
+
+  const dateRangeOpen = Boolean(dateRangeAnchor);
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
   const handleRowClick = React.useCallback(
@@ -1929,7 +1965,7 @@ export default function VendorRequests() {
               <FilterListIcon sx={{ fontSize: '1.3rem' }} />
               Filters
             </Typography>
-            {(selectedSalesHead || selectedDealer || selectedStatus) && (
+            {(selectedSalesHead || selectedDealer || selectedStatus || startDate || endDate) && (
               <Button
                 size="small"
                 onClick={handleClearFilters}
@@ -2152,8 +2188,114 @@ export default function VendorRequests() {
               />
             </Grid>
 
+            {/* Date Range Filter */}
+            <Grid item xs={12} sm={6} md={4}>
+              <TextField
+                size="small"
+                label="Date Range (Created At)"
+                placeholder="Select date range"
+                value={startDate && endDate ? `${formatDate(startDate)} - ${formatDate(endDate)}` : startDate ? `${formatDate(startDate)} - ...` : endDate ? `... - ${formatDate(endDate)}` : ''}
+                onClick={handleDateRangeClick}
+                variant="outlined"
+                fullWidth
+                disabled={isLoading}
+                InputProps={{
+                  startAdornment: <DateIcon sx={{ mr: 1, color: 'action.active', fontSize: '1.2rem' }} />,
+                  readOnly: true,
+                  endAdornment: (startDate || endDate) && (
+                    <IconButton
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setStartDate(null);
+                        setEndDate(null);
+                      }}
+                      sx={{ mr: 0.5 }}
+                    >
+                      <CloseIcon fontSize="small" />
+                    </IconButton>
+                  ),
+                }}
+                sx={{
+                  cursor: 'pointer',
+                  minWidth: '280px',
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: '#fafbff',
+                    '&:hover': {
+                      backgroundColor: '#f5f7ff',
+                    },
+                    '&.Mui-focused': {
+                      backgroundColor: '#ffffff',
+                    }
+                  }
+                }}
+                helperText={startDate && endDate ? 'Both dates selected - filter will be applied' : (startDate || endDate) ? 'Select both dates to apply filter' : 'Select start and end date'}
+              />
+              <Popover
+                open={dateRangeOpen}
+                anchorEl={dateRangeAnchor}
+                onClose={handleDateRangeClose}
+                anchorOrigin={{
+                  vertical: 'bottom',
+                  horizontal: 'left',
+                }}
+                transformOrigin={{
+                  vertical: 'top',
+                  horizontal: 'left',
+                }}
+              >
+                <Paper sx={{ p: 2, minWidth: 300 }}>
+                  <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                      Select Date Range
+                    </Typography>
+                    <IconButton size="small" onClick={handleDateRangeClose}>
+                      <CloseIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <TextField
+                      size="small"
+                      label="Start Date"
+                      type="date"
+                      value={startDate || ''}
+                      onChange={(e) => setStartDate(e.target.value || null)}
+                      variant="outlined"
+                      fullWidth
+                      InputLabelProps={{
+                        shrink: true,
+                      }}
+                    />
+                    <TextField
+                      size="small"
+                      label="End Date"
+                      type="date"
+                      value={endDate || ''}
+                      onChange={(e) => setEndDate(e.target.value || null)}
+                      variant="outlined"
+                      fullWidth
+                      InputLabelProps={{
+                        shrink: true,
+                      }}
+                      inputProps={{
+                        min: startDate || undefined
+                      }}
+                    />
+                    <Button
+                      variant="contained"
+                      onClick={handleDateRangeClose}
+                      fullWidth
+                      sx={{ mt: 1 }}
+                    >
+                      Apply
+                    </Button>
+                  </Box>
+                </Paper>
+              </Popover>
+            </Grid>
+
             {/* Filtered Results Count */}
-            {(selectedSalesHead || selectedDealer || selectedStatus) && (
+            {(selectedSalesHead || selectedDealer || selectedStatus || (startDate && endDate)) && (
               <Grid item xs={12} sm={6} md={4}>
                 <Box 
                   sx={{ 
@@ -2177,7 +2319,7 @@ export default function VendorRequests() {
           </Grid>
 
           {/* Active Filters Display */}
-          {(selectedSalesHead || selectedDealer || selectedStatus) && (
+          {(selectedSalesHead || selectedDealer || selectedStatus || startDate || endDate) && (
             <Box sx={{ 
               mt: 3, 
               pt: 2.5, 
@@ -2230,6 +2372,24 @@ export default function VendorRequests() {
                   label={`Status: ${selectedStatus.displayName || selectedStatus.value || 'Unknown'}`}
                   onDelete={() => setSelectedStatus(null)}
                   color="error"
+                  variant="filled"
+                  size="small"
+                  sx={{
+                    fontWeight: 500,
+                    '& .MuiChip-deleteIcon': {
+                      fontSize: '1rem'
+                    }
+                  }}
+                />
+              )}
+              {(startDate || endDate) && (
+                <Chip
+                  label={`Date: ${startDate ? formatDate(startDate) : '...'} - ${endDate ? formatDate(endDate) : '...'}`}
+                  onDelete={() => {
+                    setStartDate(null);
+                    setEndDate(null);
+                  }}
+                  color="info"
                   variant="filled"
                   size="small"
                   sx={{
