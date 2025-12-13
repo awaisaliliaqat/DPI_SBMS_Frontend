@@ -16,6 +16,7 @@ import VendorAssignment from '../pages/VendorAssignment';
 import RequestPrintView from '../pages/RequestPrintView';
 import Stats from '../pages/Stats';
 import BudgetManagement from '../pages/BudgetManagement';
+import Payments from '../pages/Payments';
 // import Reports from '../pages/Reports';
 // import Settings from '../pages/Settings';
 
@@ -75,6 +76,7 @@ const AppRoutesContent = () => {
         <Route path="vendor-assignment" element={<VendorAssignment />} />
         <Route path="statistics" element={<Stats />} />
         <Route path="budget-management" element={<BudgetManagement />} />
+        <Route path="payments" element={<Payments />} />
         {/* <Route path="users" element={<FeatureManagement />} /> */}
         <Route index element={<RedirectToSignin />} />
       </Route>

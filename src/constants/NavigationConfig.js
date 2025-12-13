@@ -54,6 +54,12 @@ export const NAVIGATION_CONFIG = {
     icon: '💰',
     requiredPermission: 'read'
   },
+  payments: {
+    displayName: 'Payments',
+    routerLink: '/payments',
+    icon: '💳',
+    requiredPermission: 'read'
+  },
   // dashboard: {
   //   displayName: 'Dashboard',
   //   routerLink: '/dashboard',
