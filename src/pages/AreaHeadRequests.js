@@ -3873,20 +3873,18 @@ export default function AreaHeadRequests() {
           toolbar: CustomToolbar
         }}
         sx={{
-          // Custom styling for "not decided" rows - Beautiful purple/blue gradient theme
+          // Custom styling for "not decided" rows - Professional blue theme matching Filters section
           '& .not-decided-row': {
-            backgroundColor: '#f3e5f5 !important', // Soft lavender background
-            borderLeft: '4px solid #9c27b0', // Purple left border accent
-            boxShadow: 'inset 0 0 0 1px rgba(156, 39, 176, 0.1)', // Subtle inner shadow
+            backgroundColor: '#f0f4ff !important', // Very light blue background (matches Filters border)
+            borderLeft: '4px solid #1a237e', // Dark blue left border accent (matches Filters text color)
+            boxShadow: '0 1px 3px rgba(26, 35, 126, 0.08)', // Subtle professional shadow
             '&:hover': {
-              backgroundColor: '#e1bee7 !important', // Deeper lavender on hover
-              boxShadow: 'inset 0 0 0 1px rgba(156, 39, 176, 0.2)',
+              backgroundColor: '#e3f2fd !important', // Light blue on hover (matches primary theme)
+              boxShadow: '0 2px 6px rgba(26, 35, 126, 0.12)',
             },
             '& .MuiDataGrid-cell': {
-              borderBottom: '1px solid rgba(156, 39, 176, 0.2)', // Subtle purple bottom border
+              borderBottom: '1px solid rgba(224, 231, 255, 0.5)', // Subtle light blue bottom border (matches Filters border)
             },
-            // Add a subtle gradient effect
-            background: 'linear-gradient(90deg, rgba(156, 39, 176, 0.08) 0%, rgba(156, 39, 176, 0.03) 100%) !important',
           },
         }}
       />
