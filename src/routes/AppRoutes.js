@@ -14,6 +14,8 @@ import RequestItemsAdjustment from '../pages/RequestItemsAdjustment';
 import RequestTypesManagement from '../pages/RequestTypesManagement';
 import VendorAssignment from '../pages/VendorAssignment';
 import RequestPrintView from '../pages/RequestPrintView';
+import Stats from '../pages/Stats';
+import BudgetManagement from '../pages/BudgetManagement';
 // import Reports from '../pages/Reports';
 // import Settings from '../pages/Settings';
 
@@ -71,6 +73,8 @@ const AppRoutesContent = () => {
         <Route path="request-items-adjustment" element={<RequestItemsAdjustment />} />
         <Route path="request-types" element={<RequestTypesManagement />} />
         <Route path="vendor-assignment" element={<VendorAssignment />} />
+        <Route path="statistics" element={<Stats />} />
+        <Route path="budget-management" element={<BudgetManagement />} />
         {/* <Route path="users" element={<FeatureManagement />} /> */}
         <Route index element={<RedirectToSignin />} />
       </Route>

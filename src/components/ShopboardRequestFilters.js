@@ -210,6 +210,7 @@ const ShopboardRequestFilters = ({
   }, [selectedParentDealer, get]);
 
   // Apply filters when selections change
+  // Note: onFilterChange is intentionally excluded from dependencies to prevent infinite loops
   React.useEffect(() => {
     if (onFilterChange) {
       onFilterChange({
@@ -223,7 +224,8 @@ const ShopboardRequestFilters = ({
         endDate: endDate
       });
     }
-  }, [selectedVendor, selectedStatus, selectedRegion, selectedParentDealer, selectedChildDealer, selectedSalesHead, startDate, endDate, onFilterChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVendor, selectedStatus, selectedRegion, selectedParentDealer, selectedChildDealer, selectedSalesHead, startDate, endDate]);
 
   const handleClearFilters = () => {
     setSelectedVendor(null);

@@ -157,6 +157,10 @@ export default function AreaHeadRequests() {
   const [editModalOpen, setEditModalOpen] = React.useState(false);
   const [editingRequest, setEditingRequest] = React.useState(null);
   const [editFormData, setEditFormData] = React.useState({});
+  const [budgetWarning, setBudgetWarning] = React.useState(null);
+  const [checkingBudget, setCheckingBudget] = React.useState(false);
+  // Store current month budget data (fetched once on page load)
+  const [currentMonthBudget, setCurrentMonthBudget] = React.useState(null);
 
   // Manual approval modal state
   const [manualApprovalModalOpen, setManualApprovalModalOpen] = React.useState(false);
@@ -403,6 +407,67 @@ export default function AreaHeadRequests() {
     }
   }, [get]);
 
+  // Fetch current month budget data once on page load
+  const fetchCurrentMonthBudget = React.useCallback(async () => {
+    try {
+      const response = await get('/api/budget-management/current-month');
+      if (response?.success && response.data) {
+        setCurrentMonthBudget(response.data);
+      } else {
+        setCurrentMonthBudget(null);
+      }
+    } catch (error) {
+      console.error('Error fetching current month budget:', error);
+      setCurrentMonthBudget(null);
+    }
+  }, [get]);
+
+  // Calculate total cost from request items
+  const calculateTotalCost = React.useCallback((requestItems, requestTypes) => {
+    if (!requestItems || !Array.isArray(requestItems)) return 0;
+    
+    const total = requestItems.reduce((sum, it) => {
+      const selectedRequestType = requestTypes.find(rt => rt.id === it.request_type_id);
+      const isFees = selectedRequestType?.request_type === 'fees';
+      
+      // For fees type: use price directly
+      if (isFees) {
+        const price = parseFloat(it.price) || 0;
+        return sum + (isNaN(price) ? 0 : price);
+      }
+      
+      // For manual and fixed: calculate area × price_per_sqft
+      const widthFt = parseFloat(it.width) || 0;
+      const heightFt = parseFloat(it.height) || 0;
+      const areaSqft = widthFt * heightFt;
+      const pricePerSqft = parseFloat(it.price_per_sqft) || 0;
+      const itemTotal = areaSqft * pricePerSqft;
+      return sum + (isNaN(itemTotal) ? 0 : itemTotal);
+    }, 0);
+    
+    return total;
+  }, []);
+
+  // Check budget status for a request (uses current month budget data)
+  const checkBudgetStatus = React.useCallback((requestId, requestTotalCost) => {
+    if (!requestId || !currentMonthBudget || !currentMonthBudget.hasBudget) {
+      setBudgetWarning(null);
+      return;
+    }
+
+    // Calculate if this request would exceed budget
+    const totalWithRequest = currentMonthBudget.utilizedBudget + requestTotalCost;
+    const epsilon = 0.01;
+    const wouldExceed = (totalWithRequest - currentMonthBudget.availableBudget) > epsilon;
+
+    if (wouldExceed) {
+      const message = `⚠️ Budget Exceeded for ${currentMonthBudget.month}/${currentMonthBudget.year}\n\nAvailable Budget (including carry forward): Rs ${currentMonthBudget.availableBudget.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\nUtilized Budget: Rs ${currentMonthBudget.utilizedBudget.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\nRequest Cost: Rs ${requestTotalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\nTotal after adding this request: Rs ${totalWithRequest.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      setBudgetWarning(message);
+    } else {
+      setBudgetWarning(null);
+    }
+  }, [currentMonthBudget]);
+
   // Load dropdown data when edit modal opens
   React.useEffect(() => {
     if (editModalOpen && editingRequest) {
@@ -435,8 +500,27 @@ export default function AreaHeadRequests() {
           draggable: true,
         });
       }
+
+      // Check budget status only if approval_date is null
+      if (!editingRequest.approval_date && editingRequest.total_cost) {
+        const requestTotalCost = parseFloat(editingRequest.total_cost) || 0;
+        checkBudgetStatus(editingRequest.id, requestTotalCost);
+      } else {
+        setBudgetWarning(null);
+      }
     }
-  }, [editModalOpen, editingRequest, loadDropdownData, loadAllowedRequestTypes]);
+  }, [editModalOpen, editingRequest, checkBudgetStatus, loadDropdownData, loadAllowedRequestTypes]);
+
+  // Recalculate budget warning when editFormData.request_items or requestTypes change
+  React.useEffect(() => {
+    if (editModalOpen && editingRequest && !editingRequest.approval_date && editFormData.request_items && requestTypes.length > 0) {
+      const calculatedTotalCost = calculateTotalCost(editFormData.request_items, requestTypes);
+      checkBudgetStatus(editingRequest.id, calculatedTotalCost);
+    } else if (editModalOpen && editingRequest && editingRequest.approval_date) {
+      // Clear warning if approval_date exists
+      setBudgetWarning(null);
+    }
+  }, [editModalOpen, editingRequest, editFormData.request_items, requestTypes, calculateTotalCost, checkBudgetStatus]);
 
 
   // URL state synchronization
@@ -607,7 +691,7 @@ export default function AreaHeadRequests() {
       const hasCeoPending = requestsData.some(request => request.status === 'ceo_pending');
       const hasInvoiceSent = requestsData.some(request => request.status === 'invoice_sent');
       setShowSelectionColumn(hasCeoPending || hasInvoiceSent);
-      
+
     } catch (loadError) {
       setError(loadError.message || 'Failed to load requests');
       toast.error('Failed to load requests', {
@@ -627,7 +711,9 @@ export default function AreaHeadRequests() {
   // Load data when component mounts or pagination changes
   React.useEffect(() => {
     loadRequests();
-  }, [loadRequests]);
+    // Fetch current month budget data once on page load
+    fetchCurrentMonthBudget();
+  }, [loadRequests, fetchCurrentMonthBudget]);
 
   // Action handlers
   const handleView = React.useCallback((requestData) => {
@@ -1971,6 +2057,7 @@ export default function AreaHeadRequests() {
     setOldBoardPhotos([]);
     setExistingSitePhotos([]);
     setExistingOldBoardPhotos([]);
+    setBudgetWarning(null);
   };
 
   const handleRefresh = React.useCallback(() => {
@@ -3300,7 +3387,7 @@ export default function AreaHeadRequests() {
       {
         field: 'status',
         headerName: 'Status',
-        width: 100,
+        width: 150,
         align: 'left',
         headerAlign: 'left',
         renderCell: (params) => {
@@ -4352,6 +4439,21 @@ export default function AreaHeadRequests() {
             </Box>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+              {/* Budget Warning - Only show if approval_date is null */}
+              {!editingRequest?.approval_date && budgetWarning && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  <Typography 
+                    variant="body2" 
+                    sx={{ 
+                      fontWeight: 600,
+                      whiteSpace: 'pre-line' // Preserve line breaks
+                    }}
+                  >
+                    {budgetWarning}
+                  </Typography>
+                </Alert>
+              )}
+              
               {/* Dealer Selection - Read Only */}
               <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>

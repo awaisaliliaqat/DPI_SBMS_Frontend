@@ -42,22 +42,34 @@ export const NAVIGATION_CONFIG = {
     icon: '👥',
     requiredPermission: 'read'
   },
-  dashboard: {
-    displayName: 'Dashboard',
-    routerLink: '/dashboard',
+  statistics: {
+    displayName: 'Statistics',
+    routerLink: '/statistics',
     icon: '📊',
-    requiredPermission: 'view' // or whatever permission you want
+    requiredPermission: 'read'
   },
-  reports: {
-    displayName: 'Reports',
-    routerLink: '/reports',
-    icon: '📈',
-    requiredPermission: 'view'
+  budgetManagement: {
+    displayName: 'Budget Management',
+    routerLink: '/budget-management',
+    icon: '💰',
+    requiredPermission: 'read'
   },
-  settings: {
-    displayName: 'Settings',
-    routerLink: '/settings',
-    icon: '⚙️',
-    requiredPermission: 'manage'
-  }
+  // dashboard: {
+  //   displayName: 'Dashboard',
+  //   routerLink: '/dashboard',
+  //   icon: '📊',
+  //   requiredPermission: 'view' // or whatever permission you want
+  // },
+  // reports: {
+  //   displayName: 'Reports',
+  //   routerLink: '/reports',
+  //   icon: '📈',
+  //   requiredPermission: 'view'
+  // },
+  // settings: {
+  //   displayName: 'Settings',
+  //   routerLink: '/settings',
+  //   icon: '⚙️',
+  //   requiredPermission: 'manage'
+  // }
 };
