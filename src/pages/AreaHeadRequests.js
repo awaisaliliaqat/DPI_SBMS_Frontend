@@ -48,7 +48,7 @@ import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
 import InvoiceViewer from '../components/InvoiceViewer';
 import RejectInvoiceModal from '../components/RejectInvoiceModal';
-import PaymentProofModal from '../components/PaymentProofModal';
+import PaymentSummaryModal from '../components/PaymentSummaryModal';
 import ShopboardRequestFilters from '../components/ShopboardRequestFilters';
 import { BASE_URL, BASENAME } from "../constants/Constants";
 import { 
@@ -179,9 +179,9 @@ export default function AreaHeadRequests() {
   const [rejectInvoiceModalOpen, setRejectInvoiceModalOpen] = React.useState(false);
   const [rejectInvoiceTarget, setRejectInvoiceTarget] = React.useState(null);
   
-  // Payment proof modal state
-  const [paymentProofModalOpen, setPaymentProofModalOpen] = React.useState(false);
-  const [paymentProofTarget, setPaymentProofTarget] = React.useState(null);
+  // Payment summary modal state
+  const [paymentSummaryModalOpen, setPaymentSummaryModalOpen] = React.useState(false);
+  const [paymentSummaryData, setPaymentSummaryData] = React.useState(null);
   
   // File upload state for edit modal
   const [sitePhotos, setSitePhotos] = React.useState([]);
@@ -687,10 +687,18 @@ export default function AreaHeadRequests() {
         rowCount: totalCount,
       });
 
-      // Check if any request has ceo_pending OR invoice_sent status to show selection column
-      const hasCeoPending = requestsData.some(request => request.status === 'ceo_pending');
-      const hasInvoiceSent = requestsData.some(request => request.status === 'invoice_sent');
-      setShowSelectionColumn(hasCeoPending || hasInvoiceSent);
+      // Check if any request has selectable status based on user permissions
+      let shouldShowSelection = false;
+      if (canManualApproval) {
+        const hasCeoPending = requestsData.some(request => request.status === 'ceo_pending');
+        const hasInvoiceSent = requestsData.some(request => request.status === 'invoice_sent');
+        shouldShowSelection = hasCeoPending || hasInvoiceSent;
+      }
+      if (canPaymentRelease) {
+        const hasSubmittedForPayment = requestsData.some(request => request.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT);
+        shouldShowSelection = shouldShowSelection || hasSubmittedForPayment;
+      }
+      setShowSelectionColumn(shouldShowSelection);
 
     } catch (loadError) {
       setError(loadError.message || 'Failed to load requests');
@@ -903,11 +911,49 @@ export default function AreaHeadRequests() {
     setRejectInvoiceModalOpen(true);
   }, [canManualApproval]);
 
-  const handleOpenPaymentProof = React.useCallback((requestData) => {
-    if (!canPaymentRelease) return;
-    setPaymentProofTarget(requestData);
-    setPaymentProofModalOpen(true);
-  }, [canPaymentRelease]);
+  // Open payment summary modal for selected "Submitted for Payment" requests
+  const handleOpenPaymentSummary = React.useCallback(() => {
+    if (!canPaymentRelease || !selectedRequests || selectedRequests.length === 0) return;
+    
+    const selectedRequestObjects = filteredRows.filter(row => selectedRequests.includes(row.id));
+    const submittedForPaymentRequests = selectedRequestObjects.filter(
+      req => req.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT
+    );
+    
+    if (submittedForPaymentRequests.length === 0) {
+      toast.warning('Please select requests with "Submitted for Payment" status', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+    
+    // Calculate total and prepare individual invoice data
+    const totalAmount = submittedForPaymentRequests.reduce((sum, req) => {
+      const cost = parseFloat(req.total_cost) || 0;
+      return sum + cost;
+    }, 0);
+    
+    const invoiceDetails = submittedForPaymentRequests.map(req => ({
+      id: req.id,
+      dealerName: req.dealer?.name || 'N/A',
+      dealerCode: req.dealer?.code || 'N/A',
+      vendorName: getVendorName(req),
+      totalCost: parseFloat(req.total_cost) || 0,
+      created_at: req.created_at,
+    }));
+    
+    setPaymentSummaryData({
+      totalAmount,
+      invoiceDetails,
+      requestIds: submittedForPaymentRequests.map(req => req.id),
+    });
+    setPaymentSummaryModalOpen(true);
+  }, [canPaymentRelease, selectedRequests, filteredRows, getVendorName]);
 
   const handleConfirmRejectInvoice = React.useCallback(async (comment) => {
     if (!rejectInvoiceTarget) return;
@@ -1122,7 +1168,7 @@ export default function AreaHeadRequests() {
     }
   }, [selectedRequests, filteredRows, post, loadRequests, get]);
 
-  // Bulk release payment handler
+  // Bulk release payment handler (for invoice_sent -> Submitted for Payment)
   const handleBulkReleasePayment = React.useCallback(async () => {
     if (!selectedRequests || selectedRequests.length === 0) return;
     
@@ -1200,6 +1246,71 @@ export default function AreaHeadRequests() {
     }
   }, [selectedRequests, filteredRows, patch, user.id, loadRequests]);
 
+  // Process payment (update status to payment_successful) - called from payment summary modal
+  const handleProcessPayment = React.useCallback(async () => {
+    if (!paymentSummaryData || !paymentSummaryData.requestIds || paymentSummaryData.requestIds.length === 0) {
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      // Update all selected requests to "payment successful" status using existing API
+      const updatePromises = paymentSummaryData.requestIds.map(requestId => 
+        patch(`/api/shopboard-requests/${requestId}`, {
+          status: SHOPBOARD_REQUEST_STATUS.PAYMENT_SUCCESSFUL,
+          updated_by: user.id
+        })
+      );
+      
+      const results = await Promise.allSettled(updatePromises);
+      
+      // Count successes and failures
+      const successful = results.filter(r => r.status === 'fulfilled' && r.value?.success).length;
+      const failed = results.length - successful;
+      
+      if (successful > 0) {
+        toast.success(`Payment processed successfully for ${successful} request(s)!`, {
+          position: "top-right",
+          autoClose: 3000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      }
+      
+      if (failed > 0) {
+        toast.error(`Failed to process payment for ${failed} request(s)`, {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      }
+      
+      // Close modal, clear selection and refresh data
+      setPaymentSummaryModalOpen(false);
+      setPaymentSummaryData(null);
+      setSelectedRequests([]);
+      loadRequests();
+    } catch (error) {
+      console.error('Error processing payment:', error);
+      toast.error(`Failed to process payment: ${error.message}`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [paymentSummaryData, patch, user.id, loadRequests]);
+
   // Selection handlers with event propagation prevention
   const handleSelectRequest = React.useCallback((requestId, event) => {
     // Prevent event propagation to avoid triggering row click
@@ -1216,16 +1327,43 @@ export default function AreaHeadRequests() {
         // Deselecting - always allow
         return prev.filter(id => id !== requestId);
       } else {
-        // Selecting - check for mixed selection
+        // Selecting - check if this request is selectable based on user permissions
+        let isSelectable = false;
+        if (canManualApproval) {
+          // Users with manual_approval can select ceo_pending and invoice_sent
+          isSelectable = request.status === 'ceo_pending' || request.status === 'invoice_sent';
+        }
+        if (canPaymentRelease) {
+          // Users with payment_release can select Submitted for Payment
+          if (request.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT) {
+            isSelectable = true;
+          }
+        }
+        
+        if (!isSelectable) {
+          return prev; // Don't add non-selectable request
+        }
+        
+        // Check for mixed selection - don't allow mixing different status groups
         if (prev.length > 0) {
           // Get the status of already selected requests
           const selectedRequestIds = prev;
           const selectedRequests = filteredRows.filter(row => selectedRequestIds.includes(row.id));
           const existingStatus = selectedRequests[0]?.status;
           
-          // Check if trying to select different status
-          if (existingStatus !== request.status) {
-            toast.warning(`Cannot select both ${existingStatus} and ${request.status} requests. Please deselect current selection first.`, {
+          // Define status groups based on permissions
+          const manualApprovalStatuses = ['ceo_pending', 'invoice_sent'];
+          const paymentReleaseStatus = SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT;
+          
+          // Don't allow mixing manual approval statuses with payment release status
+          const existingIsManualApproval = manualApprovalStatuses.includes(existingStatus);
+          const existingIsPaymentRelease = existingStatus === paymentReleaseStatus;
+          const newIsManualApproval = manualApprovalStatuses.includes(request.status);
+          const newIsPaymentRelease = request.status === paymentReleaseStatus;
+          
+          if ((existingIsManualApproval && newIsPaymentRelease) || 
+              (existingIsPaymentRelease && newIsManualApproval)) {
+            toast.warning('Cannot select requests with different statuses. Please deselect current selection first.', {
               position: "top-right",
               autoClose: 5000,
               hideProgressBar: false,
@@ -1240,7 +1378,7 @@ export default function AreaHeadRequests() {
         return [...prev, requestId];
       }
     });
-  }, [filteredRows]);
+  }, [filteredRows, canManualApproval, canPaymentRelease]);
 
   const handleSelectAll = React.useCallback((event) => {
     // Prevent event propagation to avoid triggering row click
@@ -1248,16 +1386,29 @@ export default function AreaHeadRequests() {
       event.stopPropagation();
     }
     
-    const selectableRequests = filteredRows
-      .filter(row => row.status === 'ceo_pending' || row.status === 'invoice_sent')
-      .map(row => row.id);
+    // Determine selectable rows based on user permissions
+    let selectableRequests = [];
+    if (canManualApproval) {
+      // Users with manual_approval can select ceo_pending and invoice_sent
+      const manualApprovalRows = filteredRows
+        .filter(row => row.status === 'ceo_pending' || row.status === 'invoice_sent')
+        .map(row => row.id);
+      selectableRequests = [...selectableRequests, ...manualApprovalRows];
+    }
+    if (canPaymentRelease) {
+      // Users with payment_release can select Submitted for Payment
+      const paymentRows = filteredRows
+        .filter(row => row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT)
+        .map(row => row.id);
+      selectableRequests = [...selectableRequests, ...paymentRows];
+    }
     
     if (selectedRequests.length === selectableRequests.length) {
       setSelectedRequests([]);
     } else {
       setSelectedRequests(selectableRequests);
     }
-  }, [filteredRows, selectedRequests.length]);
+  }, [filteredRows, selectedRequests.length, canManualApproval, canPaymentRelease]);
 
   // Fetch comments for a specific request
   const fetchRequestComments = React.useCallback(async (requestId) => {
@@ -3186,8 +3337,8 @@ export default function AreaHeadRequests() {
   const columns = React.useMemo(
     () => {
       const baseColumns = [
-        // Selection column - only show if user has permission AND there are selectable requests
-        ...(canManualApproval && showSelectionColumn ? [{
+        // Selection column - only show if user has permission (canManualApproval OR canPaymentRelease) AND there are selectable requests
+        ...((canManualApproval || canPaymentRelease) && showSelectionColumn ? [{
           field: 'select',
           headerName: 'Select',
           width: 80,
@@ -3195,7 +3346,22 @@ export default function AreaHeadRequests() {
           filterable: false,
           disableColumnMenu: true,
           renderHeader: () => {
-            const selectableRows = filteredRows.filter(row => row.status === 'ceo_pending' || row.status === 'invoice_sent');
+            // Determine selectable rows based on user permissions
+            let selectableRows = [];
+            if (canManualApproval) {
+              // Users with manual_approval can select ceo_pending and invoice_sent
+              selectableRows = filteredRows.filter(row => 
+                row.status === 'ceo_pending' || 
+                row.status === 'invoice_sent'
+              );
+            }
+            if (canPaymentRelease) {
+              // Users with payment_release can select Submitted for Payment
+              const submittedForPaymentRows = filteredRows.filter(row => 
+                row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT
+              );
+              selectableRows = [...selectableRows, ...submittedForPaymentRows];
+            }
             return (
               <Checkbox
                 checked={selectedRequests.length > 0 && selectedRequests.length === selectableRows.length}
@@ -3207,7 +3373,18 @@ export default function AreaHeadRequests() {
             );
           },
           renderCell: (params) => {
-            const isSelectable = params.row.status === 'ceo_pending' || params.row.status === 'invoice_sent';
+            // Determine if row is selectable based on user permissions
+            let isSelectable = false;
+            if (canManualApproval) {
+              // Users with manual_approval can select ceo_pending and invoice_sent
+              isSelectable = params.row.status === 'ceo_pending' || params.row.status === 'invoice_sent';
+            }
+            if (canPaymentRelease) {
+              // Users with payment_release can select Submitted for Payment
+              if (params.row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT) {
+                isSelectable = true;
+              }
+            }
             const isSelected = selectedRequests.includes(params.row.id);
             
             return (
@@ -3700,19 +3877,7 @@ export default function AreaHeadRequests() {
             }
           }
 
-          // Show Add Payment Proof button for "Submitted for Payment" status with payment_release permission
-          const isSubmittedForPayment = row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT;
-          if (isSubmittedForPayment && canPaymentRelease) {
-            actions.push(
-              <GridActionsCellItem
-                key="addPaymentProof"
-                icon={<Tooltip title="Add Payment Proof"><PaymentIcon /></Tooltip>}
-                label="Add Payment Proof"
-                onClick={() => handleOpenPaymentProof(row)}
-                color="success"
-              />
-            );
-          }
+          // Payment proof icon removed - now using row selection for bulk payment processing
 
           // Show history action for all requests
           if (canRead) {
@@ -3734,7 +3899,7 @@ export default function AreaHeadRequests() {
 
     return baseColumns;
     },
-    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, canPaymentRelease, showSelectionColumn, selectedRequests, filteredRows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleViewInvoice, handleOpenPaymentProof, handleSelectAll, handleSelectRequest, handleBulkReleasePayment, getVendorName],
+    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, canPaymentRelease, showSelectionColumn, selectedRequests, filteredRows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleViewInvoice, handleSelectAll, handleSelectRequest, handleBulkReleasePayment, getVendorName],
   );
 
   const pageTitle = 'Area Head Requests';
@@ -3787,35 +3952,54 @@ export default function AreaHeadRequests() {
       />
 
       {/* Top toolbar actions (above table) */}
-      {canManualApproval && showSelectionColumn && selectedRequests.length > 0 && (
+      {(canManualApproval || canPaymentRelease) && showSelectionColumn && selectedRequests.length > 0 && (
         <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-start', gap: 2 }}>
           {/* Determine button states based on selected request statuses */}
           {(() => {
             const selectedRequestObjects = filteredRows.filter(row => selectedRequests.includes(row.id));
             const hasCeoPending = selectedRequestObjects.some(req => req.status === 'ceo_pending');
             const hasInvoiceSent = selectedRequestObjects.some(req => req.status === 'invoice_sent');
-            const hasMixedSelection = hasCeoPending && hasInvoiceSent;
+            const hasSubmittedForPayment = selectedRequestObjects.some(req => req.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT);
+            const hasMixedSelection = (hasCeoPending && hasInvoiceSent) || 
+                                     (hasCeoPending && hasSubmittedForPayment) || 
+                                     (hasInvoiceSent && hasSubmittedForPayment);
             
             return (
               <>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={handleBulkSendToCEO}
-                  disabled={hasMixedSelection || hasInvoiceSent}
-                  sx={{ fontWeight: 'bold', textTransform: 'none' }}
-                >
-                  Send to CEO for Approval
-                </Button>
-                <Button
-                  variant="contained"
-                  color="success"
-                  onClick={handleBulkReleasePayment}
-                  disabled={hasMixedSelection || hasCeoPending || isLoading || selectedRequestObjects.filter(req => req.status === 'invoice_sent').length === 0}
-                  sx={{ fontWeight: 'bold', textTransform: 'none' }}
-                >
-                  {isLoading ? 'Processing...' : 'Release Payment'}
-                </Button>
+                {canManualApproval && (
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={handleBulkSendToCEO}
+                    disabled={hasMixedSelection || hasInvoiceSent || hasSubmittedForPayment}
+                    sx={{ fontWeight: 'bold', textTransform: 'none' }}
+                  >
+                    Send to CEO for Approval
+                  </Button>
+                )}
+                {canManualApproval && (
+                  <Button
+                    variant="contained"
+                    color="success"
+                    onClick={handleBulkReleasePayment}
+                    disabled={hasMixedSelection || hasCeoPending || hasSubmittedForPayment || isLoading || selectedRequestObjects.filter(req => req.status === 'invoice_sent').length === 0}
+                    sx={{ fontWeight: 'bold', textTransform: 'none' }}
+                  >
+                    {isLoading ? 'Processing...' : 'Release Payment'}
+                  </Button>
+                )}
+                {canPaymentRelease && (
+                  <Button
+                    variant="contained"
+                    color="success"
+                    onClick={handleOpenPaymentSummary}
+                    disabled={hasMixedSelection || hasCeoPending || hasInvoiceSent || isLoading || selectedRequestObjects.filter(req => req.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT).length === 0}
+                    sx={{ fontWeight: 'bold', textTransform: 'none' }}
+                    startIcon={<PaymentIcon />}
+                  >
+                    Process Payment
+                  </Button>
+                )}
               </>
             );
           })()}
@@ -6139,12 +6323,16 @@ export default function AreaHeadRequests() {
         submitting={isLoading}
       />
 
-      {/* Payment Proof Modal */}
-      <PaymentProofModal
-        open={paymentProofModalOpen}
-        onClose={() => { setPaymentProofModalOpen(false); setPaymentProofTarget(null); }}
-        request={paymentProofTarget}
-        submitting={isLoading}
+      {/* Payment Summary Modal */}
+      <PaymentSummaryModal
+        open={paymentSummaryModalOpen}
+        onClose={() => {
+          setPaymentSummaryModalOpen(false);
+          setPaymentSummaryData(null);
+        }}
+        paymentSummaryData={paymentSummaryData}
+        onProcessPayment={handleProcessPayment}
+        isLoading={isLoading}
       />
 
       {/* React Toastify Container */}
