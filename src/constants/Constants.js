@@ -17,6 +17,7 @@ export const PERMISSIONS = [
   { id: 'read_marketing_comments', name: 'Read Marketing Comments' },
   { id: 'print', name: 'Print' },
   { id: 'manual_approval', name: 'Manual Approval' },
+  { id: 'payment_release', name: 'Payment Release' },
 ];
 
 // Feature-specific permissions mapping
@@ -36,6 +37,7 @@ export const FEATURE_PERMISSIONS = {
     { id: 'read_marketing_comments', name: 'Read Marketing Comments' },
     { id: 'print', name: 'Print' },
     { id: 'manual_approval', name: 'Manual Approval' },
+    { id: 'payment_release', name: 'Payment Release' },
   ],
   // Default permissions for all other features (CRUD only)
   default: [
@@ -50,9 +52,19 @@ export const FEATURE_PERMISSIONS = {
 export const getPermissionsForFeature = (featureName) => {
   if (!featureName) return [];
   
+  // Normalize feature name to handle variations (shopboardRequest, shopboard_requests, etc.)
+  let normalizedName = featureName;
+  
+  // Handle shopboard request variations
+  if (featureName.toLowerCase() === 'shopboard_requests' || 
+      featureName.toLowerCase() === 'shopboardrequests' ||
+      (featureName.toLowerCase().includes('shopboard') && featureName.toLowerCase().includes('request'))) {
+    normalizedName = 'shopboardRequest';
+  }
+  
   // Check if feature has specific permissions defined
-  if (FEATURE_PERMISSIONS[featureName]) {
-    return FEATURE_PERMISSIONS[featureName];
+  if (FEATURE_PERMISSIONS[normalizedName]) {
+    return FEATURE_PERMISSIONS[normalizedName];
   }
   
   // Return default CRUD permissions for other features
