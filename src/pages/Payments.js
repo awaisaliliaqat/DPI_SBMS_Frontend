@@ -529,19 +529,35 @@ export default function Payments() {
             min-height: 14px;
         }
 
-        .item-card {
-            background: #f8f9fa;
-            padding: 8px;
-            margin-bottom: 8px;
-            border-radius: 3px;
-            border-left: 3px solid #3498db;
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 8px;
+            font-size: 10px;
         }
 
-        .item-header {
-            font-size: 11px;
+        .items-table thead {
+            background: #f8f9fa;
+        }
+
+        .items-table th {
+            padding: 8px 6px;
+            text-align: left;
+            font-size: 9.5px;
             font-weight: bold;
             color: #2c3e50;
-            margin-bottom: 6px;
+            border: 1px solid #ddd;
+        }
+
+        .items-table td {
+            padding: 6px;
+            border: 1px solid #ddd;
+            font-size: 10px;
+            color: #333;
+        }
+
+        .items-table tbody tr:nth-child(even) {
+            background: #f8f9fa;
         }
 
         .full-width {
@@ -658,9 +674,22 @@ export default function Payments() {
         <!-- Request Items -->
         <div class="section">
             <div class="section-title">Request Items & Dimensions</div>
-            <div id="request-items">
-                <!-- Items will be populated here -->
-            </div>
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th>Item #</th>
+                        <th>Request Type</th>
+                        <th>Width (ft)</th>
+                        <th>Height (ft)</th>
+                        <th>Price per (sqft)</th>
+                        <th>Total Area (sqft)</th>
+                        <th>Total Cost</th>
+                    </tr>
+                </thead>
+                <tbody id="request-items">
+                    <!-- Items will be populated here -->
+                </tbody>
+            </table>
             <div class="total-box">
                 <div class="total-label">Total Cost (All Items)</div>
                 <div class="total-amount" id="total-cost">Rs. 0.00</div>
@@ -758,56 +787,34 @@ export default function Payments() {
             document.getElementById('dealer-address').textContent = cleanText(data.dealer?.city || 'N/A');
             document.getElementById('dealer-type').textContent = data.dealer_type === 'new' ? 'New Dealer' : 'Existing Dealer';
 
-            // Populate request items
-            const itemsContainer = document.getElementById('request-items');
-            const items = data.requestItems || [];
+            // Populate request items in table format
+            const itemsTableBody = document.getElementById('request-items');
+            const items = data.requestItems || data.request_items || [];
             let totalCost = 0;
 
             if (items.length > 0) {
                 items.forEach((item, index) => {
-                    const totalArea = (parseFloat(item.width) || 0) * (parseFloat(item.height) || 0);
+                    const width = parseFloat(item.width) || 0;
+                    const height = parseFloat(item.height) || 0;
+                    const totalArea = width * height;
+                    const pricePerSqft = parseFloat(item.price_per_square_foot || item.price_per_sqft || item.pricePerSqft) || 0;
                     const itemCost = parseFloat(item.price) || 0;
                     totalCost += itemCost;
 
-                    const itemDiv = document.createElement('div');
-                    itemDiv.className = 'item-card';
-                    itemDiv.innerHTML = \`
-                        <div class="item-header">Item \${index + 1}:</div>
-                        <div class="fields-row">
-                            <div class="field">
-                                <div class="field-label">Request Type:</div>
-                                <div class="field-value">\${cleanText(item.requestType?.name || 'N/A')}</div>
-                            </div>
-                            <div class="field">
-                                <div class="field-label">Width (ft):</div>
-                                <div class="field-value">\${cleanText(item.width || 'N/A')}</div>
-                            </div>
-                        </div>
-                        <div class="fields-row">
-                            <div class="field">
-                                <div class="field-label">Height (ft):</div>
-                                <div class="field-value">\${cleanText(item.height || 'N/A')}</div>
-                            </div>
-                            <div class="field">
-                                <div class="field-label">Price per ft²:</div>
-                                <div class="field-value">\${item.price_per_square_foot ? \`Rs. \${parseFloat(item.price_per_square_foot).toFixed(2)}\` : 'N/A'}</div>
-                            </div>
-                        </div>
-                        <div class="fields-row">
-                            <div class="field">
-                                <div class="field-label">Total Area (ft²):</div>
-                                <div class="field-value">\${totalArea > 0 ? totalArea.toFixed(2) : 'N/A'}</div>
-                            </div>
-                            <div class="field">
-                                <div class="field-label">Total Cost:</div>
-                                <div class="field-value">\${item.price ? \`Rs. \${parseFloat(item.price).toFixed(2)}\` : 'N/A'}</div>
-                            </div>
-                        </div>
+                    const row = document.createElement('tr');
+                    row.innerHTML = \`
+                        <td>\${index + 1}</td>
+                        <td>\${cleanText(item.requestType?.name || item.request_type || 'N/A')}</td>
+                        <td>\${width > 0 ? width.toFixed(2) : 'N/A'}</td>
+                        <td>\${height > 0 ? height.toFixed(2) : 'N/A'}</td>
+                        <td>\${pricePerSqft > 0 ? \`Rs. \${pricePerSqft.toFixed(2)}\` : 'N/A'}</td>
+                        <td>\${totalArea > 0 ? totalArea.toFixed(2) : 'N/A'}</td>
+                        <td>\${itemCost > 0 ? \`Rs. \${itemCost.toFixed(2)}\` : 'N/A'}</td>
                     \`;
-                    itemsContainer.appendChild(itemDiv);
+                    itemsTableBody.appendChild(row);
                 });
             } else {
-                itemsContainer.innerHTML = '<div style="text-align: center; color: #666; padding: 10px; font-size: 9px;">No request items found</div>';
+                itemsTableBody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 10px; color: #666; font-size: 9px;">No request items found</td></tr>';
             }
 
             document.getElementById('total-cost').textContent = \`Rs. \${totalCost.toFixed(2)}\`;

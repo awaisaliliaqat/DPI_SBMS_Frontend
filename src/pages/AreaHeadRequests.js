@@ -1058,18 +1058,32 @@ export default function AreaHeadRequests() {
     // Get selected request objects
     const selectedRequestObjects = filteredRows.filter(row => selectedRequests.includes(row.id));
     
-    // Filter to only ceo_pending status requests (as per button logic)
-    const ceoPendingRequests = selectedRequestObjects.filter(req => req.status === 'ceo_pending');
+    // Filter to only ceo_pending status requests (as per button logic) and exclude requests where email already sent
+    const ceoPendingRequests = selectedRequestObjects.filter(req => 
+      req.status === 'ceo_pending' && req.is_email !== true
+    );
     
     if (ceoPendingRequests.length === 0) {
-      toast.warning('Please select requests with "CEO Pending" status to send for approval', {
-        position: "top-right",
-        autoClose: 5000,
-        hideProgressBar: false,
-        closeOnClick: true,
-        pauseOnHover: true,
-        draggable: true,
-      });
+      const hasEmailSent = selectedRequestObjects.some(req => req.is_email === true);
+      if (hasEmailSent) {
+        toast.warning('Cannot send email for requests that have already been sent. Please deselect those requests.', {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      } else {
+        toast.warning('Please select requests with "CEO Pending" status to send for approval', {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      }
       return;
     }
     
@@ -1327,6 +1341,19 @@ export default function AreaHeadRequests() {
         // Deselecting - always allow
         return prev.filter(id => id !== requestId);
       } else {
+        // Check if email has already been sent - prevent selection if is_email === true
+        if (request.is_email === true) {
+          toast.warning('Email has already been sent for this request. Cannot select again.', {
+            position: "top-right",
+            autoClose: 3000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          });
+          return prev; // Don't add request with email already sent
+        }
+        
         // Selecting - check if this request is selectable based on user permissions
         let isSelectable = false;
         if (canManualApproval) {
@@ -1386,19 +1413,19 @@ export default function AreaHeadRequests() {
       event.stopPropagation();
     }
     
-    // Determine selectable rows based on user permissions
+    // Determine selectable rows based on user permissions (excluding rows where is_email === true)
     let selectableRequests = [];
     if (canManualApproval) {
-      // Users with manual_approval can select ceo_pending and invoice_sent
+      // Users with manual_approval can select ceo_pending and invoice_sent (but not if email already sent)
       const manualApprovalRows = filteredRows
-        .filter(row => row.status === 'ceo_pending' || row.status === 'invoice_sent')
+        .filter(row => (row.status === 'ceo_pending' || row.status === 'invoice_sent') && row.is_email !== true)
         .map(row => row.id);
       selectableRequests = [...selectableRequests, ...manualApprovalRows];
     }
     if (canPaymentRelease) {
-      // Users with payment_release can select Submitted for Payment
+      // Users with payment_release can select Submitted for Payment (but not if email already sent)
       const paymentRows = filteredRows
-        .filter(row => row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT)
+        .filter(row => row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT && row.is_email !== true)
         .map(row => row.id);
       selectableRequests = [...selectableRequests, ...paymentRows];
     }
@@ -3346,19 +3373,18 @@ export default function AreaHeadRequests() {
           filterable: false,
           disableColumnMenu: true,
           renderHeader: () => {
-            // Determine selectable rows based on user permissions
+            // Determine selectable rows based on user permissions (excluding rows where is_email === true)
             let selectableRows = [];
             if (canManualApproval) {
-              // Users with manual_approval can select ceo_pending and invoice_sent
+              // Users with manual_approval can select ceo_pending and invoice_sent (but not if email already sent)
               selectableRows = filteredRows.filter(row => 
-                row.status === 'ceo_pending' || 
-                row.status === 'invoice_sent'
+                (row.status === 'ceo_pending' || row.status === 'invoice_sent') && row.is_email !== true
               );
             }
             if (canPaymentRelease) {
-              // Users with payment_release can select Submitted for Payment
+              // Users with payment_release can select Submitted for Payment (but not if email already sent)
               const submittedForPaymentRows = filteredRows.filter(row => 
-                row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT
+                row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT && row.is_email !== true
               );
               selectableRows = [...selectableRows, ...submittedForPaymentRows];
             }
@@ -3376,12 +3402,12 @@ export default function AreaHeadRequests() {
             // Determine if row is selectable based on user permissions
             let isSelectable = false;
             if (canManualApproval) {
-              // Users with manual_approval can select ceo_pending and invoice_sent
-              isSelectable = params.row.status === 'ceo_pending' || params.row.status === 'invoice_sent';
+              // Users with manual_approval can select ceo_pending and invoice_sent (but not if email already sent)
+              isSelectable = (params.row.status === 'ceo_pending' || params.row.status === 'invoice_sent') && params.row.is_email !== true;
             }
             if (canPaymentRelease) {
-              // Users with payment_release can select Submitted for Payment
-              if (params.row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT) {
+              // Users with payment_release can select Submitted for Payment (but not if email already sent)
+              if (params.row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT && params.row.is_email !== true) {
                 isSelectable = true;
               }
             }
@@ -3971,7 +3997,7 @@ export default function AreaHeadRequests() {
                     variant="contained"
                     color="primary"
                     onClick={handleBulkSendToCEO}
-                    disabled={hasMixedSelection || hasInvoiceSent || hasSubmittedForPayment}
+                    disabled={hasMixedSelection || hasInvoiceSent || hasSubmittedForPayment || selectedRequestObjects.some(req => req.is_email === true)}
                     sx={{ fontWeight: 'bold', textTransform: 'none' }}
                   >
                     Send to CEO for Approval
