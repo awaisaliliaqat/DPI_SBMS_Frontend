@@ -3853,6 +3853,16 @@ export default function AreaHeadRequests() {
         // Row interaction
         onRowClick={canRead ? handleRowClick : null}
         
+        // Row styling - highlight "not decided" requests
+        getRowClassName={(params) => {
+          const status = params.row.status;
+          // Check if status is "not decided" (case-insensitive)
+          if (status && String(status).toLowerCase().trim() === 'not decided') {
+            return 'not-decided-row';
+          }
+          return '';
+        }}
+        
         // Configuration
         pageSizeOptions={[5, 10, 25, 50]}
         showToolbar={true}
@@ -3861,6 +3871,23 @@ export default function AreaHeadRequests() {
         disableColumnMenu={true}
         slots={{
           toolbar: CustomToolbar
+        }}
+        sx={{
+          // Custom styling for "not decided" rows - Beautiful purple/blue gradient theme
+          '& .not-decided-row': {
+            backgroundColor: '#f3e5f5 !important', // Soft lavender background
+            borderLeft: '4px solid #9c27b0', // Purple left border accent
+            boxShadow: 'inset 0 0 0 1px rgba(156, 39, 176, 0.1)', // Subtle inner shadow
+            '&:hover': {
+              backgroundColor: '#e1bee7 !important', // Deeper lavender on hover
+              boxShadow: 'inset 0 0 0 1px rgba(156, 39, 176, 0.2)',
+            },
+            '& .MuiDataGrid-cell': {
+              borderBottom: '1px solid rgba(156, 39, 176, 0.2)', // Subtle purple bottom border
+            },
+            // Add a subtle gradient effect
+            background: 'linear-gradient(90deg, rgba(156, 39, 176, 0.08) 0%, rgba(156, 39, 176, 0.03) 100%) !important',
+          },
         }}
       />
 
