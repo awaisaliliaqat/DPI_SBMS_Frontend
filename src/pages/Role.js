@@ -36,7 +36,7 @@ import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
 import { Close, Add } from '@mui/icons-material';
-import { PERMISSIONS, BASE_URL, getPermissionsForFeature, EXCLUDED_FEATURES } from '../constants/Constants';
+import { PERMISSIONS, BASE_URL, getPermissionsForFeature, EXCLUDED_FEATURES, FEATURE_PERMISSIONS } from '../constants/Constants';
 
 const INITIAL_PAGE_SIZE = 10;
 
@@ -238,17 +238,19 @@ export default function RoleManagement() {
   };
 
   // Update available permissions when feature is selected
-  // Use only standard CRUD permissions (create, read, update, delete)
+  // Use feature-specific permissions (shopboardRequest has extended permissions)
   React.useEffect(() => {
     if (selectedFeature) {
-      // Always use standard CRUD permissions only
-      const crudPermissions = [
-        { id: 'create', name: 'Create' },
-        { id: 'read', name: 'Read' },
-        { id: 'update', name: 'Update' },
-        { id: 'delete', name: 'Delete' },
-      ];
-      setAvailablePermissions(crudPermissions);
+      // Find the feature data to get its name
+      const selectedFeatureData = features.find(f => f.id === parseInt(selectedFeature));
+      // Get the actual feature name from originalData.name (this is the database name)
+      const featureName = selectedFeatureData?.originalData?.name || '';
+      
+      // Get permissions for this feature using the helper function
+      // The helper function will check FEATURE_PERMISSIONS[featureName] or return default CRUD
+      const featurePermissions = getPermissionsForFeature(featureName);
+      
+      setAvailablePermissions(featurePermissions);
       
       // Auto-select "read" permission by default
       setSelectedPermissions({ read: true });
