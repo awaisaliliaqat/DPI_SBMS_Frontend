@@ -18,6 +18,7 @@ import {
   TableRow,
   Paper,
   CircularProgress,
+  Tooltip,
 } from '@mui/material';
 import {
   Assessment as StatsIcon,
@@ -361,7 +362,7 @@ export default function BudgetManagement() {
           actions.push(
             <GridActionsCellItem
               key="stats"
-              icon={<StatsIcon />}
+              icon={<Tooltip title="View Statistics"><StatsIcon /></Tooltip>}
               label="Stats"
               onClick={() => handleStats(params.row)}
               color="primary"
@@ -373,7 +374,7 @@ export default function BudgetManagement() {
           actions.push(
             <GridActionsCellItem
               key="edit"
-              icon={<EditIcon />}
+              icon={<Tooltip title="Edit Budget"><EditIcon /></Tooltip>}
               label="Edit"
               onClick={() => handleEdit(params.row)}
               color="info"
@@ -385,7 +386,7 @@ export default function BudgetManagement() {
           actions.push(
             <GridActionsCellItem
               key="delete"
-              icon={<DeleteIcon />}
+              icon={<Tooltip title="Delete Budget"><DeleteIcon /></Tooltip>}
               label="Delete"
               onClick={() => handleDelete(params.row)}
               color="error"
@@ -396,7 +397,7 @@ export default function BudgetManagement() {
         return actions;
       },
     },
-  ], [canRead, handleStats]);
+  ], [canRead, canUpdate, canDelete, handleStats, handleEdit, handleDelete]);
 
   const pageTitle = 'Budget Management';
 
