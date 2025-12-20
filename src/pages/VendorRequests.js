@@ -340,7 +340,9 @@ export default function VendorRequests() {
   );
 
   const [sortModel, setSortModel] = React.useState(
-    searchParams.get('sort') ? JSON.parse(searchParams.get('sort') ?? '') : [],
+    searchParams.get('sort')
+      ? JSON.parse(searchParams.get('sort') ?? '')
+      : [{ field: 'created_at', sort: 'desc' }],
   );
 
   // Check if user has read permission on mount
@@ -616,6 +618,13 @@ export default function VendorRequests() {
         queryParams.append('start_date', currentFilters.startDate);
         queryParams.append('end_date', currentFilters.endDate);
       }
+
+      // Always sort by created_at desc (matches backend default) and allow future extension
+      const sortItem = (sortModel && sortModel[0]) || { field: 'created_at', sort: 'desc' };
+      if (sortItem?.field) {
+        queryParams.append('sort_field', sortItem.field);
+        queryParams.append('sort_order', sortItem.sort || 'desc');
+      }
       
       const apiUrl = `/api/shopboard-requests/vendor?${queryParams.toString()}`;
       
@@ -660,7 +669,7 @@ export default function VendorRequests() {
     } finally {
       setIsLoading(false);
     }
-  }, [paginationModel, filters, get, canRead]);
+  }, [paginationModel, filters, sortModel, get, canRead]);
 
   // Load data when component mounts, pagination changes, or filters change
   React.useEffect(() => {
@@ -668,7 +677,7 @@ export default function VendorRequests() {
       loadRequests();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paginationModel, filters]); // Watch pagination and filters directly, not loadRequests or canRead to avoid loops
+  }, [paginationModel, filters, sortModel]); // Watch pagination, filters, and sorting
 
   // Action handlers
   const handleView = React.useCallback((requestData) => {
@@ -2434,6 +2443,13 @@ export default function VendorRequests() {
         
         // Row interaction
         onRowClick={canRead ? handleRowClick : null}
+      getRowClassName={(params) => {
+        const status = params.row?.status;
+        if (status && String(status).toLowerCase().trim() === 'rfq') {
+          return 'not-decided-row';
+        }
+        return '';
+      }}
         
         // Configuration
         pageSizeOptions={[5, 10, 25, 50]}
@@ -2444,6 +2460,26 @@ export default function VendorRequests() {
         slots={{
           toolbar: CustomToolbar
         }}
+      sx={{
+        // Reuse the "not decided" highlight style for RFQ rows
+        '& .not-decided-row': {
+          backgroundColor: '#f0f4ff !important',
+          borderLeft: '4px solid #1a237e',
+          boxShadow: '0 1px 3px rgba(26, 35, 126, 0.08)',
+          fontWeight: 'bold !important', // Make all text bold in the row
+          '&:hover': {
+            backgroundColor: '#e3f2fd !important',
+            boxShadow: '0 2px 6px rgba(26, 35, 126, 0.12)',
+          },
+          '& .MuiDataGrid-cell': {
+            borderBottom: '1px solid rgba(224, 231, 255, 0.5)',
+            fontWeight: 'bold !important', // Make all text bold in cells
+            '& *': {
+              fontWeight: 'bold !important', // Make all nested elements bold
+            },
+          },
+        },
+      }}
       />
 
       {/* View Request Details Modal - Detailed View */}
