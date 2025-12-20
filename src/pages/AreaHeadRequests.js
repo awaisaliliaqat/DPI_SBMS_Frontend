@@ -36,6 +36,7 @@ import {
   Payment as PaymentIcon,
   Receipt as InvoiceIcon,
   ReceiptLong as ReceiptLongIcon,
+  ShoppingCart as OldPurchasesIcon,
 } from '@mui/icons-material';
 import { GridActionsCellItem } from '@mui/x-data-grid';
 import { GridToolbarContainer, GridToolbarColumnsButton } from '@mui/x-data-grid';
@@ -50,6 +51,7 @@ import InvoiceViewer from '../components/InvoiceViewer';
 import RejectInvoiceModal from '../components/RejectInvoiceModal';
 import PaymentSummaryModal from '../components/PaymentSummaryModal';
 import ShopboardRequestFilters from '../components/ShopboardRequestFilters';
+import OldPurchasesModal from '../components/OldPurchasesModal';
 import { BASE_URL, BASENAME } from "../constants/Constants";
 import { 
   SHOPBOARD_REQUEST_STATUS, 
@@ -182,6 +184,10 @@ export default function AreaHeadRequests() {
   // Payment summary modal state
   const [paymentSummaryModalOpen, setPaymentSummaryModalOpen] = React.useState(false);
   const [paymentSummaryData, setPaymentSummaryData] = React.useState(null);
+  
+  // Old purchases modal state
+  const [oldPurchasesModalOpen, setOldPurchasesModalOpen] = React.useState(false);
+  const [selectedDealerForOldPurchases, setSelectedDealerForOldPurchases] = React.useState(null);
   
   // File upload state for edit modal
   const [sitePhotos, setSitePhotos] = React.useState([]);
@@ -690,7 +696,10 @@ export default function AreaHeadRequests() {
       // Check if any request has selectable status based on user permissions
       let shouldShowSelection = false;
       if (canManualApproval) {
-        const hasCeoPending = requestsData.some(request => request.status === 'ceo_pending');
+        // Show selection column if there are:
+        // - ceo_pending requests (where email not sent)
+        // - invoice_sent requests (always)
+        const hasCeoPending = requestsData.some(request => request.status === 'ceo_pending' && request.is_email !== true);
         const hasInvoiceSent = requestsData.some(request => request.status === 'invoice_sent');
         shouldShowSelection = hasCeoPending || hasInvoiceSent;
       }
@@ -910,6 +919,29 @@ export default function AreaHeadRequests() {
     setRejectInvoiceTarget(requestData);
     setRejectInvoiceModalOpen(true);
   }, [canManualApproval]);
+
+  const handleViewOldPurchases = React.useCallback((requestData) => {
+    if (!canRead) return;
+    
+    // Get dealer information from the request
+    const dealerId = requestData.dealer?.code || requestData.dealer_id;
+    const dealerName = requestData.dealer?.name || 'Dealer';
+    
+    if (!dealerId) {
+      toast.error('Dealer information not available', {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+    
+    setSelectedDealerForOldPurchases({ id: dealerId, name: dealerName });
+    setOldPurchasesModalOpen(true);
+  }, [canRead]);
 
   // Open payment summary modal for selected "Submitted for Payment" requests
   const handleOpenPaymentSummary = React.useCallback(() => {
@@ -1341,8 +1373,8 @@ export default function AreaHeadRequests() {
         // Deselecting - always allow
         return prev.filter(id => id !== requestId);
       } else {
-        // Check if email has already been sent - prevent selection if is_email === true
-        if (request.is_email === true) {
+        // Check if email has already been sent - prevent selection only for ceo_pending if is_email === true
+        if (request.status === 'ceo_pending' && request.is_email === true) {
           toast.warning('Email has already been sent for this request. Cannot select again.', {
             position: "top-right",
             autoClose: 3000,
@@ -1357,8 +1389,12 @@ export default function AreaHeadRequests() {
         // Selecting - check if this request is selectable based on user permissions
         let isSelectable = false;
         if (canManualApproval) {
-          // Users with manual_approval can select ceo_pending and invoice_sent
-          isSelectable = request.status === 'ceo_pending' || request.status === 'invoice_sent';
+          // Users with manual_approval can select ceo_pending (if email not sent) and invoice_sent (always)
+          if (request.status === 'ceo_pending') {
+            isSelectable = request.is_email !== true;
+          } else if (request.status === 'invoice_sent') {
+            isSelectable = true; // invoice_sent can always be selected regardless of is_email
+          }
         }
         if (canPaymentRelease) {
           // Users with payment_release can select Submitted for Payment
@@ -1413,14 +1449,19 @@ export default function AreaHeadRequests() {
       event.stopPropagation();
     }
     
-    // Determine selectable rows based on user permissions (excluding rows where is_email === true)
+    // Determine selectable rows based on user permissions
     let selectableRequests = [];
     if (canManualApproval) {
-      // Users with manual_approval can select ceo_pending and invoice_sent (but not if email already sent)
-      const manualApprovalRows = filteredRows
-        .filter(row => (row.status === 'ceo_pending' || row.status === 'invoice_sent') && row.is_email !== true)
+      // Users with manual_approval can select:
+      // - ceo_pending (only if email not sent, i.e., is_email !== true)
+      // - invoice_sent (always, regardless of is_email)
+      const ceoPendingRows = filteredRows
+        .filter(row => row.status === 'ceo_pending' && row.is_email !== true)
         .map(row => row.id);
-      selectableRequests = [...selectableRequests, ...manualApprovalRows];
+      const invoiceSentRows = filteredRows
+        .filter(row => row.status === 'invoice_sent')
+        .map(row => row.id);
+      selectableRequests = [...selectableRequests, ...ceoPendingRows, ...invoiceSentRows];
     }
     if (canPaymentRelease) {
       // Users with payment_release can select Submitted for Payment (but not if email already sent)
@@ -3373,13 +3414,19 @@ export default function AreaHeadRequests() {
           filterable: false,
           disableColumnMenu: true,
           renderHeader: () => {
-            // Determine selectable rows based on user permissions (excluding rows where is_email === true)
+            // Determine selectable rows based on user permissions
             let selectableRows = [];
             if (canManualApproval) {
-              // Users with manual_approval can select ceo_pending and invoice_sent (but not if email already sent)
-              selectableRows = filteredRows.filter(row => 
-                (row.status === 'ceo_pending' || row.status === 'invoice_sent') && row.is_email !== true
+              // Users with manual_approval can select:
+              // - ceo_pending (only if email not sent, i.e., is_email !== true)
+              // - invoice_sent (always, regardless of is_email)
+              const ceoPendingRows = filteredRows.filter(row => 
+                row.status === 'ceo_pending' && row.is_email !== true
               );
+              const invoiceSentRows = filteredRows.filter(row => 
+                row.status === 'invoice_sent'
+              );
+              selectableRows = [...ceoPendingRows, ...invoiceSentRows];
             }
             if (canPaymentRelease) {
               // Users with payment_release can select Submitted for Payment (but not if email already sent)
@@ -3402,8 +3449,14 @@ export default function AreaHeadRequests() {
             // Determine if row is selectable based on user permissions
             let isSelectable = false;
             if (canManualApproval) {
-              // Users with manual_approval can select ceo_pending and invoice_sent (but not if email already sent)
-              isSelectable = (params.row.status === 'ceo_pending' || params.row.status === 'invoice_sent') && params.row.is_email !== true;
+              // Users with manual_approval can select:
+              // - ceo_pending (only if email not sent, i.e., is_email !== true)
+              // - invoice_sent (always, regardless of is_email)
+              if (params.row.status === 'ceo_pending') {
+                isSelectable = params.row.is_email !== true;
+              } else if (params.row.status === 'invoice_sent') {
+                isSelectable = true; // invoice_sent can always be selected
+              }
             }
             if (canPaymentRelease) {
               // Users with payment_release can select Submitted for Payment (but not if email already sent)
@@ -3905,6 +3958,19 @@ export default function AreaHeadRequests() {
 
           // Payment proof icon removed - now using row selection for bulk payment processing
 
+          // Show old purchases action for all requests (dealer history)
+          if (canRead && row.dealer) {
+            actions.push(
+              <GridActionsCellItem
+                key="viewOldPurchases"
+                icon={<Tooltip title="Old Purchases"><OldPurchasesIcon /></Tooltip>}
+                label="Old Purchases"
+                onClick={() => handleViewOldPurchases(row)}
+                color="info"
+              />
+            );
+          }
+
           // Show history action for all requests
           if (canRead) {
             actions.push(
@@ -3925,7 +3991,7 @@ export default function AreaHeadRequests() {
 
     return baseColumns;
     },
-    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, canPaymentRelease, showSelectionColumn, selectedRequests, filteredRows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleViewInvoice, handleSelectAll, handleSelectRequest, handleBulkReleasePayment, getVendorName],
+    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, canPaymentRelease, showSelectionColumn, selectedRequests, filteredRows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleViewInvoice, handleViewOldPurchases, handleSelectAll, handleSelectRequest, handleBulkReleasePayment, getVendorName],
   );
 
   const pageTitle = 'Area Head Requests';
@@ -6364,6 +6430,17 @@ export default function AreaHeadRequests() {
         paymentSummaryData={paymentSummaryData}
         onProcessPayment={handleProcessPayment}
         isLoading={isLoading}
+      />
+
+      {/* Old Purchases Modal */}
+      <OldPurchasesModal
+        open={oldPurchasesModalOpen}
+        onClose={() => {
+          setOldPurchasesModalOpen(false);
+          setSelectedDealerForOldPurchases(null);
+        }}
+        dealerId={selectedDealerForOldPurchases?.id}
+        dealerName={selectedDealerForOldPurchases?.name}
       />
 
       {/* React Toastify Container */}
