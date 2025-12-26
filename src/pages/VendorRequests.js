@@ -3244,7 +3244,10 @@ export default function VendorRequests() {
                 InputLabelProps={{
                   shrink: true,
                 }}
-                disabled={isLoading}
+                disabled={isLoading || (editingRequest?.last_installation_date && String(editingRequest.last_installation_date).trim() !== '')}
+                helperText={editingRequest?.last_installation_date && String(editingRequest.last_installation_date).trim() !== '' 
+                  ? 'Last installation date cannot be changed once set' 
+                  : ''}
               />
 
               
