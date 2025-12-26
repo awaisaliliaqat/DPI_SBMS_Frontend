@@ -17,6 +17,7 @@ import {
   InputAdornment,
   Paper,
   Checkbox,
+  Badge,
 } from '@mui/material';
 import {
   CheckCircle as ApproveIcon,
@@ -885,13 +886,24 @@ export default function AreaHeadRequests() {
     fetchMarketingComments(requestData.id);
   }, [canRead]);
 
-  const handleViewAndSendMessages = React.useCallback((requestData) => {
+  const handleViewAndSendMessages = React.useCallback(async (requestData) => {
     if (!canAddComment) return;
     
     setRequestToAction(requestData);
     setMarketingCommentsDialogOpen(true);
+    
+    // Mark comments as read when opening the dialog
+    try {
+      await post(`/api/comments/mark-read/${requestData.id}`);
+      // Refresh requests to update unread count
+      loadRequests();
+    } catch (error) {
+      console.error('Error marking comments as read:', error);
+      // Continue even if marking as read fails
+    }
+    
     fetchMarketingComments(requestData.id);
-  }, [canAddComment]);
+  }, [canAddComment, post, loadRequests]);
 
   const handlePrint = React.useCallback((requestData) => {
     if (!canPrint) return;
@@ -3890,10 +3902,33 @@ export default function AreaHeadRequests() {
             const isExcludedStatus = !status || excludedStatuses.includes(status);
             
             if (!isExcludedStatus) {
+              // Show badge if there are unread comments
+              const unreadCount = row.unread_comment_count || 0;
+              const hasUnread = row.has_unread_comments || false;
+              
               actions.push(
                 <GridActionsCellItem
                   key="viewAndSendMessages"
-                  icon={<Tooltip title="View & Send Messages"><CommentIcon /></Tooltip>}
+                  icon={
+                    <Tooltip title={hasUnread ? `View & Send Messages (${unreadCount} unread)` : "View & Send Messages"}>
+                      <Badge 
+                        badgeContent={unreadCount > 0 ? unreadCount : 0} 
+                        color="error"
+                        invisible={!hasUnread}
+                        sx={{
+                          '& .MuiBadge-badge': {
+                            fontWeight: 'bold',
+                            fontSize: '0.7rem'
+                          }
+                        }}
+                      >
+                        <CommentIcon sx={{ 
+                          color: hasUnread ? '#1976d2' : 'inherit',
+                          fontWeight: hasUnread ? 'bold' : 'normal'
+                        }} />
+                      </Badge>
+                    </Tooltip>
+                  }
                   label="View & Send Messages"
                   onClick={() => handleViewAndSendMessages(row)}
                   color="info"
