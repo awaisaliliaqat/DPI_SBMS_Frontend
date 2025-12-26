@@ -264,6 +264,7 @@ export default function VendorRequests() {
   // Per-item site photos for invoice modal: { [itemId]: File[] }
   const [sitePhotosPerItem, setSitePhotosPerItem] = React.useState({});
   const [invoiceLoading, setInvoiceLoading] = React.useState(false);
+  const [invoiceNumber, setInvoiceNumber] = React.useState('');
   
   // Invoice viewer modal state
   const [invoiceViewerModalOpen, setInvoiceViewerModalOpen] = React.useState(false);
@@ -702,6 +703,9 @@ export default function VendorRequests() {
   const handleShareInvoice = React.useCallback((requestData) => {
     setSelectedInvoiceRequest(requestData);
     
+    // Set invoice number if it exists
+    setInvoiceNumber(requestData.invoice_number || '');
+    
     // Parse and load existing invoice data if available
     let invoiceData = {};
     if (requestData.invoice) {
@@ -797,6 +801,19 @@ export default function VendorRequests() {
   const confirmInvoiceUpload = React.useCallback(async () => {
     if (!selectedInvoiceRequest) return;
     
+    // Validate invoice number is provided
+    if (!invoiceNumber || invoiceNumber.trim() === '') {
+      toast.error('Invoice number is required', {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+    
     // Validate status before proceeding
     const isResubmission = selectedInvoiceRequest.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED;
     const isInitialUpload = selectedInvoiceRequest.status === VENDOR_APPROVAL_STATUS;
@@ -824,6 +841,11 @@ export default function VendorRequests() {
       // Add basic data - set status to invoice_sent (works for both initial upload and resubmission after rejection)
       formData.append('status', SHOPBOARD_REQUEST_STATUS.INVOICE_SENT);
       formData.append('updated_by', user.id);
+      
+      // Add invoice number if provided
+      if (invoiceNumber && invoiceNumber.trim() !== '') {
+        formData.append('invoice_number', invoiceNumber.trim());
+      }
       
       // Add flag to indicate if this is a resubmission
       if (isResubmission) {
@@ -908,8 +930,9 @@ export default function VendorRequests() {
       setExistingDealerAcknowledgmentFiles([]);
       setExistingSitePhotosPerItem({});
       setInvoiceLoading(false);
+      setInvoiceNumber('');
     }
-  }, [selectedInvoiceRequest, invoiceFile, dealerAcknowledgmentFile, sitePhotosPerItem, user.id, token, loadRequests]);
+  }, [selectedInvoiceRequest, invoiceFile, dealerAcknowledgmentFile, sitePhotosPerItem, invoiceNumber, user.id, token, loadRequests]);
 
   const handleInvoiceSubmit = React.useCallback(() => {
     if (!selectedInvoiceRequest) return;
@@ -4173,6 +4196,21 @@ export default function VendorRequests() {
           <Typography sx={{ color: '#333', mb: 2 }}>
             Total Cost: <strong>{selectedInvoiceRequest?.total_cost ? `₨${parseFloat(selectedInvoiceRequest.total_cost).toFixed(2)}` : 'N/A'}</strong>
           </Typography>
+          
+          {/* Invoice Number */}
+          <TextField
+            label="Invoice Number"
+            value={invoiceNumber}
+            onChange={(e) => setInvoiceNumber(e.target.value)}
+            variant="outlined"
+            fullWidth
+            required
+            sx={{ mb: 2 }}
+            disabled={invoiceLoading}
+            placeholder="Enter invoice number"
+            error={!invoiceNumber || invoiceNumber.trim() === ''}
+            helperText={(!invoiceNumber || invoiceNumber.trim() === '') ? 'Invoice number is required' : ''}
+          />
           
           <input
             type="file"

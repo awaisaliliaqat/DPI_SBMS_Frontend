@@ -6332,6 +6332,8 @@ export default function AreaHeadRequests() {
         invoiceData={selectedInvoiceRequest?.invoice}
         requestId={selectedInvoiceRequest?.id}
         requestItems={selectedInvoiceRequest?.requestItems}
+        invoiceNumber={selectedInvoiceRequest?.invoice_number}
+        invoiceDate={selectedInvoiceRequest?.invoice_date}
       />
 
       {/* Reject Invoice Modal */}

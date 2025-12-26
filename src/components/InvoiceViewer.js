@@ -8,7 +8,6 @@ import {
   Typography,
   Box,
   Chip,
-  Alert,
 } from '@mui/material';
 import {
   Receipt as InvoiceIcon,
@@ -17,17 +16,15 @@ import {
 } from '@mui/icons-material';
 import { BASE_URL } from '../constants/Constants';
 
-const InvoiceViewer = ({ open, onClose, invoiceData, requestId, requestItems }) => {
+const InvoiceViewer = ({ open, onClose, invoiceData, requestId, requestItems, invoiceNumber, invoiceDate }) => {
   // Parse the invoice JSON data
   const parseInvoiceData = (data) => {
     if (!data) return null;
     
     try {
-      // If it's already an object, return it
       if (typeof data === 'object') {
         return data;
       }
-      // If it's a string, parse it
       if (typeof data === 'string') {
         return JSON.parse(data);
       }
@@ -88,7 +85,6 @@ const InvoiceViewer = ({ open, onClose, invoiceData, requestId, requestItems }) 
     if (!invoice?.site_photos_by_item || !requestItems || requestItems.length === 0) return null;
     const map = invoice.site_photos_by_item;
 
-    // Build a quick lookup of items by id for labels
     const byId = new Map();
     requestItems.forEach((it) => {
       byId.set(String(it.id), it);
@@ -150,13 +146,13 @@ const InvoiceViewer = ({ open, onClose, invoiceData, requestId, requestItems }) 
       open={open}
       onClose={onClose}
       aria-labelledby="invoice-viewer-dialog-title"
+      fullWidth
+      maxWidth="md"
       PaperProps={{
         sx: {
           backgroundColor: '#ffffff',
-          minWidth: '500px',
-          maxWidth: '700px',
-          maxHeight: '80vh',
-          overflow: 'auto',
+          borderRadius: 2,
+          maxHeight: '85vh',
         }
       }}
     >
@@ -171,6 +167,36 @@ const InvoiceViewer = ({ open, onClose, invoiceData, requestId, requestItems }) 
       </DialogTitle>
       
       <DialogContent>
+        {/* Invoice Number and Date Display */}
+        {(invoiceNumber || invoiceDate) && (
+          <Box sx={{ mb: 2, p: 1.5, backgroundColor: '#f5f5f5', borderRadius: 1 }}>
+            {invoiceNumber && (
+              <Box sx={{ mb: invoiceDate ? 1 : 0 }}>
+                <Typography variant="body2" sx={{ color: '#666', mb: 0.5 }}>
+                  Invoice Number
+                </Typography>
+                <Typography variant="body1" sx={{ fontWeight: 'bold', color: '#333' }}>
+                  {invoiceNumber}
+                </Typography>
+              </Box>
+            )}
+            {invoiceDate && (
+              <Box>
+                <Typography variant="body2" sx={{ color: '#666', mb: 0.5 }}>
+                  Invoice Date
+                </Typography>
+                <Typography variant="body1" sx={{ fontWeight: 'bold', color: '#333' }}>
+                  {new Date(invoiceDate).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })}
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        )}
+
         {!hasInvoiceData ? (
           <Box sx={{ textAlign: 'center', p: 4 }}>
             <Typography variant="body1" sx={{ color: '#666' }}>
