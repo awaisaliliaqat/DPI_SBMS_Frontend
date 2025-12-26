@@ -18,7 +18,10 @@ import {
   Paper,
   Checkbox,
   Badge,
+  CircularProgress,
+  Avatar,
 } from '@mui/material';
+import CommentsDialog from '../components/CommentsDialog';
 import {
   CheckCircle as ApproveIcon,
   Cancel as RejectIcon,
@@ -1853,7 +1856,7 @@ export default function AreaHeadRequests() {
     }
   };
 
-  // Confirm add comment function
+  // Confirm add comment function (for Add Comment Dialog)
   const confirmAddComment = async () => {
     if (!requestToAction || !newComment.trim()) return;
     
@@ -1892,6 +1895,45 @@ export default function AreaHeadRequests() {
       setIsLoading(false);
       setRequestToAction(null);
       setNewComment('');
+    }
+  };
+
+  // Send message from Messages Dialog (keeps dialog open)
+  const handleSendMessageFromDialog = async () => {
+    if (!requestToAction || !newComment.trim()) return;
+    
+    setIsLoading(true);
+    
+    try {
+      const response = await post(`/api/comments/add`, {
+        shopboard_request_id: requestToAction.id,
+        comment: newComment.trim(),
+        comment_type: 'marketing'
+      });
+
+      toast.success(`Message sent successfully!`, {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      
+      // Refresh the comments in the dialog
+      fetchMarketingComments(requestToAction.id);
+      setNewComment(''); // Clear the input field
+    } catch (commentError) {
+      toast.error(`Failed to send message: ${commentError.message}`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -3910,22 +3952,73 @@ export default function AreaHeadRequests() {
                 <GridActionsCellItem
                   key="viewAndSendMessages"
                   icon={
-                    <Tooltip title={hasUnread ? `View & Send Messages (${unreadCount} unread)` : "View & Send Messages"}>
+                    <Tooltip 
+                      title={hasUnread ? `${unreadCount} unread message${unreadCount > 1 ? 's' : ''}` : "View & Send Messages"}
+                      arrow
+                      placement="top"
+                    >
                       <Badge 
-                        badgeContent={unreadCount > 0 ? unreadCount : 0} 
+                        badgeContent={unreadCount > 0 ? (unreadCount > 99 ? '99+' : unreadCount) : 0} 
                         color="error"
                         invisible={!hasUnread}
+                        overlap="circular"
+                        anchorOrigin={{
+                          vertical: 'top',
+                          horizontal: 'right',
+                        }}
                         sx={{
                           '& .MuiBadge-badge': {
                             fontWeight: 'bold',
-                            fontSize: '0.7rem'
+                            fontSize: { xs: '0.65rem', sm: '0.7rem' },
+                            minWidth: { xs: '18px', sm: '20px' },
+                            height: { xs: '18px', sm: '20px' },
+                            padding: { xs: '0 4px', sm: '0 6px' },
+                            backgroundColor: '#f44336',
+                            color: '#ffffff',
+                            boxShadow: '0 2px 8px rgba(244, 67, 54, 0.4)',
+                            border: '2px solid #ffffff',
+                            animation: hasUnread ? 'pulse 2s infinite' : 'none',
+                            '@keyframes pulse': {
+                              '0%': {
+                                transform: 'scale(1)',
+                                boxShadow: '0 2px 8px rgba(244, 67, 54, 0.4)',
+                              },
+                              '50%': {
+                                transform: 'scale(1.1)',
+                                boxShadow: '0 4px 12px rgba(244, 67, 54, 0.6)',
+                              },
+                              '100%': {
+                                transform: 'scale(1)',
+                                boxShadow: '0 2px 8px rgba(244, 67, 54, 0.4)',
+                              },
+                            }
                           }
                         }}
                       >
-                        <CommentIcon sx={{ 
-                          color: hasUnread ? '#1976d2' : 'inherit',
-                          fontWeight: hasUnread ? 'bold' : 'normal'
-                        }} />
+                        <Box
+                          sx={{
+                            position: 'relative',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: { xs: '36px', sm: '40px' },
+                            height: { xs: '36px', sm: '40px' },
+                            borderRadius: '50%',
+                            backgroundColor: hasUnread ? '#e3f2fd' : 'transparent',
+                            transition: 'all 0.3s ease',
+                            '&:hover': {
+                              backgroundColor: '#e3f2fd',
+                              transform: 'scale(1.1)',
+                            }
+                          }}
+                        >
+                          <CommentIcon sx={{ 
+                            color: hasUnread ? '#1976d2' : '#666',
+                            fontSize: { xs: '1.25rem', sm: '1.5rem' },
+                            fontWeight: hasUnread ? 'bold' : 'normal',
+                            transition: 'all 0.3s ease',
+                          }} />
+                        </Box>
                       </Badge>
                     </Tooltip>
                   }
@@ -5695,235 +5788,27 @@ export default function AreaHeadRequests() {
         </DialogActions>
       </Dialog>
 
-      {/* Add Comment Dialog */}
-      <Dialog
-        open={addCommentDialogOpen}
-        onClose={cancelAddComment}
-        aria-labelledby="add-comment-dialog-title"
-        PaperProps={{
-          sx: {
-            backgroundColor: '#ffffff',
-            minWidth: '500px',
-            maxWidth: '700px',
-          }
-        }}
-      >
-        <DialogTitle 
-          id="add-comment-dialog-title"
-          sx={{ 
-            color: 'secondary.main',
-            fontWeight: 'bold',
-          }}
-        >
-          Add Comment - Request #{requestToAction?.id}
-        </DialogTitle>
-        <DialogContent>
-          <Typography sx={{ color: '#333', mb: 2 }}>
-            Add a comment for request <strong>#{requestToAction?.id}</strong>:
-          </Typography>
-          
-          <TextField
-            fullWidth
-            multiline
-            rows={4}
-            label="Comment"
-            placeholder="Enter your comment here..."
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-            variant="outlined"
-            disabled={isLoading}
-            sx={{ mt: 2 }}
-            helperText="This comment will be associated with the request"
-          />
-        </DialogContent>
-        <DialogActions sx={{ p: 2, gap: 1 }}>
-          <Button 
-            onClick={cancelAddComment}
-            variant="outlined"
-            sx={{ 
-              color: '#666',
-              borderColor: '#ddd',
-              '&:hover': {
-                borderColor: '#999',
-                backgroundColor: '#f5f5f5',
-              }
-            }}
-            disabled={isLoading}
-          >
-            Cancel
-          </Button>
-          <Button 
-            onClick={confirmAddComment}
-            variant="contained"
-            color="secondary"
-            disabled={isLoading || !newComment.trim()}
-            sx={{
-              minWidth: '120px'
-            }}
-          >
-            {isLoading ? 'Adding...' : 'Add Comment'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Marketing Comments Dialog */}
-      <Dialog
-        open={marketingCommentsDialogOpen}
-        onClose={cancelMarketingComments}
-        aria-labelledby="marketing-comments-dialog-title"
-        PaperProps={{
-          sx: {
-            backgroundColor: '#ffffff',
-            minWidth: '700px',
-            maxWidth: '900px',
-            maxHeight: '85vh',
-            display: 'flex',
-            flexDirection: 'column',
-          }
-        }}
-      >
-        <DialogTitle 
-          id="marketing-comments-dialog-title"
-          sx={{ 
-            color: 'info.main',
-            fontWeight: 'bold',
-          }}
-        >
-          View & Send Messages - Request #{requestToAction?.id}
-        </DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-          {/* Messages Section */}
-          <Box sx={{ flex: 1, overflow: 'auto', mb: 2 }}>
-            {loadingMarketingComments ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-                <Typography>Loading messages...</Typography>
-              </Box>
-            ) : marketingComments.length === 0 ? (
-              <Box sx={{ textAlign: 'center', p: 4 }}>
-                <Typography variant="body1" sx={{ color: '#666' }}>
-                  No messages found for this request.
-                </Typography>
-              </Box>
-            ) : (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {marketingComments.map((comment, index) => (
-                  <Box 
-                    key={index} 
-                    sx={{ 
-                      p: 2, 
-                      border: '1px solid #e0e0e0', 
-                      borderRadius: 2, 
-                      backgroundColor: '#f9f9f9',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                        {comment.user ? comment.user.username : 'Unknown User'}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#666' }}>
-                        {comment.created_at ? new Date(comment.created_at).toLocaleString() : 'Unknown Date'}
-                      </Typography>
-                    </Box>
-                    <Typography variant="body2" sx={{ color: '#333', mb: 1 }}>
-                      {comment.comment}
-                    </Typography>
-                    <Chip 
-                      label={comment.comment_type || 'Unknown'} 
-                      size="small" 
-                      color={
-                        comment.comment_type === 'Area Head' ? 'primary' : 
-                        comment.comment_type === 'Vendor Manager' ? 'secondary' : 
-                        comment.comment_type === 'Auditor' ? 'warning' : 
-                        comment.comment_type === 'Super Admin' ? 'error' :
-                        comment.comment_type === 'CEO' ? 'success' :
-                        'info'
-                      } 
-                      variant="outlined"
-                    />
-                  </Box>
-                ))}
-              </Box>
-            )}
-          </Box>
-          
-          {/* Send Message Section - Always Visible */}
-          {canAddComment && (
-            <Box sx={{ 
-              p: 3, 
-              border: '2px solid #e3f2fd', 
-              borderRadius: 2, 
-              backgroundColor: '#f8f9ff',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              flexShrink: 0
-            }}>
-              <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'info.main' }}>
-                💬 Send New Message
-              </Typography>
-              <TextField
-                fullWidth
-                multiline
-                rows={3}
-                label="Your Message"
-                placeholder="Type your message here..."
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                variant="outlined"
-                disabled={isLoading}
-                sx={{ 
-                  mb: 2,
-                  '& .MuiOutlinedInput-root': {
-                    backgroundColor: '#ffffff',
-                    borderRadius: 2
-                  }
-                }}
-                helperText="This message will be sent to the conversation"
-              />
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-                <Button 
-                  onClick={() => setNewComment('')}
-                  variant="outlined"
-                  disabled={isLoading || !newComment.trim()}
-                  sx={{ borderRadius: 2 }}
-                >
-                  Clear
-                </Button>
-                <Button 
-                  onClick={confirmAddComment}
-                  variant="contained"
-                  color="info"
-                  disabled={isLoading || !newComment.trim()}
-                  sx={{ 
-                    borderRadius: 2,
-                    px: 3,
-                    fontWeight: 'bold'
-                  }}
-                >
-                  {isLoading ? 'Sending...' : '📤 Send Message'}
-                </Button>
-              </Box>
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ p: 3, gap: 2, backgroundColor: '#f8f9fa', borderTop: '1px solid #e0e0e0' }}>
-          <Button 
-            onClick={cancelMarketingComments}
-            variant="outlined"
-            sx={{ 
-              color: '#666',
-              borderColor: '#ddd',
-              borderRadius: 2,
-              px: 3,
-              '&:hover': {
-                borderColor: '#999',
-                backgroundColor: '#f5f5f5',
-              }
-            }}
-          >
-            ✖️ Close
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* Comments Dialog Component */}
+      <CommentsDialog
+        // Add Comment Dialog Props
+        addCommentDialogOpen={addCommentDialogOpen}
+        onCloseAddComment={cancelAddComment}
+        onConfirmAddComment={confirmAddComment}
+        newComment={newComment}
+        onCommentChange={setNewComment}
+        isLoading={isLoading}
+        requestId={requestToAction?.id}
+        
+        // Messages Dialog Props
+        messagesDialogOpen={marketingCommentsDialogOpen}
+        onCloseMessages={cancelMarketingComments}
+        messages={marketingComments}
+        loadingMessages={loadingMarketingComments}
+        canAddComment={canAddComment}
+        currentUser={user}
+        onSendMessage={handleSendMessageFromDialog}
+        onClearMessage={() => setNewComment('')}
+      />
 
       {/* Detailed View Modal */}
       <Dialog
