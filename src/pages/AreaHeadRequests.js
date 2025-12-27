@@ -992,6 +992,8 @@ export default function AreaHeadRequests() {
       vendorName: getVendorName(req),
       totalCost: parseFloat(req.total_cost) || 0,
       created_at: req.created_at,
+      invoiceNumber: req.invoice_number || null,
+      invoiceDate: req.invoice_date || null,
     }));
     
     setPaymentSummaryData({

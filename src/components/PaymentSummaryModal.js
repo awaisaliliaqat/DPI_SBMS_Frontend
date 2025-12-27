@@ -53,6 +53,7 @@ const PaymentSummaryModal = ({
           <Box>
             {/* Total Amount */}
             <Box sx={{ 
+              mt: 2,
               mb: 3, 
               p: 3, 
               backgroundColor: '#e8f5e9', 
@@ -81,6 +82,8 @@ const PaymentSummaryModal = ({
                     <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Request ID</TableCell>
                     <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Dealer</TableCell>
                     <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Vendor</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Invoice No.</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Invoice Date</TableCell>
                     <TableCell align="right" sx={{ fontWeight: 'bold', color: '#666' }}>Amount</TableCell>
                   </TableRow>
                 </TableHead>
@@ -102,6 +105,18 @@ const PaymentSummaryModal = ({
                         </Typography>
                       </TableCell>
                       <TableCell>{invoice.vendorName}</TableCell>
+                      <TableCell>
+                        {invoice.invoiceNumber || 'N/A'}
+                      </TableCell>
+                      <TableCell>
+                        {invoice.invoiceDate 
+                          ? new Date(invoice.invoiceDate).toLocaleDateString('en-US', { 
+                              year: 'numeric', 
+                              month: 'short', 
+                              day: 'numeric' 
+                            })
+                          : 'N/A'}
+                      </TableCell>
                       <TableCell align="right" sx={{ fontWeight: 600, color: '#2e7d32' }}>
                         Rs {invoice.totalCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </TableCell>

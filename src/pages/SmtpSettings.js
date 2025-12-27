@@ -666,6 +666,10 @@ export default function SmtpSettings() {
       return null;
     }
 
+    const handleDefaultChange = (checked) => {
+      setFormData({ ...formData, is_default: checked });
+    };
+
     return (
       <Box sx={{ mt: 2, mb: 2 }}>
         <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 'bold', color: 'text.primary' }}>
@@ -683,17 +687,56 @@ export default function SmtpSettings() {
             }
             label="Secure (TLS/SSL)"
           />
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={formData.is_default || false}
-                onChange={(e) => setFormData({ ...formData, is_default: e.target.checked })}
-                disabled={mode === 'view'}
-                color="primary"
-              />
-            }
-            label="Default"
-          />
+          <Box>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={formData.is_default || false}
+                  onChange={(e) => {
+                    const isChecked = e.target.checked;
+                    if (isChecked && mode !== 'view') {
+                      // Show warning when checking default
+                      toast.warning('From now on this will be the default setting for sending email. Only one setting at a time can be marked as default.', {
+                        position: "top-right",
+                        autoClose: 6000,
+                        hideProgressBar: false,
+                        closeOnClick: true,
+                        pauseOnHover: true,
+                        draggable: true,
+                      });
+                    }
+                    handleDefaultChange(isChecked);
+                  }}
+                  disabled={mode === 'view'}
+                  color="primary"
+                />
+              }
+              label="Default"
+            />
+            {formData.is_default && mode !== 'view' && (
+              <Alert 
+                severity="info" 
+                sx={{ 
+                  mt: 1.5,
+                  backgroundColor: '#e3f2fd',
+                  border: '1px solid #90caf9',
+                  '& .MuiAlert-icon': {
+                    color: '#1976d2',
+                  },
+                  '& .MuiAlert-message': {
+                    color: '#1976d2',
+                  }
+                }}
+              >
+                <Typography variant="body2" sx={{ fontWeight: 'medium', mb: 0.5 }}>
+                  ⓘ Default Setting Selected
+                </Typography>
+                <Typography variant="body2">
+                  From now on this will be the default setting for sending email. Only one setting at a time can be marked as default. Any existing default setting will be automatically unset.
+                </Typography>
+              </Alert>
+            )}
+          </Box>
         </Box>
       </Box>
     );
@@ -797,22 +840,6 @@ export default function SmtpSettings() {
             </Typography>
           </Box>
         ),
-      },
-      {
-        field: 'created_at',
-        headerName: 'Created At',
-        width: 180,
-        align: 'left',
-        headerAlign: 'left',
-        valueFormatter: (params) => {
-          if (!params.value) return '';
-          try {
-            const date = new Date(params.value);
-            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-          } catch (error) {
-            return params.value;
-          }
-        },
       },
       {
         field: 'actions',
@@ -986,6 +1013,7 @@ export default function SmtpSettings() {
           sx: {
             backgroundColor: '#ffffff',
             minWidth: '400px',
+            maxWidth: '600px',
           }
         }}
       >
@@ -1002,6 +1030,33 @@ export default function SmtpSettings() {
           <Typography sx={{ color: '#333', mb: 2 }}>
             Are you sure you want to delete the SMTP setting for <strong>"{settingToDelete?.smtp_host}"</strong>?
           </Typography>
+          
+          {/* Show warning if deleting default setting */}
+          {settingToDelete?.is_default && (
+            <Alert 
+              severity="warning" 
+              sx={{ 
+                mb: 2,
+                backgroundColor: '#fff3cd',
+                border: '1px solid #ffc107',
+                '& .MuiAlert-icon': {
+                  color: '#856404',
+                },
+                '& .MuiAlert-message': {
+                  color: '#856404',
+                }
+              }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                ⚠️ Warning: You are deleting a default email setting!
+              </Typography>
+              <Typography variant="body2">
+                Email in the system will not be sent if this default setting is deleted. 
+                Please ensure you have another SMTP setting configured as default before proceeding.
+              </Typography>
+            </Alert>
+          )}
+          
           <Typography variant="body2" sx={{ color: '#666' }}>
             This action cannot be undone.
           </Typography>
