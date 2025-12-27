@@ -36,6 +36,9 @@ const DynamicModal = ({
   showPasswordChange = false,
   onTogglePasswordChange,
   isEditMode = false,
+  submitButtonText = null, // Custom submit button text
+  onTestCredentials = null, // Function to test credentials
+  testingCredentials = false, // Loading state for testing credentials
 }) => {
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
@@ -374,9 +377,11 @@ const DynamicModal = ({
           {mode === 'create' && passwordFields.map(field => renderField(field))}
           
           {/* Add custom content section */}
-          {customContent && (
+          {customContent && formData && (
             <Box sx={{ mt: 3 }}>
-              {customContent}
+              {typeof customContent === 'function' 
+                ? customContent({ formData, setFormData, mode })
+                : customContent}
             </Box>
           )}
         </Box>
@@ -388,13 +393,32 @@ const DynamicModal = ({
         </Button>
         
         {mode !== 'view' && (
-          <Button 
-            onClick={handleSubmit} 
-            variant="contained" 
-            disabled={loading}
-          >
-            {loading ? 'Saving...' : mode === 'edit' ? 'Update' : 'Create'}
-          </Button>
+          <>
+            {onTestCredentials && (
+              <Button 
+                onClick={() => onTestCredentials(formData)} 
+                variant="outlined"
+                color="primary"
+                disabled={loading || testingCredentials}
+                sx={{ mr: 'auto' }}
+              >
+                {testingCredentials ? 'Testing...' : 'Test Credentials'}
+              </Button>
+            )}
+            <Button 
+              onClick={handleSubmit} 
+              variant="contained" 
+              disabled={loading || testingCredentials}
+            >
+              {loading 
+                ? 'Saving...' 
+                : submitButtonText 
+                  ? submitButtonText 
+                  : mode === 'edit' 
+                    ? 'Update' 
+                    : 'Create'}
+            </Button>
+          </>
         )}
       </DialogActions>
     </Dialog>

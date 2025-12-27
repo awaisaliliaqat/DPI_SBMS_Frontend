@@ -60,6 +60,12 @@ export const NAVIGATION_CONFIG = {
     icon: '💳',
     requiredPermission: 'read'
   },
+  smtpSettings: {
+    displayName: 'SMTP Settings',
+    routerLink: '/smtp-settings',
+    icon: '📧',
+    requiredPermission: 'read'
+  },
   // dashboard: {
   //   displayName: 'Dashboard',
   //   routerLink: '/dashboard',

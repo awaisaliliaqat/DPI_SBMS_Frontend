@@ -17,6 +17,7 @@ import RequestPrintView from '../pages/RequestPrintView';
 import Stats from '../pages/Stats';
 import BudgetManagement from '../pages/BudgetManagement';
 import Payments from '../pages/Payments';
+import SmtpSettings from '../pages/SmtpSettings';
 // import Reports from '../pages/Reports';
 // import Settings from '../pages/Settings';
 
@@ -77,6 +78,7 @@ const AppRoutesContent = () => {
         <Route path="statistics" element={<Stats />} />
         <Route path="budget-management" element={<BudgetManagement />} />
         <Route path="payments" element={<Payments />} />
+        <Route path="smtp-settings" element={<SmtpSettings />} />
         {/* <Route path="users" element={<FeatureManagement />} /> */}
         <Route index element={<RedirectToSignin />} />
       </Route>
