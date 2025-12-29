@@ -654,37 +654,16 @@ export default function AreaHeadRequests() {
         requestsData = requestData;
       }
 
-      // Filter requests if user only has read_approved_request permission
-      // They should only see requests with statuses after CEO approval
-      // They should NOT see: not decided, rfq, quotation sent, ceo_pending, processing, review requested, rfq not accepted, under_review
-      if (onlyReadApprovedRequest) {
-        // Statuses that should NOT be visible (before or at CEO approval)
-        const excludedStatuses = [
-          'not decided',
-          'processing',
-          'Rfq',
-          'quotation sent',
-          'ceo_pending',
-          'under_review',
-          'review requested',
-          'rfq not accepted',
-          null,
-          undefined,
-          ''
-        ];
-        
-        // Filter to only show requests with statuses that are NOT in the excluded list
-        // This means they will see all other statuses (after CEO approval)
+      // Filter requests if user has read_approved_request permission
+      // They should ONLY see "Submitted for Payment" status requests
+      if (hasReadApprovedRequestPermission) {
+        // Only show requests with "Submitted for Payment" status
         requestsData = requestsData.filter(request => {
           const status = request.status;
-          // Exclude null/undefined/empty statuses and excluded statuses
           if (!status) return false;
-          // Convert to string and check (case-insensitive for safety)
+          // Check if status is "Submitted for Payment" (case-insensitive)
           const statusLower = String(status).toLowerCase().trim();
-          return !excludedStatuses.some(excluded => {
-            if (!excluded) return false;
-            return String(excluded).toLowerCase().trim() === statusLower;
-          });
+          return statusLower === 'submitted for payment';
         });
       }
 
