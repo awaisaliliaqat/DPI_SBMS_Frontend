@@ -66,6 +66,12 @@ export const NAVIGATION_CONFIG = {
     icon: '📧',
     requiredPermission: 'read'
   },
+  paymentBatch: {
+    displayName: 'Payment Batch',
+    routerLink: '/payment-batch',
+    icon: '💸',
+    requiredPermission: 'read'
+  },
   // dashboard: {
   //   displayName: 'Dashboard',
   //   routerLink: '/dashboard',

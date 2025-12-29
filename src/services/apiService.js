@@ -55,10 +55,15 @@ class ApiService {
           throw new Error(JSON.stringify(errorData));
         }
 
-        // Handle unauthorized responses for other endpoints
-        if (response.status === 401 || response.status === 403) {
+        // Handle unauthorized responses (401 = not authenticated, 403 = forbidden/no permission)
+        if (response.status === 401) {
+          // Only log out on 401 (not authenticated)
           this.handleUnauthorized();
           throw new Error('Authentication required');
+        }
+        // For 403 (Forbidden), don't log out - just throw error
+        if (response.status === 403) {
+          throw new Error(JSON.stringify(errorData));
         }
 
         // Handle other error responses

@@ -1318,22 +1318,15 @@ export default function AreaHeadRequests() {
     setIsLoading(true);
     
     try {
-      // Update all selected requests to "payment successful" status using existing API
-      const updatePromises = paymentSummaryData.requestIds.map(requestId => 
-        patch(`/api/shopboard-requests/${requestId}`, {
-          status: SHOPBOARD_REQUEST_STATUS.PAYMENT_SUCCESSFUL,
-          updated_by: user.id
-        })
-      );
+      // Use batch payment API endpoint
+      const paymentDate = new Date().toISOString();
+      const response = await post('/api/shopboard-requests/batch-payment', {
+        requestIds: paymentSummaryData.requestIds,
+        payment_date: paymentDate
+      });
       
-      const results = await Promise.allSettled(updatePromises);
-      
-      // Count successes and failures
-      const successful = results.filter(r => r.status === 'fulfilled' && r.value?.success).length;
-      const failed = results.length - successful;
-      
-      if (successful > 0) {
-        toast.success(`Payment processed successfully for ${successful} request(s)!`, {
+      if (response.success) {
+        toast.success(`Batch payment processed successfully! Batch: ${response.data.batch.batch_number}`, {
           position: "top-right",
           autoClose: 3000,
           hideProgressBar: false,
@@ -1341,24 +1334,15 @@ export default function AreaHeadRequests() {
           pauseOnHover: true,
           draggable: true,
         });
+        
+        // Close modal, clear selection and refresh data
+        setPaymentSummaryModalOpen(false);
+        setPaymentSummaryData(null);
+        setSelectedRequests([]);
+        loadRequests();
+      } else {
+        throw new Error(response.message || 'Failed to process batch payment');
       }
-      
-      if (failed > 0) {
-        toast.error(`Failed to process payment for ${failed} request(s)`, {
-          position: "top-right",
-          autoClose: 5000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-        });
-      }
-      
-      // Close modal, clear selection and refresh data
-      setPaymentSummaryModalOpen(false);
-      setPaymentSummaryData(null);
-      setSelectedRequests([]);
-      loadRequests();
     } catch (error) {
       console.error('Error processing payment:', error);
       toast.error(`Failed to process payment: ${error.message}`, {
@@ -1372,7 +1356,7 @@ export default function AreaHeadRequests() {
     } finally {
       setIsLoading(false);
     }
-  }, [paymentSummaryData, patch, user.id, loadRequests]);
+  }, [paymentSummaryData, post, loadRequests]);
 
   // Selection handlers with event propagation prevention
   const handleSelectRequest = React.useCallback((requestId, event) => {
