@@ -3772,16 +3772,19 @@ export default function AreaHeadRequests() {
           
           const actions = [];
           
-          // Always show request view action with tooltip
-          actions.push(
-            <GridActionsCellItem
-              key="view"
-              icon={<Tooltip title="Request"><RequestIcon /></Tooltip>}
-              label="Request"
-              onClick={() => handleView(row)}
-              color="primary"
-            />
-          );
+          // Show request view action with tooltip
+          // Hide for users with read_approved_request permission
+          if (!hasReadApprovedRequestPermission) {
+            actions.push(
+              <GridActionsCellItem
+                key="view"
+                icon={<Tooltip title="Request"><RequestIcon /></Tooltip>}
+                label="Request"
+                onClick={() => handleView(row)}
+                color="primary"
+              />
+            );
+          }
           
           // Show detailed view for all statuses except "not decided" and "Rfq"
           // Hide for users with read_approved_request permission (they will use combined modal)
