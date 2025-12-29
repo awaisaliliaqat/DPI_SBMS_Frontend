@@ -54,6 +54,7 @@ import DynamicModal from '../components/DynamicModel';
 import InvoiceViewer from '../components/InvoiceViewer';
 import RejectInvoiceModal from '../components/RejectInvoiceModal';
 import PaymentSummaryModal from '../components/PaymentSummaryModal';
+import RequestDetailsWithInvoiceModal from '../components/RequestDetailsWithInvoiceModal';
 import ShopboardRequestFilters from '../components/ShopboardRequestFilters';
 import OldPurchasesModal from '../components/OldPurchasesModal';
 import { BASE_URL, BASENAME } from "../constants/Constants";
@@ -158,6 +159,10 @@ export default function AreaHeadRequests() {
   // Modal state for detailed view
   const [detailedViewModalOpen, setDetailedViewModalOpen] = React.useState(false);
   const [selectedDetailedRequest, setSelectedDetailedRequest] = React.useState(null);
+  
+  // Combined modal state for request details with invoice (for read_approved_request users)
+  const [combinedModalOpen, setCombinedModalOpen] = React.useState(false);
+  const [selectedCombinedRequest, setSelectedCombinedRequest] = React.useState(null);
   
   // Edit modal state
   const [editModalOpen, setEditModalOpen] = React.useState(false);
@@ -724,9 +729,15 @@ export default function AreaHeadRequests() {
   }, [canRead]);
 
   const handleViewDetails = React.useCallback((requestData) => {
-    setSelectedDetailedRequest(requestData);
-    setDetailedViewModalOpen(true);
-  }, []);
+    // If user has read_approved_request permission, use combined modal instead
+    if (hasReadApprovedRequestPermission) {
+      setSelectedCombinedRequest(requestData);
+      setCombinedModalOpen(true);
+    } else {
+      setSelectedDetailedRequest(requestData);
+      setDetailedViewModalOpen(true);
+    }
+  }, [hasReadApprovedRequestPermission]);
 
   const handleEdit = React.useCallback((requestData) => {
     if (!canUpdate) return;
@@ -904,9 +915,15 @@ export default function AreaHeadRequests() {
   const handleViewInvoice = React.useCallback((requestData) => {
     if (!canRead) return;
     
-    setSelectedInvoiceRequest(requestData);
-    setInvoiceModalOpen(true);
-  }, [canRead]);
+    // If user has read_approved_request permission, use combined modal instead
+    if (hasReadApprovedRequestPermission) {
+      setSelectedCombinedRequest(requestData);
+      setCombinedModalOpen(true);
+    } else {
+      setSelectedInvoiceRequest(requestData);
+      setInvoiceModalOpen(true);
+    }
+  }, [canRead, hasReadApprovedRequestPermission]);
 
   const handleOpenRejectInvoice = React.useCallback((requestData) => {
     if (!canManualApproval) return;
@@ -3291,9 +3308,13 @@ export default function AreaHeadRequests() {
 
   const handleRowClick = React.useCallback(
     ({ row }) => {
+      // Hide row click for users with read_approved_request permission
+      if (hasReadApprovedRequestPermission) {
+        return;
+      }
       handleView(row);
     },
-    [handleView],
+    [handleView, hasReadApprovedRequestPermission],
   );
 
 
@@ -3763,12 +3784,26 @@ export default function AreaHeadRequests() {
           );
           
           // Show detailed view for all statuses except "not decided" and "Rfq"
-          if (row.status !== 'not decided' && row.status !== 'Rfq' && row.status !== null && row.status !== undefined && row.status !== '') {
+          // Hide for users with read_approved_request permission (they will use combined modal)
+          if (row.status !== 'not decided' && row.status !== 'Rfq' && row.status !== null && row.status !== undefined && row.status !== '' && !hasReadApprovedRequestPermission) {
             actions.push(
               <GridActionsCellItem
                 key="viewDetails"
                 icon={<Tooltip title="View Details"><VisibilityIcon /></Tooltip>}
                 label="View Details"
+                onClick={() => handleViewDetails(row)}
+                color="info"
+              />
+            );
+          }
+          
+          // Show combined view for users with read_approved_request permission
+          if (hasReadApprovedRequestPermission && row.status === 'Submitted for Payment') {
+            actions.push(
+              <GridActionsCellItem
+                key="viewDetailsAndInvoice"
+                icon={<Tooltip title="View Details & Invoice"><VisibilityIcon /></Tooltip>}
+                label="View Details & Invoice"
                 onClick={() => handleViewDetails(row)}
                 color="info"
               />
@@ -4023,7 +4058,8 @@ export default function AreaHeadRequests() {
 
 
           // Show invoice viewer if invoice data exists
-          if (canRead && row.invoice) {
+          // Hide for users with read_approved_request permission (they will use combined modal)
+          if (canRead && row.invoice && !hasReadApprovedRequestPermission) {
             try {
               const invoiceData = typeof row.invoice === 'string' ? JSON.parse(row.invoice) : row.invoice;
               const hasInvoiceData = invoiceData && (
@@ -6299,6 +6335,17 @@ export default function AreaHeadRequests() {
         requestItems={selectedInvoiceRequest?.requestItems}
         invoiceNumber={selectedInvoiceRequest?.invoice_number}
         invoiceDate={selectedInvoiceRequest?.invoice_date}
+      />
+
+      {/* Combined Request Details & Invoice Modal (for read_approved_request users) */}
+      <RequestDetailsWithInvoiceModal
+        open={combinedModalOpen}
+        onClose={() => {
+          setCombinedModalOpen(false);
+          setSelectedCombinedRequest(null);
+        }}
+        requestData={selectedCombinedRequest}
+        getVendorName={getVendorName}
       />
 
       {/* Reject Invoice Modal */}
