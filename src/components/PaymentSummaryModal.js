@@ -13,6 +13,8 @@ import {
   TableHead,
   TableRow,
 } from '@mui/material';
+import { Download as DownloadIcon } from '@mui/icons-material';
+import { useApi } from '../hooks/useApi';
 
 const PaymentSummaryModal = ({
   open,
@@ -21,6 +23,46 @@ const PaymentSummaryModal = ({
   onProcessPayment,
   isLoading = false,
 }) => {
+  const [downloading, setDownloading] = React.useState(false);
+  const { request } = useApi();
+
+  const handleDownload = React.useCallback(async () => {
+    if (!paymentSummaryData || !paymentSummaryData.requestIds || paymentSummaryData.requestIds.length === 0) {
+      return;
+    }
+
+    setDownloading(true);
+    try {
+      // Use the apiService which handles authentication properly
+      // Make sure to pass data correctly
+      const response = await request('/api/shopboard-requests/generate-payment-summary-excel', {
+        method: 'POST',
+        data: {
+          requestIds: paymentSummaryData.requestIds || []
+        },
+        responseType: 'blob', // Important: tell apiService to expect a blob response
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      // Create download link
+      const url = window.URL.createObjectURL(response);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Payment_Summary_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error generating Excel:', error);
+      alert(`Failed to generate Excel file: ${error.message}`);
+    } finally {
+      setDownloading(false);
+    }
+  }, [paymentSummaryData, request]);
+
   return (
     <Dialog
       open={open}
@@ -134,15 +176,27 @@ const PaymentSummaryModal = ({
           onClick={onClose}
           variant="outlined"
           color="secondary"
-          disabled={isLoading}
+          disabled={isLoading || downloading}
         >
           Cancel
+        </Button>
+        <Button
+          onClick={handleDownload}
+          variant="outlined"
+          color="primary"
+          disabled={isLoading || downloading}
+          startIcon={<DownloadIcon />}
+          sx={{
+            minWidth: '140px',
+          }}
+        >
+          {downloading ? 'Downloading...' : 'Download Excel'}
         </Button>
         <Button
           onClick={onProcessPayment}
           variant="contained"
           color="success"
-          disabled={isLoading}
+          disabled={isLoading || downloading}
           sx={{
             minWidth: '140px',
             fontWeight: 'bold'

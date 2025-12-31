@@ -996,6 +996,7 @@ export default function AreaHeadRequests() {
       totalAmount,
       invoiceDetails,
       requestIds: submittedForPaymentRequests.map(req => req.id),
+      fullRequestsData: submittedForPaymentRequests, // Include full request data for Excel generation
     });
     setPaymentSummaryModalOpen(true);
   }, [canPaymentRelease, selectedRequests, filteredRows, getVendorName]);

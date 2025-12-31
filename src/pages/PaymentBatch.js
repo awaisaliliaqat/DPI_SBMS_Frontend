@@ -18,6 +18,7 @@ import {
 } from '@mui/material';
 import {
   Visibility as VisibilityIcon,
+  Download as DownloadIcon,
 } from '@mui/icons-material';
 import { GridActionsCellItem } from '@mui/x-data-grid';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -40,7 +41,7 @@ export default function PaymentBatch() {
   // Check user permissions
   const canRead = user?.permissions?.paymentBatch?.includes('read') || false;
 
-  const { get } = useApi();
+  const { get, post } = useApi();
   const [rowsState, setRowsState] = React.useState({
     rows: [],
     rowCount: 0,
@@ -54,6 +55,7 @@ export default function PaymentBatch() {
   const [selectedBatch, setSelectedBatch] = React.useState(null);
   const [batchDetails, setBatchDetails] = React.useState(null);
   const [loadingDetails, setLoadingDetails] = React.useState(false);
+  const [downloading, setDownloading] = React.useState(false);
   
 
   // Table state management
@@ -653,6 +655,58 @@ export default function PaymentBatch() {
           )}
         </DialogContent>
         <DialogActions sx={{ padding: '16px 24px 20px 24px', gap: 1 }}>
+          <Button
+            onClick={async () => {
+              if (!selectedBatch?.id) return;
+              
+              setDownloading(true);
+              try {
+                const response = await post(`/api/payment-batches/${selectedBatch.id}/generate-excel`, {}, {
+                  responseType: 'blob'
+                });
+
+                // Create download link
+                const url = window.URL.createObjectURL(response);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `Payment_Batch_${selectedBatch.batch_number}_${new Date().toISOString().split('T')[0]}.xlsx`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+                
+                toast.success('Excel file downloaded successfully!', {
+                  position: "top-right",
+                  autoClose: 3000,
+                  hideProgressBar: false,
+                  closeOnClick: true,
+                  pauseOnHover: true,
+                  draggable: true,
+                });
+              } catch (error) {
+                console.error('Error generating Excel:', error);
+                toast.error(`Failed to generate Excel file: ${error.message}`, {
+                  position: "top-right",
+                  autoClose: 5000,
+                  hideProgressBar: false,
+                  closeOnClick: true,
+                  pauseOnHover: true,
+                  draggable: true,
+                });
+              } finally {
+                setDownloading(false);
+              }
+            }}
+            variant="outlined"
+            color="primary"
+            disabled={downloading || !batchDetails || !batchDetails.items || batchDetails.items.length === 0}
+            startIcon={<DownloadIcon />}
+            sx={{
+              minWidth: '140px',
+            }}
+          >
+            {downloading ? 'Downloading...' : 'Download Excel'}
+          </Button>
           <Button
             onClick={() => {
               setViewModalOpen(false);

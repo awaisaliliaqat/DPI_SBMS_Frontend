@@ -10,6 +10,7 @@ export const useApi = () => {
   const request = useCallback(async (endpoint, options = {}) => {
     try {
       // Add user permissions to headers if available
+      // Preserve responseType and other options
       const enhancedOptions = {
         ...options,
         headers: {

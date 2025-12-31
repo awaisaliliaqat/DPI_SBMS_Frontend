@@ -13,6 +13,7 @@ class ApiService {
       data = null,
       headers = {},
       requiresAuth = true,
+      responseType,
       ...restOptions
     } = options;
 
@@ -26,16 +27,25 @@ class ApiService {
       ...headers,
     };
 
+    // Note: responseType is for the response, not the request
+    // We still send JSON in the request body, but expect blob in response
+
     // Prepare request config
     const config = {
       method,
       headers: defaultHeaders,
+      responseType, // Pass responseType through
       ...restOptions,
     };
 
     // Add body for non-GET requests
     if (data && method !== 'GET') {
-      config.body = JSON.stringify(data);
+      // For blob requests, don't stringify if it's already FormData
+      if (responseType === 'blob' && data instanceof FormData) {
+        config.body = data;
+      } else {
+        config.body = JSON.stringify(data);
+      }
     }
 
     try {
@@ -72,6 +82,17 @@ class ApiService {
 
       // Parse successful response
       const contentType = response.headers.get('content-type');
+      
+      // Handle blob responses (Excel files, PDFs, images, etc.)
+      if (responseType === 'blob' || 
+          options.responseType === 'blob' ||
+          contentType?.includes('application/vnd.openxmlformats-officedocument') || 
+          contentType?.includes('application/pdf') || 
+          contentType?.includes('image/') ||
+          contentType?.includes('application/octet-stream')) {
+        return await response.blob();
+      }
+      
       if (contentType && contentType.includes('application/json')) {
         return await response.json();
       }
