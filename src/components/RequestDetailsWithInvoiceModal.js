@@ -15,6 +15,8 @@ import {
   Receipt as InvoiceIcon,
   Description as DocumentIcon,
   Photo as PhotoIcon,
+  CheckCircle as CheckCircleIcon,
+  Person as PersonIcon,
 } from '@mui/icons-material';
 import { BASE_URL } from '../constants/Constants';
 
@@ -408,6 +410,59 @@ const RequestDetailsWithInvoiceModal = ({
                           return 'N/A';
                         }
                       })() : 'N/A'}
+                  </Typography>
+                </Box>
+              </Box>
+              
+              {/* Approval Status - Prominent Display */}
+              <Box sx={{ 
+                mt: 3, 
+                p: 2.5, 
+                borderRadius: 2,
+                background: requestData.is_manual 
+                  ? 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)'
+                  : 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)',
+                border: `2px solid ${requestData.is_manual ? '#ff9800' : '#1976d2'}`,
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2
+              }}>
+                <Box sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 48,
+                  height: 48,
+                  borderRadius: '50%',
+                  backgroundColor: requestData.is_manual ? '#ff9800' : '#1976d2',
+                  color: '#ffffff',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)'
+                }}>
+                  {requestData.is_manual ? (
+                    <PersonIcon sx={{ fontSize: 28 }} />
+                  ) : (
+                    <CheckCircleIcon sx={{ fontSize: 28 }} />
+                  )}
+                </Box>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="caption" sx={{ 
+                    color: '#666', 
+                    fontWeight: 'bold',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    mb: 0.5,
+                    display: 'block'
+                  }}>
+                    Approval Status
+                  </Typography>
+                  <Typography variant="h6" sx={{ 
+                    fontWeight: 'bold',
+                    color: requestData.is_manual ? '#e65100' : '#0d47a1',
+                    m: 0,
+                    lineHeight: 1.2
+                  }}>
+                    {requestData.is_manual ? 'Manual Approval by Manager' : 'Approved by CEO'}
                   </Typography>
                 </Box>
               </Box>
