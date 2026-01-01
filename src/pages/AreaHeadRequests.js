@@ -1462,9 +1462,9 @@ export default function AreaHeadRequests() {
       selectableRequests = [...selectableRequests, ...ceoPendingRows, ...invoiceSentRows];
     }
     if (canPaymentRelease) {
-      // Users with payment_release can select Submitted for Payment (but not if email already sent)
+      // Users with payment_release can select Submitted for Payment
       const paymentRows = filteredRows
-        .filter(row => row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT && row.is_email !== true)
+        .filter(row => row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT)
         .map(row => row.id);
       selectableRequests = [...selectableRequests, ...paymentRows];
     }
@@ -3470,9 +3470,9 @@ export default function AreaHeadRequests() {
               selectableRows = [...ceoPendingRows, ...invoiceSentRows];
             }
             if (canPaymentRelease) {
-              // Users with payment_release can select Submitted for Payment (but not if email already sent)
+              // Users with payment_release can select Submitted for Payment
               const submittedForPaymentRows = filteredRows.filter(row => 
-                row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT && row.is_email !== true
+                row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT
               );
               selectableRows = [...selectableRows, ...submittedForPaymentRows];
             }
@@ -3500,8 +3500,8 @@ export default function AreaHeadRequests() {
               }
             }
             if (canPaymentRelease) {
-              // Users with payment_release can select Submitted for Payment (but not if email already sent)
-              if (params.row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT && params.row.is_email !== true) {
+              // Users with payment_release can select Submitted for Payment
+              if (params.row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT) {
                 isSelectable = true;
               }
             }
