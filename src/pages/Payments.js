@@ -17,6 +17,7 @@ import {
   Visibility as VisibilityIcon,
   Print as PrintIcon,
   Receipt as InvoiceIcon,
+  ShoppingCart as OldPurchasesIcon,
 } from '@mui/icons-material';
 import { GridActionsCellItem } from '@mui/x-data-grid';
 import { GridToolbarContainer, GridToolbarColumnsButton } from '@mui/x-data-grid';
@@ -29,6 +30,7 @@ import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
 import InvoiceViewer from '../components/InvoiceViewer';
 import ShopboardRequestFilters from '../components/ShopboardRequestFilters';
+import OldPurchasesModal from '../components/OldPurchasesModal';
 import { BASE_URL } from "../constants/Constants";
 import { 
   SHOPBOARD_REQUEST_STATUS, 
@@ -131,6 +133,10 @@ export default function Payments() {
   const [requestHistory, setRequestHistory] = React.useState([]);
   const [loadingHistory, setLoadingHistory] = React.useState(false);
   const [requestToAction, setRequestToAction] = React.useState(null);
+  
+  // Old purchases modal state
+  const [oldPurchasesModalOpen, setOldPurchasesModalOpen] = React.useState(false);
+  const [selectedDealerForOldPurchases, setSelectedDealerForOldPurchases] = React.useState(null);
 
   // Table state management
   const [paginationModel, setPaginationModel] = React.useState({
@@ -343,6 +349,29 @@ export default function Payments() {
     
     // Generate PDF using the same logic as AreaHeadRequests
     generatePDF(requestData);
+  }, [canRead]);
+
+  const handleViewOldPurchases = React.useCallback((requestData) => {
+    if (!canRead) return;
+    
+    // Get dealer information from the request
+    const dealerId = requestData.dealer?.code || requestData.dealer_id;
+    const dealerName = requestData.dealer?.name || 'Dealer';
+    
+    if (!dealerId) {
+      toast.error('Dealer information not available', {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+    
+    setSelectedDealerForOldPurchases({ id: dealerId, name: dealerName });
+    setOldPurchasesModalOpen(true);
   }, [canRead]);
 
   // Fetch history for a specific request
@@ -1239,6 +1268,19 @@ export default function Payments() {
             }
           }
 
+          // Show old purchases action for all requests (dealer history)
+          if (canRead && row.dealer) {
+            actions.push(
+              <GridActionsCellItem
+                key="viewOldPurchases"
+                icon={<Tooltip title="Old Purchases"><OldPurchasesIcon /></Tooltip>}
+                label="Old Purchases"
+                onClick={() => handleViewOldPurchases(row)}
+                color="info"
+              />
+            );
+          }
+
           // Show history action
           actions.push(
             <GridActionsCellItem
@@ -1265,7 +1307,7 @@ export default function Payments() {
         },
       },
     ],
-    [canRead, handleView, handleViewDetails, handleViewInvoice, handleViewHistory, handlePrint, getVendorName],
+    [canRead, handleView, handleViewDetails, handleViewInvoice, handleViewOldPurchases, handleViewHistory, handlePrint, getVendorName],
   );
 
   const pageTitle = 'Payments';
@@ -1810,6 +1852,17 @@ export default function Payments() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Old Purchases Modal */}
+      <OldPurchasesModal
+        open={oldPurchasesModalOpen}
+        onClose={() => {
+          setOldPurchasesModalOpen(false);
+          setSelectedDealerForOldPurchases(null);
+        }}
+        dealerId={selectedDealerForOldPurchases?.id}
+        dealerName={selectedDealerForOldPurchases?.name}
+      />
 
       {/* React Toastify Container */}
       <ToastContainer
