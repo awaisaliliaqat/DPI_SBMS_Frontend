@@ -4252,6 +4252,10 @@ export default function VendorRequests() {
                       const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/${file}`;
                       window.open(fileUrl, '_blank');
                     }}
+                    onDelete={() => {
+                      const newFiles = existingInvoiceFiles.filter((_, i) => i !== index);
+                      setExistingInvoiceFiles(newFiles);
+                    }}
                     sx={{ 
                       cursor: 'pointer',
                       '&:hover': {
@@ -4329,6 +4333,10 @@ export default function VendorRequests() {
                       onClick={() => {
                         const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/${file}`;
                         window.open(fileUrl, '_blank');
+                      }}
+                      onDelete={() => {
+                        const newFiles = existingDealerAcknowledgmentFiles.filter((_, i) => i !== index);
+                        setExistingDealerAcknowledgmentFiles(newFiles);
                       }}
                       sx={{ 
                         cursor: 'pointer',
@@ -4446,6 +4454,13 @@ export default function VendorRequests() {
                               onClick={() => {
                                 const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/${file}`;
                                 window.open(fileUrl, '_blank');
+                              }}
+                              onDelete={() => {
+                                setExistingSitePhotosPerItem(prev => {
+                                  const itemPhotos = [...(prev[item.id] || [])];
+                                  itemPhotos.splice(index, 1);
+                                  return { ...prev, [item.id]: itemPhotos };
+                                });
                               }}
                               sx={{ 
                                 cursor: 'pointer',
