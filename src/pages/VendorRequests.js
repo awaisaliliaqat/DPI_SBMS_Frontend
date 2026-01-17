@@ -771,6 +771,9 @@ export default function VendorRequests() {
     // Set the request
     setSelectedInvoiceRequest(requestData);
     
+    // Set invoice number if it exists (auto-fill for editing)
+    setInvoiceNumber(requestData.invoice_number || '');
+    
     // Parse and load existing invoice data if available
     let invoiceData = {};
     if (requestData.invoice) {
@@ -896,7 +899,20 @@ export default function VendorRequests() {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // Try to parse error message from response
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          if (errorData.message) {
+            errorMessage = errorData.message;
+          } else if (errorData.error) {
+            errorMessage = errorData.error;
+          }
+        } catch (parseError) {
+          // If JSON parsing fails, use default message
+          console.error('Error parsing error response:', parseError);
+        }
+        throw new Error(errorMessage);
       }
 
       await response.json();
@@ -912,7 +928,9 @@ export default function VendorRequests() {
       
       loadRequests();
     } catch (invoiceError) {
-      toast.error(`Failed to send invoice: ${invoiceError.message}`, {
+      // Show the error message from backend (which includes invoice number validation error)
+      const errorMessage = invoiceError.message || 'Failed to send invoice';
+      toast.error(errorMessage, {
         position: "top-right",
         autoClose: 5000,
         hideProgressBar: false,

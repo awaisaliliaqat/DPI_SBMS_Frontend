@@ -1190,15 +1190,16 @@ export default function AreaHeadRequests() {
         requests: emailRequests
       };
       
-      // Send email
+      // Send email via queue system
+      // Default recipient: ahmadraza46789@gmail.com (CEO email)
       const emailResponse = await post('/api/email/shopboard-approval', {
-        to: 'ahmadraza46789@gmail.com', // Hardcoded email as per requirement
+        to: 'ahmadraza46789@gmail.com', // Default CEO email recipient
         subject: 'Shop Board Request - Approval Required',
         templateData: templateData
       });
       
       if (emailResponse.success) {
-        toast.success(`Email sent successfully to CEO for ${ceoPendingRequests.length} request(s)!`, {
+        toast.success(`Email queued successfully! ${ceoPendingRequests.length} request(s) will be sent to CEO shortly.`, {
           position: "top-right",
           autoClose: 3000,
           hideProgressBar: false,
@@ -1252,22 +1253,15 @@ export default function AreaHeadRequests() {
     }
     
     try {
-      // Update all selected requests to "Submitted for Payment" status
-      const updatePromises = invoiceSentRequests.map(request => 
-        patch(`/api/shopboard-requests/${request.id}`, {
-          status: 'Submitted for Payment',
-          updated_by: user.id
-        })
-      );
+      // Make one API call to bulk release payment for all requests
+      const requestIds = invoiceSentRequests.map(req => req.id);
       
-      const results = await Promise.allSettled(updatePromises);
+      const response = await post('/api/shopboard-requests/bulk-release-payment', {
+        requestIds: requestIds
+      });
       
-      // Count successes and failures
-      const successful = results.filter(r => r.status === 'fulfilled' && r.value?.success).length;
-      const failed = results.length - successful;
-      
-      if (successful > 0) {
-        toast.success(`Payment released for ${successful} request(s) successfully!`, {
+      if (response.success) {
+        toast.success(`Payment released for ${response.data.updatedCount} request(s) successfully! Email notification sent.`, {
           position: "top-right",
           autoClose: 3000,
           hideProgressBar: false,
@@ -1275,22 +1269,13 @@ export default function AreaHeadRequests() {
           pauseOnHover: true,
           draggable: true,
         });
+        
+        // Clear selection and refresh data
+        setSelectedRequests([]);
+        loadRequests();
+      } else {
+        throw new Error(response.message || 'Failed to release payment');
       }
-      
-      if (failed > 0) {
-        toast.error(`Failed to release payment for ${failed} request(s)`, {
-          position: "top-right",
-          autoClose: 5000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-        });
-      }
-      
-      // Clear selection and refresh data
-      setSelectedRequests([]);
-      loadRequests();
     } catch (error) {
       console.error('Error releasing payment:', error);
       toast.error(`Failed to release payment: ${error.message}`, {
@@ -1304,7 +1289,7 @@ export default function AreaHeadRequests() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedRequests, filteredRows, patch, user.id, loadRequests]);
+  }, [selectedRequests, filteredRows, post, loadRequests]);
 
   // Process payment (update status to payment_successful) - called from payment summary modal
   const handleProcessPayment = React.useCallback(async () => {
@@ -3760,7 +3745,10 @@ export default function AreaHeadRequests() {
         field: 'actions',
         type: 'actions',
         headerName: 'Actions',
-        width: 200,
+        width: 400,
+        minWidth: 350,
+        maxWidth: 600,
+        resizable: true,
         getActions: (params) => {
           const row = params.row;
           const isNotDecided = row.status === 'not decided' || row.status === 'rfq not accepted' || row.status === null || row.status === undefined || row.status === '';
@@ -5663,13 +5651,17 @@ export default function AreaHeadRequests() {
         open={historyDialogOpen}
         onClose={cancelHistory}
         aria-labelledby="history-dialog-title"
+        sx={{
+          zIndex: 1400, // Higher z-index to appear above table
+        }}
         PaperProps={{
           sx: {
             backgroundColor: '#ffffff',
             minWidth: '600px',
             maxWidth: '900px',
             maxHeight: '80vh',
-            overflow: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
           }
         }}
       >
@@ -5682,7 +5674,13 @@ export default function AreaHeadRequests() {
         >
           Request History - #{requestToAction?.id}
         </DialogTitle>
-        <DialogContent>
+        <DialogContent
+          sx={{
+            overflowY: 'auto',
+            flex: '1 1 auto',
+            minHeight: 0,
+          }}
+        >
           {loadingHistory ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
               <Typography>Loading history...</Typography>
