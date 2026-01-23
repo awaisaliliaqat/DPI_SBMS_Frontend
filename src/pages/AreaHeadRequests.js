@@ -1165,6 +1165,7 @@ export default function AreaHeadRequests() {
         id: request.id,
         dealerName: request.dealer?.name || 'N/A',
         dealerRegion: request.dealer?.district || 'N/A',
+        vendorName: request.vendor?.card_name || request.vendor_name || 'N/A',
         totalCost: request.total_cost || 0,
         viewToken: request.viewToken, // Include token for URL generation
         rejectToken: request.rejectToken, // Include reject token for URL generation

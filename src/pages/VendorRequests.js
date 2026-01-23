@@ -818,8 +818,13 @@ export default function VendorRequests() {
     }
     
     // Validate status before proceeding
-    const isResubmission = selectedInvoiceRequest.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED;
-    const isInitialUpload = selectedInvoiceRequest.status === VENDOR_APPROVAL_STATUS;
+    // Check both mapped status (approval) and actual database statuses (ceo_approval, manual_approval)
+    const currentStatus = selectedInvoiceRequest.status;
+    const isResubmission = currentStatus === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED;
+    // Check for approval status - can be 'approval' (mapped) or 'ceo_approval'/'manual_approval' (actual DB status)
+    const isInitialUpload = currentStatus === VENDOR_APPROVAL_STATUS || 
+                           currentStatus === 'ceo_approval' || 
+                           currentStatus === 'manual_approval';
     
     // Only allow upload if status is either invoice_rejected (resubmission) or approval (initial upload)
     if (!isResubmission && !isInitialUpload) {
@@ -841,8 +846,9 @@ export default function VendorRequests() {
       // Create FormData for file uploads
       const formData = new FormData();
 
-      // Add basic data - set status to invoice_sent (works for both initial upload and resubmission after rejection)
-      formData.append('status', SHOPBOARD_REQUEST_STATUS.INVOICE_SENT);
+      // Don't send status field - let backend automatically set status to invoice_sent when invoice files are uploaded
+      // The backend will handle status transition validation and set the status appropriately
+      
       formData.append('updated_by', user.id);
       
       // Add invoice number if provided
