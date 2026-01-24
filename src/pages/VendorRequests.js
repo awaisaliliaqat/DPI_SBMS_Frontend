@@ -848,6 +848,11 @@ export default function VendorRequests() {
 
       // Don't send status field - let backend automatically set status to invoice_sent when invoice files are uploaded
       // The backend will handle status transition validation and set the status appropriately
+      // EXCEPTION: For initial upload or resubmission, explicitly set status to ensure it transitions correctly
+      // This covers cases where files might not be re-uploaded during resubmission
+      if (isInitialUpload || isResubmission) {
+        formData.append('status', SHOPBOARD_REQUEST_STATUS.INVOICE_SENT);
+      }
       
       formData.append('updated_by', user.id);
       
