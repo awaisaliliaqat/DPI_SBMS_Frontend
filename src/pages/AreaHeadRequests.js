@@ -2192,6 +2192,74 @@ export default function AreaHeadRequests() {
 
   const handleEditSubmit = async () => {
     if (!editingRequest) return;
+
+    // Validation
+    const validationErrors = [];
+
+    // Validate Warranty Status
+    if (!editFormData.warranty_status_id) {
+      validationErrors.push('Warranty Status is required');
+    }
+
+    // Validate Reason for Replacement
+    if (!editFormData.reason_for_replacement || !String(editFormData.reason_for_replacement).trim()) {
+      validationErrors.push('Reason for Replacement is required');
+    }
+
+    // Validate Last Installation Date
+    if (!editFormData.last_installation_date) {
+      validationErrors.push('Last Installation Date is required');
+    }
+
+    // Validate Request Items
+    const items = editFormData.request_items || [];
+    if (items.length === 0) {
+      validationErrors.push('At least one request item must be added');
+    } else {
+      items.forEach((item, index) => {
+        if (!item.request_type_id) {
+          validationErrors.push(`Item ${index + 1}: Request Type is required`);
+        } else {
+          // Find request type to check rules
+          const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+          const isFees = selectedRequestType?.request_type === 'fees';
+          
+          if (isFees) {
+            if (!item.price || parseFloat(item.price) <= 0) {
+              validationErrors.push(`Item ${index + 1}: Price must be greater than 0`);
+            }
+          } else {
+            // For manual and fixed types, width and height are required
+            if (!item.width || parseFloat(item.width) <= 0) {
+              validationErrors.push(`Item ${index + 1}: Width must be greater than 0`);
+            }
+            if (!item.height || parseFloat(item.height) <= 0) {
+              validationErrors.push(`Item ${index + 1}: Height must be greater than 0`);
+            }
+            // For manual types, price_per_sqft is also required (though it might be set)
+            if (selectedRequestType?.request_type === 'manual') {
+              if (!item.price_per_sqft || parseFloat(item.price_per_sqft) <= 0) {
+                validationErrors.push(`Item ${index + 1}: Price per sqft must be greater than 0`);
+              }
+            }
+          }
+        }
+      });
+    }
+
+    if (validationErrors.length > 0) {
+      validationErrors.forEach(error => {
+        toast.error(error, {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      });
+      return;
+    }
     
     setIsLoading(true);
     setEditModalOpen(false);
