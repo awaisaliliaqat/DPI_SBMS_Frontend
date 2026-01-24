@@ -178,6 +178,10 @@ export default function AreaHeadRequests() {
   const [manualApprovalReason, setManualApprovalReason] = React.useState('');
   const [manualApprovalFile, setManualApprovalFile] = React.useState(null);
   const [manualApprovalLoading, setManualApprovalLoading] = React.useState(false);
+  
+  // View manual approval modal state
+  const [viewManualApprovalModalOpen, setViewManualApprovalModalOpen] = React.useState(false);
+  const [selectedManualApprovalRequest, setSelectedManualApprovalRequest] = React.useState(null);
 
   // Selection state for manual approval
   const [selectedRequests, setSelectedRequests] = React.useState([]);
@@ -910,6 +914,13 @@ export default function AreaHeadRequests() {
     setSelectedRequest(requestData);
     setManualApprovalModalOpen(true);
   }, [canManualApproval]);
+  
+  const handleViewManualApproval = React.useCallback((requestData) => {
+    if (!canRead) return;
+    
+    setSelectedManualApprovalRequest(requestData);
+    setViewManualApprovalModalOpen(true);
+  }, [canRead]);
 
 
   const handleViewInvoice = React.useCallback((requestData) => {
@@ -1043,6 +1054,19 @@ export default function AreaHeadRequests() {
 
   const handleManualApprovalSubmit = React.useCallback(async () => {
     if (!selectedRequest) return;
+    
+    // Validate manual approval reason is provided
+    if (!manualApprovalReason || manualApprovalReason.trim() === '') {
+      toast.error('Manual approval reason is required', {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
     
     setManualApprovalLoading(true);
     try {
@@ -4116,6 +4140,19 @@ export default function AreaHeadRequests() {
               />
             );
           }
+          
+          // Show View Manual Approval button if manual approval data exists
+          if (canRead && (row.manual_approval_reason || row.manual_approval_form)) {
+            actions.push(
+              <GridActionsCellItem
+                key="viewManualApproval"
+                icon={<Tooltip title="View Manual Approval"><ManualApprovalIcon sx={{ color: '#ff9800' }} /></Tooltip>}
+                label="View Manual Approval"
+                onClick={() => handleViewManualApproval(row)}
+                color="warning"
+              />
+            );
+          }
 
 
           // Show invoice viewer if invoice data exists
@@ -4181,7 +4218,7 @@ export default function AreaHeadRequests() {
 
     return baseColumns;
     },
-    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, canPaymentRelease, showSelectionColumn, selectedRequests, filteredRows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleViewInvoice, handleViewOldPurchases, handleSelectAll, handleSelectRequest, handleBulkReleasePayment, getVendorName],
+    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, canPaymentRelease, showSelectionColumn, selectedRequests, filteredRows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleViewManualApproval, handleViewInvoice, handleViewOldPurchases, handleSelectAll, handleSelectRequest, handleBulkReleasePayment, getVendorName],
   );
 
   const pageTitle = 'Area Head Requests';
@@ -6342,11 +6379,14 @@ export default function AreaHeadRequests() {
             fullWidth
             multiline
             rows={4}
-            label="Reason for Manual Approval (Optional)"
+            label="Reason for Manual Approval *"
             value={manualApprovalReason}
             onChange={(e) => setManualApprovalReason(e.target.value)}
             placeholder="Enter the reason for manual approval..."
             sx={{ mb: 3 }}
+            required
+            error={!manualApprovalReason || manualApprovalReason.trim() === ''}
+            helperText={(!manualApprovalReason || manualApprovalReason.trim() === '') ? 'Reason for manual approval is required' : ''}
           />
 
           <Box sx={{ mb: 3 }}>
@@ -6386,13 +6426,148 @@ export default function AreaHeadRequests() {
             onClick={handleManualApprovalSubmit}
             variant="contained"
             color="success"
-            disabled={manualApprovalLoading}
+            disabled={manualApprovalLoading || !manualApprovalReason || manualApprovalReason.trim() === ''}
             sx={{
               minWidth: '120px',
               fontWeight: 'bold'
             }}
           >
             {manualApprovalLoading ? 'Approving...' : 'Approve'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
+      {/* View Manual Approval Modal */}
+      <Dialog
+        open={viewManualApprovalModalOpen}
+        onClose={() => {
+          setViewManualApprovalModalOpen(false);
+          setSelectedManualApprovalRequest(null);
+        }}
+        aria-labelledby="view-manual-approval-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '600px',
+            maxWidth: '800px',
+            borderRadius: 2,
+            boxShadow: 6,
+          }
+        }}
+      >
+        <DialogTitle 
+          id="view-manual-approval-dialog-title"
+          sx={{ 
+            color: '#ff9800',
+            fontWeight: 'bold',
+            borderBottom: '1px solid #eaeaea',
+            padding: '20px 24px 16px 24px'
+          }}
+        >
+          Manual Approval Details
+        </DialogTitle>
+        
+        <DialogContent sx={{ padding: '20px 24px' }}>
+          {selectedManualApprovalRequest && (
+            <Box>
+              {/* Manual Approval Reason */}
+              <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: '#ff9800' }}>
+                  Manual Approval Comments
+                </Typography>
+                <Typography 
+                  variant="body1" 
+                  sx={{ 
+                    p: 2, 
+                    backgroundColor: '#f5f5f5', 
+                    borderRadius: 1,
+                    minHeight: '80px',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word'
+                  }}
+                >
+                  {selectedManualApprovalRequest.manual_approval_reason || 'No comments provided'}
+                </Typography>
+              </Paper>
+
+              {/* Manual Approval Form/File */}
+              {selectedManualApprovalRequest.manual_approval_form && (
+                <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: '#ff9800' }}>
+                    Uploaded File
+                  </Typography>
+                  {(() => {
+                    try {
+                      const formData = typeof selectedManualApprovalRequest.manual_approval_form === 'string' 
+                        ? JSON.parse(selectedManualApprovalRequest.manual_approval_form) 
+                        : selectedManualApprovalRequest.manual_approval_form;
+                      
+                      return (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#666' }}>
+                              File Name:
+                            </Typography>
+                            <Typography variant="body2">
+                              {formData.filename || 'N/A'}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#666' }}>
+                              File Size:
+                            </Typography>
+                            <Typography variant="body2">
+                              {formData.size ? `${(formData.size / 1024).toFixed(2)} KB` : 'N/A'}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#666' }}>
+                              File Type:
+                            </Typography>
+                            <Typography variant="body2">
+                              {formData.type || 'N/A'}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#666' }}>
+                              Uploaded At:
+                            </Typography>
+                            <Typography variant="body2">
+                              {formData.uploadedAt 
+                                ? new Date(formData.uploadedAt).toLocaleString() 
+                                : 'N/A'}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      );
+                    } catch (error) {
+                      console.error('Error parsing manual approval form:', error);
+                      return (
+                        <Typography variant="body2" color="error">
+                          Error displaying file data
+                        </Typography>
+                      );
+                    }
+                  })()}
+                </Paper>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        
+        <DialogActions sx={{ padding: '16px 24px 20px 24px', gap: 1 }}>
+          <Button
+            onClick={() => {
+              setViewManualApprovalModalOpen(false);
+              setSelectedManualApprovalRequest(null);
+            }}
+            variant="contained"
+            color="primary"
+            sx={{
+              minWidth: '120px'
+            }}
+          >
+            Close
           </Button>
         </DialogActions>
       </Dialog>
