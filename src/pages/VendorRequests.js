@@ -4700,6 +4700,8 @@ export default function VendorRequests() {
         invoiceData={selectedInvoiceViewerRequest?.invoice}
         requestId={selectedInvoiceViewerRequest?.id}
         requestItems={selectedInvoiceViewerRequest?.requestItems}
+        invoiceNumber={selectedInvoiceViewerRequest?.invoice_number}
+        invoiceDate={selectedInvoiceViewerRequest?.invoice_date}
       />
 
       {/* React Toastify Container */}
