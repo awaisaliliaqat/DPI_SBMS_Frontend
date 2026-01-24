@@ -817,6 +817,34 @@ export default function VendorRequests() {
       return;
     }
     
+    // Validate invoice file is provided (new file or existing files)
+    const hasInvoiceFile = invoiceFile || (existingInvoiceFiles && existingInvoiceFiles.length > 0);
+    if (!hasInvoiceFile) {
+      toast.error('Invoice file is required', {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+    
+    // Validate dealer acknowledgment form is provided (new file or existing files)
+    const hasDealerAcknowledgment = dealerAcknowledgmentFile || (existingDealerAcknowledgmentFiles && existingDealerAcknowledgmentFiles.length > 0);
+    if (!hasDealerAcknowledgment) {
+      toast.error('Dealer acknowledgment form is required', {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+    
     // Validate status before proceeding
     // Check both mapped status (approval) and actual database statuses (ceo_approval, manual_approval)
     const currentStatus = selectedInvoiceRequest.status;
@@ -4369,11 +4397,21 @@ export default function VendorRequests() {
               startIcon={<InvoiceIcon />}
               disabled={invoiceLoading}
               fullWidth
-              sx={{ mt: 2 }}
+              sx={{ 
+                mt: 2,
+                borderColor: (!invoiceFile && existingInvoiceFiles.length === 0) ? 'error.main' : undefined
+              }}
             >
-              Select Invoice File
+              Select Invoice File *
             </Button>
           </label>
+          
+          {/* Show required message if no file selected */}
+          {!invoiceFile && existingInvoiceFiles.length === 0 && (
+            <Typography variant="caption" sx={{ color: 'error.main', mt: 0.5, display: 'block' }}>
+              Invoice file is required
+            </Typography>
+          )}
           
           {/* Existing Invoice Files */}
           {existingInvoiceFiles.length > 0 && (
@@ -4427,7 +4465,7 @@ export default function VendorRequests() {
           {/* Dealer Acknowledgment Form */}
           <Box sx={{ mt: 3 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
-              Dealer Acknowledgment Form
+              Dealer Acknowledgment Form *
             </Typography>
             <input
               type="file"
@@ -4446,16 +4484,23 @@ export default function VendorRequests() {
                 disabled={invoiceLoading}
                 fullWidth
                 sx={{ 
-                  border: '2px dashed #ccc',
+                  border: (!dealerAcknowledgmentFile && existingDealerAcknowledgmentFiles.length === 0) ? '2px dashed #d32f2f' : '2px dashed #ccc',
                   '&:hover': {
                     border: '2px dashed #1976d2',
                     backgroundColor: '#f5f5f5'
                   }
                 }}
               >
-                Select Dealer Acknowledgment Form (PDF, Images)
+                Select Dealer Acknowledgment Form (PDF, Images) *
               </Button>
             </label>
+            
+            {/* Show required message if no file selected */}
+            {!dealerAcknowledgmentFile && existingDealerAcknowledgmentFiles.length === 0 && (
+              <Typography variant="caption" sx={{ color: 'error.main', mt: 0.5, display: 'block' }}>
+                Dealer acknowledgment form is required
+              </Typography>
+            )}
             
             {/* Existing Dealer Acknowledgment Files */}
             {existingDealerAcknowledgmentFiles.length > 0 && (
@@ -4678,12 +4723,12 @@ export default function VendorRequests() {
             variant="contained"
             color={selectedInvoiceRequest?.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED ? 'error' : 'primary'}
             disabled={invoiceLoading || (
-              !invoiceFile && 
-              !dealerAcknowledgmentFile && 
-              Object.values(sitePhotosPerItem).reduce((n, arr) => n + (arr ? arr.length : 0), 0) === 0 &&
-              existingInvoiceFiles.length === 0 &&
-              existingDealerAcknowledgmentFiles.length === 0 &&
-              Object.values(existingSitePhotosPerItem).reduce((n, arr) => n + (arr ? arr.length : 0), 0) === 0
+              // Invoice number is required
+              !invoiceNumber || invoiceNumber.trim() === '' ||
+              // Invoice file is required (new file or existing files)
+              (!invoiceFile && (existingInvoiceFiles.length === 0)) ||
+              // Dealer acknowledgment is required (new file or existing files)
+              (!dealerAcknowledgmentFile && (existingDealerAcknowledgmentFiles.length === 0))
             )}
           >
             {invoiceLoading 
