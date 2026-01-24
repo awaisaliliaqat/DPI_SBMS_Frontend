@@ -926,10 +926,10 @@ export default function AreaHeadRequests() {
   }, [canRead, hasReadApprovedRequestPermission]);
 
   const handleOpenRejectInvoice = React.useCallback((requestData) => {
-    if (!canManualApproval) return;
+    if (!canApprovalAction) return;
     setRejectInvoiceTarget(requestData);
     setRejectInvoiceModalOpen(true);
-  }, [canManualApproval]);
+  }, [canApprovalAction]);
 
   const handleViewOldPurchases = React.useCallback((requestData) => {
     if (!canRead) return;
@@ -3980,8 +3980,8 @@ export default function AreaHeadRequests() {
             );
           }
 
-          // Show Reject Invoice for invoice_sent when user has manual approval permission
-          if (isInvoiceSent && canManualApproval) {
+          // Show Reject Invoice for invoice_sent when user has approvals permission
+          if (isInvoiceSent && canApprovalAction) {
             actions.push(
               <GridActionsCellItem
                 key="rejectInvoice"
