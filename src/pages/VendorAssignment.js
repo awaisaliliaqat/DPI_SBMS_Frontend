@@ -91,6 +91,7 @@ export default function VendorAssignment() {
   
   // Refresh sales head data state
   const [refreshingSalesHead, setRefreshingSalesHead] = React.useState(false);
+  const [refreshingVendors, setRefreshingVendors] = React.useState(false);
   const [refreshProgressDialog, setRefreshProgressDialog] = React.useState(false);
   const [refreshProgress, setRefreshProgress] = React.useState({
     stage: '',
@@ -512,6 +513,95 @@ export default function VendorAssignment() {
     }
   }, []);
 
+  const handleRefreshVendorsData = React.useCallback(async () => {
+    const startTime = Date.now();
+    setRefreshingVendors(true);
+    setRefreshProgressDialog(true);
+    setRefreshProgress({
+      stage: 'starting',
+      message: 'Initializing vendors refresh process...',
+      startTime: startTime
+    });
+
+    // Create AbortController for timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 900000); // 15 minutes timeout
+
+    try {
+      setRefreshProgress({
+        stage: 'queuing',
+        message: 'Queuing vendors sync job...',
+        startTime: startTime
+      });
+
+      const response = await fetch(`${BASE_URL}/api/sap-users/refresh-vendors-data`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`Failed to refresh vendors data: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        setRefreshProgress({
+          stage: 'success',
+          message: 'Vendors data sync job queued successfully! Worker will process it shortly.',
+          startTime: startTime,
+          jobId: result.data?.jobId
+        });
+
+        toast.success('Vendors data sync job queued successfully!', {
+          position: 'top-right',
+          autoClose: 5000,
+        });
+
+        // Auto-close after success
+        setTimeout(() => {
+          setRefreshProgressDialog(false);
+        }, 3000);
+      } else {
+        throw new Error(result.message || 'Unknown error occurred');
+      }
+    } catch (error) {
+      clearTimeout(timeoutId);
+      
+      if (error.name === 'AbortError') {
+        setRefreshProgress({
+          stage: 'error',
+          message: 'Request timed out after 15 minutes. Please try again.',
+          startTime: startTime
+        });
+        toast.error('Request timed out. Please try again.', {
+          position: 'top-right',
+          autoClose: 5000,
+        });
+      } else {
+        setRefreshProgress({
+          stage: 'error',
+          message: `Error: ${error.message}`,
+          startTime: startTime
+        });
+        toast.error(`Failed to refresh vendors data: ${error.message}`, {
+          position: 'top-right',
+          autoClose: 5000,
+        });
+      }
+    } finally {
+      setRefreshingVendors(false);
+    }
+  }, []);
+
   // Submit handler
   const handleSubmit = async () => {
     if (!validateForm()) {
@@ -723,16 +813,27 @@ export default function VendorAssignment() {
       )}
 
       {/* Refresh Sales Head Data Button */}
-      <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
+      <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
         <Button
           variant="outlined"
           color="primary"
           startIcon={refreshingSalesHead ? <CircularProgress size={20} /> : <CloudSync />}
           onClick={handleRefreshSalesHeadData}
-          disabled={refreshingSalesHead}
+          disabled={refreshingSalesHead || refreshingVendors}
           sx={{ minWidth: 200 }}
         >
           {refreshingSalesHead ? 'Refreshing...' : 'Refresh Sales Head Data'}
+        </Button>
+        
+        <Button
+          variant="outlined"
+          color="secondary"
+          startIcon={refreshingVendors ? <CircularProgress size={20} /> : <CloudSync />}
+          onClick={handleRefreshVendorsData}
+          disabled={refreshingSalesHead || refreshingVendors}
+          sx={{ minWidth: 200 }}
+        >
+          {refreshingVendors ? 'Refreshing...' : 'Refresh Vendors Data'}
         </Button>
       </Box>
 
