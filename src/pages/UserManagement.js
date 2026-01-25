@@ -154,15 +154,26 @@ export default function UserManagement() {
   };
 
   // Update your getUserFields function to use a different field name for view mode
-  const getUserFields = React.useCallback((isCreate = false, includePassword = false, isViewMode = false) => [
+  const getUserFields = React.useCallback((isCreate = false, includePassword = false, isViewMode = false) => {
+    // Check if editing a vendor user
+    const isVendor = selectedUser?.user_type === 'vendor';
+    const isEditingVendor = modalMode === 'edit' && isVendor;
+    
+    return [
     {
       name: 'username',
       label: 'Username',
       type: 'text',
       required: true,
-      readOnly: isViewMode,
+      readOnly: isViewMode || isEditingVendor,
+      disabled: isEditingVendor,
       validate: validateUsername,
-      tooltip: 'Must be at least 5 characters and start with a letter',
+      tooltip: isEditingVendor 
+        ? 'SAP users cannot have their username edited' 
+        : 'Must be at least 5 characters and start with a letter',
+      helperText: isEditingVendor 
+        ? '⚠️ This is a SAP user, you cannot edit username' 
+        : undefined,
     },
     {
       name: 'email',
@@ -211,18 +222,23 @@ export default function UserManagement() {
       type: 'text',
       readOnly: true,
     } : {
-      name: 'roleId',
+      name: isEditingVendor ? 'roleName' : 'roleId',
       label: 'Role',
-      type: 'select',
+      type: isEditingVendor ? 'text' : 'select',
       required: true,
-      validate: validateRole,
-      tooltip: 'Please select a role',
-      options: roles.map(role => ({
-        value: role.id,
-        label: role.name
-      })),
-      loading: loadingRoles,
-      error: rolesError,
+      readOnly: isEditingVendor,
+      disabled: isEditingVendor,
+      validate: isEditingVendor ? undefined : validateRole,
+      tooltip: isEditingVendor ? 'SAP users cannot have their role edited' : 'Please select a role',
+      helperText: isEditingVendor ? '⚠️ This is a SAP user, you cannot edit role' : undefined,
+      ...(isEditingVendor ? {} : {
+        options: roles.map(role => ({
+          value: role.id,
+          label: role.name
+        })),
+        loading: loadingRoles,
+        error: rolesError,
+      }),
     },
     // For view mode, use a different field name to display regions
     isViewMode ? {
@@ -252,7 +268,8 @@ export default function UserManagement() {
       defaultValue: true,
       readOnly: isViewMode,
     },
-  ], [roles, loadingRoles, regionsError, regions, loadingRegions]);
+  ];
+  }, [roles, loadingRoles, regionsError, regions, loadingRegions, selectedUser, modalMode]);
 
   // API call to fetch roles
   const fetchRoles = React.useCallback(async () => {
@@ -468,13 +485,23 @@ export default function UserManagement() {
   const handleEdit = React.useCallback((userData) => {
     if (!canUpdate) return;
     
+    console.log('Opening edit modal for user:', userData);
+    console.log('User type:', userData.user_type);
+    
     // Transform user data for edit mode
     const transformedUserData = {
       ...userData,
       regionIds: userData.regions && userData.regions.length > 0
         ? userData.regions.map(r => r.id)
-        : []
+        : [],
+      // Ensure user_type is preserved
+      user_type: userData.user_type,
+      // Ensure roleName is preserved for vendors
+      roleName: userData.roleName
     };
+    
+    console.log('Transformed user data:', transformedUserData);
+    console.log('Is vendor?', userData.user_type === 'vendor');
     
     setSelectedUser(transformedUserData);
     setModalMode('edit');
