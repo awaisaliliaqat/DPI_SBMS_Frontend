@@ -109,7 +109,7 @@ export default function AreaHeadRequests() {
   const canManualApproval = user?.permissions?.shopboardRequest?.includes('manual_approval') || false;
   const canPaymentRelease = user?.permissions?.shopboardRequest?.includes('payment_release') || false;
 
-  const { get, post, put, patch, del } = useApi();
+  const { get, post, put, patch, del, upload } = useApi();
 
   const [rowsState, setRowsState] = React.useState({
     rows: [],
@@ -1070,20 +1070,20 @@ export default function AreaHeadRequests() {
     
     setManualApprovalLoading(true);
     try {
-      // Prepare the manual approval form data
-      const manualApprovalForm = manualApprovalFile ? {
-        filename: manualApprovalFile.name,
-        size: manualApprovalFile.size,
-        type: manualApprovalFile.type,
-        uploadedAt: new Date().toISOString()
-      } : null;
+      // Create FormData for file upload
+      const formData = new FormData();
+      
+      // Add request data
+      formData.append('request_id', selectedRequest.id);
+      formData.append('manual_approval_reason', manualApprovalReason);
+      
+      // Add file if provided
+      if (manualApprovalFile) {
+        formData.append('manual_approval_file', manualApprovalFile);
+      }
 
-      // Call the manual approval API
-      const response = await post(`/api/shopboard-requests/${selectedRequest.id}/approvals/manual-approve`, {
-        request_id: selectedRequest.id,
-        manual_approval_reason: manualApprovalReason,
-        manual_approval_form: manualApprovalForm
-      });
+      // Call the manual approval API with FormData
+      const response = await upload(`/api/shopboard-requests/${selectedRequest.id}/approvals/manual-approve`, formData);
 
       if (response.success) {
         toast.success('Manual approval submitted successfully!', {
@@ -1119,7 +1119,7 @@ export default function AreaHeadRequests() {
     } finally {
       setManualApprovalLoading(false);
     }
-  }, [selectedRequest, manualApprovalReason, manualApprovalFile, post, loadRequests]);
+  }, [selectedRequest, manualApprovalReason, manualApprovalFile, upload, loadRequests]);
 
   // Bulk send to CEO handler
   const handleBulkSendToCEO = React.useCallback(async () => {
@@ -6502,6 +6502,21 @@ export default function AreaHeadRequests() {
                         ? JSON.parse(selectedManualApprovalRequest.manual_approval_form) 
                         : selectedManualApprovalRequest.manual_approval_form;
                       
+                      // Construct file URL - check if path exists, otherwise construct from filename
+                      const getFileUrl = () => {
+                        if (formData.path) {
+                          return formData.path.startsWith('/uploads/') 
+                            ? `${BASE_URL}${formData.path}` 
+                            : `${BASE_URL}/uploads/${formData.path}`;
+                        } else if (formData.filename) {
+                          // Try to construct path from filename - manual approval files are in manual_approvals folder
+                          return `${BASE_URL}/uploads/manual_approvals/${formData.filename}`;
+                        }
+                        return null;
+                      };
+
+                      const fileUrl = getFileUrl();
+                      
                       return (
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -6538,6 +6553,19 @@ export default function AreaHeadRequests() {
                                 : 'N/A'}
                             </Typography>
                           </Box>
+                          {fileUrl && (
+                            <Box sx={{ mt: 2 }}>
+                              <Button
+                                variant="contained"
+                                color="primary"
+                                startIcon={<VisibilityIcon />}
+                                onClick={() => window.open(fileUrl, '_blank')}
+                                sx={{ minWidth: '150px' }}
+                              >
+                                View File
+                              </Button>
+                            </Box>
+                          )}
                         </Box>
                       );
                     } catch (error) {

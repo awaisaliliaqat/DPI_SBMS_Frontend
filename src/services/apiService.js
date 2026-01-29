@@ -20,9 +20,13 @@ class ApiService {
     // Get token from localStorage or context
     const token = localStorage.getItem('authToken');
     
+    // Check if data is FormData
+    const isFormData = data instanceof FormData;
+    
     // Prepare headers
     const defaultHeaders = {
-      'Content-Type': 'application/json',
+      // Don't set Content-Type for FormData - let browser set it with boundary
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(requiresAuth && token && { 'Authorization': `Bearer ${token}` }),
       ...headers,
     };
@@ -40,8 +44,8 @@ class ApiService {
 
     // Add body for non-GET requests
     if (data && method !== 'GET') {
-      // For blob requests, don't stringify if it's already FormData
-      if (responseType === 'blob' && data instanceof FormData) {
+      // For FormData, send as-is (browser will set Content-Type with boundary)
+      if (isFormData) {
         config.body = data;
       } else {
         config.body = JSON.stringify(data);
