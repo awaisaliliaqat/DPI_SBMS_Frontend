@@ -4377,8 +4377,11 @@ export default function VendorRequests() {
             sx={{ mb: 2 }}
             disabled={invoiceLoading}
             placeholder="Enter invoice number"
-            error={!invoiceNumber || invoiceNumber.trim() === ''}
-            helperText={(!invoiceNumber || invoiceNumber.trim() === '') ? 'Invoice number is required' : ''}
+            helperText={(!invoiceNumber || invoiceNumber.trim() === '') ? (
+              <Typography variant="caption" sx={{ color: 'error.main' }}>
+                Invoice number is required
+              </Typography>
+            ) : ''}
           />
           
           <input
@@ -4398,8 +4401,7 @@ export default function VendorRequests() {
               disabled={invoiceLoading}
               fullWidth
               sx={{ 
-                mt: 2,
-                borderColor: (!invoiceFile && existingInvoiceFiles.length === 0) ? 'error.main' : undefined
+                mt: 2
               }}
             >
               Select Invoice File *
@@ -4484,7 +4486,7 @@ export default function VendorRequests() {
                 disabled={invoiceLoading}
                 fullWidth
                 sx={{ 
-                  border: (!dealerAcknowledgmentFile && existingDealerAcknowledgmentFiles.length === 0) ? '2px dashed #d32f2f' : '2px dashed #ccc',
+                  border: '2px dashed #ccc',
                   '&:hover': {
                     border: '2px dashed #1976d2',
                     backgroundColor: '#f5f5f5'
@@ -4555,12 +4557,24 @@ export default function VendorRequests() {
           {/* Per-Item Site Photos */}
           <Box sx={{ mt: 3 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
-              Site Photos per Request Item
+              Site Photos per Request Item *
             </Typography>
             {selectedInvoiceRequest?.requestItems && selectedInvoiceRequest.requestItems.length > 0 ? (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {selectedInvoiceRequest.requestItems.map((item, idx) => (
-                  <Paper key={item.id || idx} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                {selectedInvoiceRequest.requestItems.map((item, idx) => {
+                  const hasSitePhotos = (
+                    (sitePhotosPerItem[item.id] && sitePhotosPerItem[item.id].length > 0) ||
+                    (existingSitePhotosPerItem[item.id] && existingSitePhotosPerItem[item.id].length > 0)
+                  );
+                  return (
+                  <Paper 
+                    key={item.id || idx} 
+                    variant="outlined" 
+                    sx={{ 
+                      p: 2, 
+                      borderRadius: 2
+                    }}
+                  >
                     <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 2, alignItems: 'center', mb: 2 }}>
                       <Box>
                         <Typography variant="caption" sx={{ color: '#666' }}>Request Type</Typography>
@@ -4619,9 +4633,14 @@ export default function VendorRequests() {
                           }
                         }}
                       >
-                        Select Site Photos for this item
+                        Select Site Photos for this item *
                       </Button>
                     </label>
+                    {!hasSitePhotos && (
+                      <Typography variant="caption" sx={{ color: 'error.main', mt: 0.5, display: 'block' }}>
+                        Site photos are required for this item
+                      </Typography>
+                    )}
 
                     {/* Existing Site Photos for this item */}
                     {(existingSitePhotosPerItem[item.id] || []).length > 0 && (
@@ -4684,7 +4703,8 @@ export default function VendorRequests() {
                       </Box>
                     )}
                   </Paper>
-                ))}
+                  );
+                })}
               </Box>
             ) : (
               <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
@@ -4728,7 +4748,16 @@ export default function VendorRequests() {
               // Invoice file is required (new file or existing files)
               (!invoiceFile && (existingInvoiceFiles.length === 0)) ||
               // Dealer acknowledgment is required (new file or existing files)
-              (!dealerAcknowledgmentFile && (existingDealerAcknowledgmentFiles.length === 0))
+              (!dealerAcknowledgmentFile && (existingDealerAcknowledgmentFiles.length === 0)) ||
+              // Site photos are required for all request items
+              (selectedInvoiceRequest?.requestItems && selectedInvoiceRequest.requestItems.length > 0 && 
+                selectedInvoiceRequest.requestItems.some(item => {
+                  const hasSitePhotos = (
+                    (sitePhotosPerItem[item.id] && sitePhotosPerItem[item.id].length > 0) ||
+                    (existingSitePhotosPerItem[item.id] && existingSitePhotosPerItem[item.id].length > 0)
+                  );
+                  return !hasSitePhotos;
+                }))
             )}
           >
             {invoiceLoading 
