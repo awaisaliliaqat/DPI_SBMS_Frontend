@@ -92,6 +92,7 @@ export default function VendorAssignment() {
   // Refresh sales head data state
   const [refreshingSalesHead, setRefreshingSalesHead] = React.useState(false);
   const [refreshingVendors, setRefreshingVendors] = React.useState(false);
+  const [refreshingRegions, setRefreshingRegions] = React.useState(false);
   const [refreshProgressDialog, setRefreshProgressDialog] = React.useState(false);
   const [refreshProgress, setRefreshProgress] = React.useState({
     stage: '',
@@ -602,6 +603,96 @@ export default function VendorAssignment() {
     }
   }, []);
 
+  const handleRefreshRegionsData = React.useCallback(async () => {
+    const startTime = Date.now();
+    setRefreshingRegions(true);
+    setRefreshProgressDialog(true);
+    setRefreshProgress({
+      stage: 'starting',
+      message: 'Initializing regions refresh process...',
+      startTime: startTime
+    });
+
+    // Create AbortController for timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 900000); // 15 minutes timeout
+
+    try {
+      setRefreshProgress({
+        stage: 'queuing',
+        message: 'Queuing regions sync job...',
+        startTime: startTime
+      });
+
+      const response = await fetch(`${BASE_URL}/api/sap-users/refresh-regions-data`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`Failed to refresh regions data: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        setRefreshProgress({
+          stage: 'success',
+          message: 'Regions data sync job queued successfully! Worker will process it shortly.',
+          startTime: startTime,
+          jobId: result.data?.jobId
+        });
+
+        toast.success('Regions data sync job queued successfully!', {
+          position: 'top-right',
+          autoClose: 5000,
+        });
+
+        // Auto-close after success and reload regions
+        setTimeout(() => {
+          setRefreshProgressDialog(false);
+          loadRegions(); // Reload regions to show new ones
+        }, 3000);
+      } else {
+        throw new Error(result.message || 'Unknown error occurred');
+      }
+    } catch (error) {
+      clearTimeout(timeoutId);
+      
+      if (error.name === 'AbortError') {
+        setRefreshProgress({
+          stage: 'error',
+          message: 'Request timed out after 15 minutes. Please try again.',
+          startTime: startTime
+        });
+        toast.error('Request timed out. Please try again.', {
+          position: 'top-right',
+          autoClose: 5000,
+        });
+      } else {
+        setRefreshProgress({
+          stage: 'error',
+          message: `Error: ${error.message}`,
+          startTime: startTime
+        });
+        toast.error(`Failed to refresh regions data: ${error.message}`, {
+          position: 'top-right',
+          autoClose: 5000,
+        });
+      }
+    } finally {
+      setRefreshingRegions(false);
+    }
+  }, [loadRegions]);
+
   // Submit handler
   const handleSubmit = async () => {
     if (!validateForm()) {
@@ -819,7 +910,7 @@ export default function VendorAssignment() {
           color="primary"
           startIcon={refreshingSalesHead ? <CircularProgress size={20} /> : <CloudSync />}
           onClick={handleRefreshSalesHeadData}
-          disabled={refreshingSalesHead || refreshingVendors}
+          disabled={refreshingSalesHead || refreshingVendors || refreshingRegions}
           sx={{ minWidth: 200 }}
         >
           {refreshingSalesHead ? 'Refreshing...' : 'Refresh Sales Head Data'}
@@ -830,10 +921,21 @@ export default function VendorAssignment() {
           color="secondary"
           startIcon={refreshingVendors ? <CircularProgress size={20} /> : <CloudSync />}
           onClick={handleRefreshVendorsData}
-          disabled={refreshingSalesHead || refreshingVendors}
+          disabled={refreshingSalesHead || refreshingVendors || refreshingRegions}
           sx={{ minWidth: 200 }}
         >
           {refreshingVendors ? 'Refreshing...' : 'Refresh Vendors Data'}
+        </Button>
+
+        <Button
+          variant="outlined"
+          color="success"
+          startIcon={refreshingRegions ? <CircularProgress size={20} /> : <CloudSync />}
+          onClick={handleRefreshRegionsData}
+          disabled={refreshingSalesHead || refreshingVendors || refreshingRegions}
+          sx={{ minWidth: 200 }}
+        >
+          {refreshingRegions ? 'Refreshing...' : 'Sync Regions from SAP'}
         </Button>
       </Box>
 
