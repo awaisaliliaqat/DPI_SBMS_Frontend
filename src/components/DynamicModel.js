@@ -223,6 +223,119 @@ const DynamicModal = ({
               onBlur={() => handleBlur(name)}
               disabled={isDisabled}
               loading={field.loading}
+              disableListWrap
+              disableCloseOnSelect
+              limitTags={3}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label={label + (required ? ' *' : '')}
+                  error={!!error}
+                  helperText={error || field.helperText}
+                  margin="normal"
+                  variant={isViewMode ? "filled" : "outlined"}
+                  placeholder={isViewMode ? "" : "Search and select..."}
+                  InputProps={{
+                    ...params.InputProps,
+                    readOnly: isViewMode,
+                    endAdornment: (
+                      <>
+                        {field.loading ? <CircularProgress color="inherit" size={20} /> : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                    sx: {
+                      maxHeight: '120px',
+                      overflowY: 'auto',
+                      flexWrap: 'wrap',
+                      '&::-webkit-scrollbar': {
+                        width: '8px',
+                      },
+                      '&::-webkit-scrollbar-track': {
+                        background: '#f1f1f1',
+                      },
+                      '&::-webkit-scrollbar-thumb': {
+                        background: '#888',
+                        borderRadius: '4px',
+                      },
+                      '&::-webkit-scrollbar-thumb:hover': {
+                        background: '#555',
+                      },
+                    }
+                  }}
+                />
+              )}
+              renderTags={(tagValue, getTagProps) =>
+                tagValue.map((option, index) => (
+                  <Chip
+                    key={option.value}
+                    label={option.label}
+                    {...getTagProps({ index })}
+                    size="small"
+                    disabled={isViewMode}
+                  />
+                ))
+              }
+              ListboxProps={{
+                style: {
+                  maxHeight: '300px',
+                },
+              }}
+              PopperComponent={(props) => (
+                <Box 
+                  {...props} 
+                  sx={{ 
+                    zIndex: 1300,
+                    '& .MuiAutocomplete-listbox': {
+                      maxHeight: '300px',
+                      overflow: 'auto',
+                    }
+                  }}
+                  placement="bottom-start"
+                  modifiers={[
+                    {
+                      name: 'flip',
+                      enabled: false,
+                    },
+                    {
+                      name: 'preventOverflow',
+                      enabled: true,
+                      options: {
+                        altAxis: true,
+                        altBoundary: true,
+                        tether: true,
+                        rootBoundary: 'viewport',
+                        padding: 8,
+                      },
+                    },
+                  ]}
+                />
+              )}
+              isOptionEqualToValue={(option, value) => option.value === value.value}
+              readOnly={isViewMode}
+              disableClearable={isViewMode}
+              filterSelectedOptions
+              sx={{ 
+                mt: 1,
+                '& .MuiAutocomplete-tag': {
+                  maxWidth: 'calc(100% - 50px)',
+                },
+              }}
+            />
+          ) : (
+            // Single select with Autocomplete
+            <Autocomplete
+              key={name}
+              options={options || []}
+              getOptionLabel={(option) => option.label || ''}
+              value={options?.find(opt => opt.value === value) || null}
+              onChange={(event, newValue) => {
+                handleChange(name, newValue ? newValue.value : '');
+              }}
+              onBlur={() => handleBlur(name)}
+              disabled={isDisabled}
+              loading={field.loading}
+              disableListWrap
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -244,55 +357,35 @@ const DynamicModal = ({
                   }}
                 />
               )}
-              renderTags={(tagValue, getTagProps) =>
-                tagValue.map((option, index) => (
-                  <Chip
-                    key={option.value}
-                    label={option.label}
-                    {...getTagProps({ index })}
-                    size="small"
-                    disabled={isViewMode}
-                  />
-                ))
-              }
-              isOptionEqualToValue={(option, value) => option.value === value.value}
-              readOnly={isViewMode}
-              disableClearable={isViewMode}
-              filterSelectedOptions
-              sx={{ mt: 1 }}
-            />
-          ) : (
-            // Single select with Autocomplete
-            <Autocomplete
-              key={name}
-              options={options || []}
-              getOptionLabel={(option) => option.label || ''}
-              value={options?.find(opt => opt.value === value) || null}
-              onChange={(event, newValue) => {
-                handleChange(name, newValue ? newValue.value : '');
+              ListboxProps={{
+                style: {
+                  maxHeight: '300px',
+                },
               }}
-              onBlur={() => handleBlur(name)}
-              disabled={isDisabled}
-              loading={field.loading}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label={label + (required ? ' *' : '')}
-                  error={!!error}
-                  helperText={error || field.helperText}
-                  margin="normal"
-                  variant={isViewMode ? "filled" : "outlined"}
-                  placeholder={isViewMode ? "" : "Search and select..."}
-                  InputProps={{
-                    ...params.InputProps,
-                    readOnly: isViewMode,
-                    endAdornment: (
-                      <>
-                        {field.loading ? <CircularProgress color="inherit" size={20} /> : null}
-                        {params.InputProps.endAdornment}
-                      </>
-                    ),
+              PopperComponent={(props) => (
+                <Box 
+                  {...props} 
+                  sx={{ 
+                    zIndex: 1300,
                   }}
+                  placement="bottom-start"
+                  modifiers={[
+                    {
+                      name: 'flip',
+                      enabled: false,
+                    },
+                    {
+                      name: 'preventOverflow',
+                      enabled: true,
+                      options: {
+                        altAxis: true,
+                        altBoundary: true,
+                        tether: true,
+                        rootBoundary: 'viewport',
+                        padding: 8,
+                      },
+                    },
+                  ]}
                 />
               )}
               isOptionEqualToValue={(option, value) => option.value === value.value}
