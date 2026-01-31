@@ -20,6 +20,8 @@ import {
   Divider,
   Alert,
   Tooltip,
+  Autocomplete,
+  CircularProgress,
 } from '@mui/material';
 import { Close, Edit, Visibility, VpnKey, Cancel } from '@mui/icons-material';
 
@@ -201,41 +203,104 @@ const DynamicModal = ({
             }}
           />
         ) : type === 'select' ? (
-          <FormControl 
-            key={name} 
-            fullWidth 
-            margin="normal" 
-            error={!!error}
-            disabled={isDisabled}
-          >
-            <InputLabel>{label}{required ? ' *' : ''}</InputLabel>
-            <Select
-              value={field.multiple ? (Array.isArray(value) ? value : []) : value}
-              label={label}
-              onChange={(e) => handleChange(name, e.target.value)}
+          // Use Autocomplete for select fields with search functionality
+          field.multiple ? (
+            // Multiple select with Autocomplete
+            <Autocomplete
+              key={name}
+              multiple
+              options={options || []}
+              getOptionLabel={(option) => option.label || ''}
+              value={
+                Array.isArray(value) 
+                  ? options?.filter(opt => value.includes(opt.value)) || []
+                  : []
+              }
+              onChange={(event, newValue) => {
+                const selectedValues = newValue.map(item => item.value);
+                handleChange(name, selectedValues);
+              }}
               onBlur={() => handleBlur(name)}
-              variant={isViewMode ? "filled" : "outlined"}
+              disabled={isDisabled}
+              loading={field.loading}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label={label + (required ? ' *' : '')}
+                  error={!!error}
+                  helperText={error || field.helperText}
+                  margin="normal"
+                  variant={isViewMode ? "filled" : "outlined"}
+                  placeholder={isViewMode ? "" : "Search and select..."}
+                  InputProps={{
+                    ...params.InputProps,
+                    readOnly: isViewMode,
+                    endAdornment: (
+                      <>
+                        {field.loading ? <CircularProgress color="inherit" size={20} /> : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                  }}
+                />
+              )}
+              renderTags={(tagValue, getTagProps) =>
+                tagValue.map((option, index) => (
+                  <Chip
+                    key={option.value}
+                    label={option.label}
+                    {...getTagProps({ index })}
+                    size="small"
+                    disabled={isViewMode}
+                  />
+                ))
+              }
+              isOptionEqualToValue={(option, value) => option.value === value.value}
               readOnly={isViewMode}
-              multiple={field.multiple || false}
-              renderValue={field.multiple ? (selected) => (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                  {selected.map((value) => {
-                    const option = options?.find(opt => opt.value === value);
-                    return option ? (
-                      <Chip key={value} label={option.label} size="small" />
-                    ) : null;
-                  })}
-                </Box>
-              ) : undefined}
-            >
-              {options?.map(option => (
-                <MenuItem key={option.value} value={option.value}>
-                  {option.label}
-                </MenuItem>
-              ))}
-            </Select>
-            {error && <FormHelperText>{error}</FormHelperText>}
-          </FormControl>
+              disableClearable={isViewMode}
+              filterSelectedOptions
+              sx={{ mt: 1 }}
+            />
+          ) : (
+            // Single select with Autocomplete
+            <Autocomplete
+              key={name}
+              options={options || []}
+              getOptionLabel={(option) => option.label || ''}
+              value={options?.find(opt => opt.value === value) || null}
+              onChange={(event, newValue) => {
+                handleChange(name, newValue ? newValue.value : '');
+              }}
+              onBlur={() => handleBlur(name)}
+              disabled={isDisabled}
+              loading={field.loading}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label={label + (required ? ' *' : '')}
+                  error={!!error}
+                  helperText={error || field.helperText}
+                  margin="normal"
+                  variant={isViewMode ? "filled" : "outlined"}
+                  placeholder={isViewMode ? "" : "Search and select..."}
+                  InputProps={{
+                    ...params.InputProps,
+                    readOnly: isViewMode,
+                    endAdornment: (
+                      <>
+                        {field.loading ? <CircularProgress color="inherit" size={20} /> : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                  }}
+                />
+              )}
+              isOptionEqualToValue={(option, value) => option.value === value.value}
+              readOnly={isViewMode}
+              disableClearable={isViewMode}
+              sx={{ mt: 1 }}
+            />
+          )
         ) : type === 'checkbox' ? (
           <FormControlLabel
             key={name}
