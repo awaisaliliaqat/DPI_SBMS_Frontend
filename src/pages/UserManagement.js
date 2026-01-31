@@ -18,6 +18,7 @@ import { useAuth } from '../auth/AuthContext';
 import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
+import RegionPicker from '../components/RegionPicker';
 import { BASE_URL } from "../constants/Constants";
 import { useApi } from '../hooks/useApi';
 
@@ -240,26 +241,37 @@ export default function UserManagement() {
         error: rolesError,
       }),
     },
-    // For view mode, use a different field name to display regions
+    // Regions: compact label (2 names + N more), click opens dialog with search + checkboxes
     isViewMode ? {
-      name: 'regionsDisplay', // Use regionsDisplay field instead of regionIds
+      name: 'regionsDisplay',
       label: 'Regions',
-      type: 'text',
+      type: 'custom',
       readOnly: true,
+      render: (value, onChange, isView, formData) => (
+        <RegionPicker
+          regions={formData.regions || []}
+          value={(formData.regions || []).map((r) => r.id)}
+          readOnly
+          label="Regions"
+        />
+      ),
     } : {
       name: 'regionIds',
       label: 'Regions',
-      type: 'select',
-      multiple: true,
+      type: 'custom',
       required: false,
       validate: validateRegion,
-      tooltip: 'Please select one or more regions (optional)',
-      options: regions.map(region => ({
-        value: region.id,
-        label: region.name
-      })),
-      loading: loadingRegions,
-      error: regionsError,
+      tooltip: 'Click to select regions. Search and use checkboxes in the dialog.',
+      render: (value, onChange) => (
+        <RegionPicker
+          regions={regions}
+          value={value || []}
+          onChange={onChange}
+          loading={loadingRegions}
+          helperText={regionsError}
+          label="Regions"
+        />
+      ),
     },
     {
       name: 'isActive',

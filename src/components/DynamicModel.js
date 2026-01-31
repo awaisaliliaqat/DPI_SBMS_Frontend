@@ -409,7 +409,7 @@ const DynamicModal = ({
             sx={{ mt: 2 }}
           />
         ) : type === 'custom' ? (
-          field.render ? field.render(value, (val) => handleChange(name, val), isViewMode) : null
+          field.render ? field.render(value, (val) => handleChange(name, val), isViewMode, formData) : null
         ) : isViewMode ? (
           <Box key={name} sx={{ mt: 2 }}>
             <Typography variant="body2" color="textSecondary">
