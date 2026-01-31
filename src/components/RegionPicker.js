@@ -22,10 +22,64 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
 import PlaceIcon from '@mui/icons-material/Place';
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 
 const VISIBLE_NAMES = 2;
 const DIALOG_MAX_HEIGHT = '70vh';
+const SEARCH_DEBOUNCE_MS = 180;
+
+/**
+ * Debounced value: updates after delay so we don't filter 600 items on every keystroke.
+ */
+function useDebouncedValue(value, delay) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
+
+const RegionRow = React.memo(function RegionRow({
+  region,
+  isSelected,
+  readOnly,
+  primaryColor,
+  onToggle,
+}) {
+  const primaryText = region.name || String(region.id);
+  return (
+    <ListItemButton
+      selected={isSelected}
+      onClick={() => onToggle(region.id)}
+      disabled={readOnly}
+      sx={{
+        '&.Mui-selected': {
+          backgroundColor: alpha(primaryColor, 0.12),
+        },
+        '&.Mui-selected:hover': {
+          backgroundColor: alpha(primaryColor, 0.18),
+        },
+      }}
+    >
+      {!readOnly && (
+        <ListItemIcon sx={{ minWidth: 40 }}>
+          <Checkbox
+            edge="start"
+            checked={isSelected}
+            tabIndex={-1}
+            disableRipple
+            size="small"
+          />
+        </ListItemIcon>
+      )}
+      <ListItemText
+        primary={primaryText}
+        primaryTypographyProps={{ fontWeight: isSelected ? 600 : 400 }}
+      />
+    </ListItemButton>
+  );
+});
 
 /**
  * Compact summary label: shows first 2 region names + "+N more".
@@ -47,12 +101,14 @@ export default function RegionPicker({
   const [search, setSearch] = useState('');
 
   const selectedIds = Array.isArray(value) ? value : [];
+  const selectedIdsSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedRegions = useMemo(
-    () => regions.filter((r) => selectedIds.includes(r.id)),
-    [regions, selectedIds]
+    () => regions.filter((r) => selectedIdsSet.has(r.id)),
+    [regions, selectedIdsSet]
   );
 
-  const searchLower = (search || '').trim().toLowerCase();
+  const searchDebounced = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
+  const searchLower = (searchDebounced || '').trim().toLowerCase();
   const filteredRegions = useMemo(() => {
     if (!searchLower) return regions;
     return regions.filter(
@@ -65,28 +121,26 @@ export default function RegionPicker({
   const toggleRegion = useCallback(
     (regionId) => {
       if (readOnly) return;
-      const next = selectedIds.includes(regionId)
+      const next = selectedIdsSet.has(regionId)
         ? selectedIds.filter((id) => id !== regionId)
         : [...selectedIds, regionId];
       onChange(next);
     },
-    [selectedIds, onChange, readOnly]
+    [selectedIds, selectedIdsSet, onChange, readOnly]
   );
 
   const handleSelectAll = useCallback(() => {
     if (readOnly) return;
     const allFilteredIds = filteredRegions.map((r) => r.id);
-    const currentInFilter = selectedIds.filter((id) =>
-      filteredRegions.some((r) => r.id === id)
-    );
-    const allSelected = allFilteredIds.every((id) => selectedIds.includes(id));
+    const allSelected = allFilteredIds.every((id) => selectedIdsSet.has(id));
     if (allSelected) {
-      onChange(selectedIds.filter((id) => !allFilteredIds.includes(id)));
+      const removeSet = new Set(allFilteredIds);
+      onChange(selectedIds.filter((id) => !removeSet.has(id)));
     } else {
       const merged = [...new Set([...selectedIds, ...allFilteredIds])];
       onChange(merged);
     }
-  }, [filteredRegions, selectedIds, onChange, readOnly]);
+  }, [filteredRegions, selectedIds, selectedIdsSet, onChange, readOnly]);
 
   const handleClosePicker = useCallback(() => {
     setPickerOpen(false);
@@ -210,7 +264,7 @@ export default function RegionPicker({
                 />
                 <Box sx={{ display: 'flex', gap: 1, mt: 1.5 }}>
                   <Button size="small" variant="outlined" onClick={handleSelectAll}>
-                    {filteredRegions.every((r) => selectedIds.includes(r.id))
+                    {filteredRegions.every((r) => selectedIdsSet.has(r.id))
                       ? 'Deselect all (filtered)'
                       : 'Select all (filtered)'}
                   </Button>
@@ -240,42 +294,16 @@ export default function RegionPicker({
               </Box>
             ) : (
               <List dense disablePadding>
-                {filteredRegions.map((region) => {
-                  const isSelected = selectedIds.includes(region.id);
-                  const primaryText = region.name || String(region.id);
-                  return (
-                    <ListItemButton
-                      key={region.id}
-                      selected={isSelected}
-                      onClick={() => toggleRegion(region.id)}
-                      disabled={readOnly}
-                      sx={{
-                        '&.Mui-selected': {
-                          backgroundColor: alpha(primaryColor, 0.12),
-                        },
-                        '&.Mui-selected:hover': {
-                          backgroundColor: alpha(primaryColor, 0.18),
-                        },
-                      }}
-                    >
-                      {!readOnly && (
-                        <ListItemIcon sx={{ minWidth: 40 }}>
-                          <Checkbox
-                            edge="start"
-                            checked={isSelected}
-                            tabIndex={-1}
-                            disableRipple
-                            size="small"
-                          />
-                        </ListItemIcon>
-                      )}
-                      <ListItemText
-                        primary={primaryText}
-                        primaryTypographyProps={{ fontWeight: isSelected ? 600 : 400 }}
-                      />
-                    </ListItemButton>
-                  );
-                })}
+                {filteredRegions.map((region) => (
+                  <RegionRow
+                    key={region.id}
+                    region={region}
+                    isSelected={selectedIdsSet.has(region.id)}
+                    readOnly={readOnly}
+                    primaryColor={primaryColor}
+                    onToggle={toggleRegion}
+                  />
+                ))}
               </List>
             )}
           </Box>
