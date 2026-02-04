@@ -20,23 +20,35 @@ import {
 } from '@mui/icons-material';
 import { BASE_URL } from '../constants/Constants';
 
-const RequestDetailsWithInvoiceModal = ({ 
-  open, 
-  onClose, 
+// Open file in new tab; for data URLs use blob URL so image/PDF loads reliably
+async function openFileInNewTab(url) {
+  if (!url) return;
+  if (url.startsWith('data:')) {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch {
+      window.open(url, '_blank');
+    }
+  } else {
+    window.open(url, '_blank');
+  }
+}
+
+const RequestDetailsWithInvoiceModal = ({
+  open,
+  onClose,
   requestData,
-  getVendorName 
+  getVendorName
 }) => {
-  // Parse the invoice JSON data
   const parseInvoiceData = (data) => {
     if (!data) return null;
-    
     try {
-      if (typeof data === 'object') {
-        return data;
-      }
-      if (typeof data === 'string') {
-        return JSON.parse(data);
-      }
+      if (typeof data === 'object') return data;
+      if (typeof data === 'string') return JSON.parse(data);
       return null;
     } catch (error) {
       console.error('Error parsing invoice data:', error);
@@ -46,17 +58,39 @@ const RequestDetailsWithInvoiceModal = ({
 
   const invoice = requestData?.invoice ? parseInvoiceData(requestData.invoice) : null;
 
-  // Check if there's any invoice data to display
-  const hasInvoiceData = invoice && (
-    (invoice.invoice_files && invoice.invoice_files.length > 0) ||
-    (invoice.dealer_acknowledgment_files && invoice.dealer_acknowledgment_files.length > 0) ||
-    (invoice.site_photos && invoice.site_photos.length > 0) ||
-    (invoice.site_photos_by_item && Object.keys(invoice.site_photos_by_item).length > 0)
-  );
+  const hasDataFiles = (arr) => Array.isArray(arr) && arr.length > 0;
+  const hasDataMap = (obj) => obj && typeof obj === 'object' && Object.keys(obj).length > 0;
 
-  const handleFileClick = (filePath) => {
-    const fullUrl = filePath.startsWith('/') ? `${BASE_URL}${filePath}` : `${BASE_URL}/${filePath}`;
+  // Prefer DB-backed _data; fall back to legacy invoice JSON
+  const hasInvoiceData =
+    hasDataFiles(requestData?.invoice_files_data) ||
+    hasDataFiles(requestData?.dealer_acknowledgment_files_data) ||
+    hasDataMap(requestData?.invoice_site_photos_by_item_data) ||
+    (invoice &&
+      ((invoice.invoice_files && invoice.invoice_files.length > 0) ||
+        (invoice.dealer_acknowledgment_files && invoice.dealer_acknowledgment_files.length > 0) ||
+        (invoice.site_photos && invoice.site_photos.length > 0) ||
+        (invoice.site_photos_by_item && Object.keys(invoice.site_photos_by_item).length > 0)));
+
+  const handleFileClick = (filePathOrObj) => {
+    const url = typeof filePathOrObj === 'object' && filePathOrObj?.url != null ? filePathOrObj.url : String(filePathOrObj ?? '');
+    if (url.startsWith('data:')) {
+      openFileInNewTab(url);
+      return;
+    }
+    if (url.startsWith('http')) {
+      window.open(url, '_blank');
+      return;
+    }
+    const fullUrl = url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/${url}`;
     window.open(fullUrl, '_blank');
+  };
+
+  const getFileDisplay = (file, index, fallback) => {
+    if (file == null) return { url: '', fileName: fallback };
+    if (typeof file === 'object' && file.url != null) return { url: file.url, fileName: file.fileName || fallback };
+    const s = String(file);
+    return { url: s, fileName: s.startsWith('data:') ? fallback : s.split('/').pop() || fallback };
   };
 
   const renderFileSection = (title, files, icon, color = 'primary') => {
@@ -68,31 +102,34 @@ const RequestDetailsWithInvoiceModal = ({
           {title} ({files.length})
         </Typography>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-          {files.map((file, index) => (
-            <Chip
-              key={`${title}-${index}`}
-              label={file.split('/').pop()}
-              size="small"
-              color={color}
-              variant="outlined"
-              onClick={() => handleFileClick(file)}
-              sx={{ 
-                cursor: 'pointer',
-                '&:hover': {
-                  backgroundColor: color === 'primary' ? '#e3f2fd' : 
-                                 color === 'secondary' ? '#f3e5f5' : '#e8f5e8',
-                }
-              }}
-            />
-          ))}
+          {files.map((file, index) => {
+            const { url, fileName } = getFileDisplay(file, index, `File ${index + 1}`);
+            const open = () => (url.startsWith('data:') ? openFileInNewTab(url) : handleFileClick(file));
+            return (
+              <Chip
+                key={`${title}-${index}`}
+                label={fileName}
+                size="small"
+                color={color}
+                variant="outlined"
+                onClick={open}
+                sx={{
+                  cursor: 'pointer',
+                  '&:hover': {
+                    backgroundColor: color === 'primary' ? '#e3f2fd' : color === 'secondary' ? '#f3e5f5' : '#e8f5e8',
+                  },
+                }}
+              />
+            );
+          })}
         </Box>
       </Box>
     );
   };
 
   const renderPerItemSitePhotos = () => {
-    if (!invoice?.site_photos_by_item || !requestData?.requestItems || requestData.requestItems.length === 0) return null;
-    const map = invoice.site_photos_by_item;
+    const map = requestData?.invoice_site_photos_by_item_data ?? invoice?.site_photos_by_item;
+    if (!map || !requestData?.requestItems || requestData.requestItems.length === 0) return null;
 
     const byId = new Map();
     requestData.requestItems.forEach((it) => {
@@ -125,22 +162,24 @@ const RequestDetailsWithInvoiceModal = ({
                   Item #{idKey}: {typeName} — {width}×{height} ft {ppsf ? `(₨${ppsf.toFixed(2)}/ft²)` : ''} {price ? `— Total ₨${price.toFixed(2)}` : ''}
                 </Typography>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {files.map((file, index) => (
-                    <Chip
-                      key={`item-${idKey}-photo-${index}`}
-                      label={String(file).split('/').pop()}
-                      size="small"
-                      color="success"
-                      variant="outlined"
-                      onClick={() => handleFileClick(String(file))}
-                      sx={{ 
-                        cursor: 'pointer',
-                        '&:hover': {
-                          backgroundColor: '#e8f5e8',
-                        }
-                      }}
-                    />
-                  ))}
+                  {files.map((file, index) => {
+                    const { url, fileName } = getFileDisplay(file, index, `Photo ${index + 1}`);
+                    const open = () => (url.startsWith('data:') ? openFileInNewTab(url) : handleFileClick(file));
+                    return (
+                      <Chip
+                        key={`item-${idKey}-photo-${index}`}
+                        label={fileName}
+                        size="small"
+                        color="success"
+                        variant="outlined"
+                        onClick={open}
+                        sx={{
+                          cursor: 'pointer',
+                          '&:hover': { backgroundColor: '#e8f5e8' },
+                        }}
+                      />
+                    );
+                  })}
                 </Box>
               </Box>
             );
@@ -481,26 +520,21 @@ const RequestDetailsWithInvoiceModal = ({
                 </Typography>
                 {requestData.site_photo_attachement && requestData.site_photo_attachement.length > 0 ? (
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                    {requestData.site_photo_attachement.map((file, index) => (
-                      <Chip
-                        key={`site-${index}`}
-                        label={file.split('/').pop()}
-                        size="small"
-                        color="primary"
-                        variant="outlined"
-                        onClick={() => {
-                          const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/site_photos/${file}`;
-                          window.open(fileUrl, '_blank');
-                        }}
-                        sx={{ 
-                          cursor: 'pointer',
-                          '&:hover': {
-                            backgroundColor: '#e3f2fd',
-                            transform: 'scale(1.05)'
-                          }
-                        }}
-                      />
-                    ))}
+                    {requestData.site_photo_attachement.map((file, index) => {
+                      const { url, fileName } = getFileDisplay(file, index, `Site Photo ${index + 1}`);
+                      const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/site_photos/${url}`);
+                      return (
+                        <Chip
+                          key={`site-${index}`}
+                          label={fileName}
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                          onClick={() => handleFileClick(fileUrl)}
+                          sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#e3f2fd' } }}
+                        />
+                      );
+                    })}
                   </Box>
                 ) : (
                   <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
@@ -516,26 +550,21 @@ const RequestDetailsWithInvoiceModal = ({
                 </Typography>
                 {requestData.old_board_photo_attachment && requestData.old_board_photo_attachment.length > 0 ? (
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                    {requestData.old_board_photo_attachment.map((file, index) => (
-                      <Chip
-                        key={`old-${index}`}
-                        label={file.split('/').pop()}
-                        size="small"
-                        color="secondary"
-                        variant="outlined"
-                        onClick={() => {
-                          const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/old_board_photos/${file}`;
-                          window.open(fileUrl, '_blank');
-                        }}
-                        sx={{ 
-                          cursor: 'pointer',
-                          '&:hover': {
-                            backgroundColor: '#f3e5f5',
-                            transform: 'scale(1.05)'
-                          }
-                        }}
-                      />
-                    ))}
+                    {requestData.old_board_photo_attachment.map((file, index) => {
+                      const { url, fileName } = getFileDisplay(file, index, `Old Board Photo ${index + 1}`);
+                      const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/old_board_photos/${url}`);
+                      return (
+                        <Chip
+                          key={`old-${index}`}
+                          label={fileName}
+                          size="small"
+                          color="secondary"
+                          variant="outlined"
+                          onClick={() => handleFileClick(fileUrl)}
+                          sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#f3e5f5' } }}
+                        />
+                      );
+                    })}
                   </Box>
                 ) : (
                   <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
@@ -551,26 +580,21 @@ const RequestDetailsWithInvoiceModal = ({
                 </Typography>
                 {requestData.survey_form_attachments && requestData.survey_form_attachments.length > 0 ? (
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                    {requestData.survey_form_attachments.map((file, index) => (
-                      <Chip
-                        key={`survey-${index}`}
-                        label={file.split('/').pop()}
-                        size="small"
-                        color="success"
-                        variant="outlined"
-                        onClick={() => {
-                          const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/survey_forms/${file}`;
-                          window.open(fileUrl, '_blank');
-                        }}
-                        sx={{ 
-                          cursor: 'pointer',
-                          '&:hover': {
-                            backgroundColor: '#e8f5e8',
-                            transform: 'scale(1.05)'
-                          }
-                        }}
-                      />
-                    ))}
+                    {requestData.survey_form_attachments.map((file, index) => {
+                      const { url, fileName } = getFileDisplay(file, index, `Survey Form ${index + 1}`);
+                      const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/survey_forms/${url}`);
+                      return (
+                        <Chip
+                          key={`survey-${index}`}
+                          label={fileName}
+                          size="small"
+                          color="success"
+                          variant="outlined"
+                          onClick={() => handleFileClick(fileUrl)}
+                          sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#e8f5e8' } }}
+                        />
+                      );
+                    })}
                   </Box>
                 ) : (
                   <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
@@ -630,10 +654,10 @@ const RequestDetailsWithInvoiceModal = ({
                   </Box>
                 ) : (
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    {/* Invoice Files */}
+                    {/* Invoice Files: prefer DB _data, fallback to legacy invoice JSON */}
                     {renderFileSection(
                       'Invoice Files',
-                      invoice.invoice_files,
+                      hasDataFiles(requestData?.invoice_files_data) ? requestData.invoice_files_data : (invoice?.invoice_files || []),
                       <InvoiceIcon />,
                       'primary'
                     )}
@@ -641,15 +665,15 @@ const RequestDetailsWithInvoiceModal = ({
                     {/* Dealer Acknowledgment Files */}
                     {renderFileSection(
                       'Dealer Acknowledgment Forms',
-                      invoice.dealer_acknowledgment_files,
+                      hasDataFiles(requestData?.dealer_acknowledgment_files_data) ? requestData.dealer_acknowledgment_files_data : (invoice?.dealer_acknowledgment_files || []),
                       <DocumentIcon />,
                       'secondary'
                     )}
 
-                    {/* Site Photos */}
+                    {/* Site Photos (legacy) */}
                     {renderFileSection(
                       'Site Photos',
-                      invoice.site_photos,
+                      invoice?.site_photos || [],
                       <PhotoIcon />,
                       'success'
                     )}

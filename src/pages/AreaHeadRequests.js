@@ -20,6 +20,7 @@ import {
   Badge,
   CircularProgress,
   Avatar,
+  Backdrop,
 } from '@mui/material';
 import CommentsDialog from '../components/CommentsDialog';
 import {
@@ -67,6 +68,35 @@ import { useApi } from '../hooks/useApi';
 import jsPDF from 'jspdf';
 
 const INITIAL_PAGE_SIZE = 10;
+
+// Normalize file item from API: either { url, fileName, mimeType } (new) or legacy string (path/data URL)
+function getFileUrlAndName(item, index, fallbackLabel) {
+  if (item == null) return { url: '', fileName: fallbackLabel };
+  if (typeof item === 'object' && item.url != null) {
+    return { url: item.url, fileName: item.fileName || fallbackLabel };
+  }
+  const str = typeof item === 'string' ? item : '';
+  const fileName = str.startsWith('data:') ? fallbackLabel : str.split('/').pop() || fallbackLabel;
+  return { url: str, fileName };
+}
+
+// Open file in new tab. For data URLs use blob URL so the image/PDF actually loads (window.open(longDataUrl) often fails).
+async function openFileInNewTab(url) {
+  if (!url) return;
+  if (url.startsWith('data:')) {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch {
+      window.open(url, '_blank');
+    }
+  } else {
+    window.open(url, '_blank');
+  }
+}
 
 // Custom toolbar with only columns button
 function CustomToolbar() {
@@ -186,6 +216,9 @@ export default function AreaHeadRequests() {
   // Selection state for manual approval
   const [selectedRequests, setSelectedRequests] = React.useState([]);
   const [showSelectionColumn, setShowSelectionColumn] = React.useState(false);
+
+  // Loading full request details (when opening details/invoice/manual approval/edit)
+  const [loadingRequestDetails, setLoadingRequestDetails] = React.useState(false);
 
   // Invoice viewer modal state
   const [invoiceModalOpen, setInvoiceModalOpen] = React.useState(false);
@@ -717,6 +750,14 @@ export default function AreaHeadRequests() {
     }
   }, [paginationModel, get, canRead, onlyReadApprovedRequest, filters]);
 
+  // Fetch full request by ID. includeFiles: 'details' | 'invoice' | 'manual_approval' loads only those file sets.
+  const fetchFullRequest = React.useCallback(async (id, includeFiles) => {
+    const url = includeFiles ? `/api/shopboard-requests/${id}?includeFiles=${encodeURIComponent(includeFiles)}` : `/api/shopboard-requests/${id}`;
+    const res = await get(url);
+    if (res?.success && res?.data) return res.data;
+    throw new Error('Failed to load request details');
+  }, [get]);
+
   // Load data when component mounts or pagination changes
   React.useEffect(() => {
     loadRequests();
@@ -724,73 +765,109 @@ export default function AreaHeadRequests() {
     fetchCurrentMonthBudget();
   }, [loadRequests, fetchCurrentMonthBudget]);
 
-  // Action handlers
-  const handleView = React.useCallback((requestData) => {
+  // Action handlers - fetch full request with only the file set needed for each modal
+  const handleView = React.useCallback(async (requestData) => {
     if (!canRead) return;
-    
-    setSelectedRequest(requestData);
-    setModalOpen(true);
-  }, [canRead]);
-
-  const handleViewDetails = React.useCallback((requestData) => {
-    // If user has read_approved_request permission, use combined modal instead
-    if (hasReadApprovedRequestPermission) {
-      setSelectedCombinedRequest(requestData);
-      setCombinedModalOpen(true);
-    } else {
-      setSelectedDetailedRequest(requestData);
-      setDetailedViewModalOpen(true);
+    setLoadingRequestDetails(true);
+    try {
+      const full = await fetchFullRequest(requestData.id, 'details');
+      setSelectedRequest(full);
+      setModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load request details', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setLoadingRequestDetails(false);
     }
-  }, [hasReadApprovedRequestPermission]);
+  }, [canRead, fetchFullRequest]);
 
-  const handleEdit = React.useCallback((requestData) => {
+  const handleViewDetails = React.useCallback(async (requestData) => {
+    setLoadingRequestDetails(true);
+    try {
+      const includeFiles = hasReadApprovedRequestPermission ? 'details,invoice' : 'details';
+      const full = await fetchFullRequest(requestData.id, includeFiles);
+      if (hasReadApprovedRequestPermission) {
+        setSelectedCombinedRequest(full);
+        setCombinedModalOpen(true);
+      } else {
+        setSelectedDetailedRequest(full);
+        setDetailedViewModalOpen(true);
+      }
+    } catch (e) {
+      toast.error('Failed to load request details', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [hasReadApprovedRequestPermission, fetchFullRequest]);
+
+  const handleEdit = React.useCallback(async (requestData) => {
     if (!canUpdate) return;
-    
-    setEditingRequest(requestData);
-    
-    // Process request items - preserve all values from database exactly as they are
-    const processedItems = (requestData.requestItems || []).map(item => {
-      // Preserve all values exactly as they come from the database
-      return {
-        id: item.id, // Include the item ID to preserve it
-        temp_id: item.temp_id, // Preserve temp_id if it exists (for newly added items)
-        request_type_id: item.request_type_id,
-        width: item.width !== null && item.width !== undefined ? String(item.width) : '',
-        height: item.height !== null && item.height !== undefined ? String(item.height) : '',
-        price: item.price,
-        price_per_sqft: item.price_per_square_foot !== null && item.price_per_square_foot !== undefined 
-          ? String(item.price_per_square_foot) 
-          : ''
-      };
-    });
-    
-    // Store the dealer_id - it could be the dealer's code from SAP B1
-    // We'll use the dealer object's code if available, otherwise fall back to dealer_id
-    const dealerIdToStore = requestData.dealer?.code || requestData.dealer_id;
-    
-    setEditFormData({
-      dealer_id: dealerIdToStore,
-      request_items: processedItems,
-      warranty_status_id: requestData.warranty_status_id,
-      reason_for_replacement: requestData.reason_for_replacement || '',
-      last_installation_date: requestData.last_installation_date ? 
-        (() => {
-          const date = new Date(requestData.last_installation_date);
-          return isNaN(date.getTime()) ? '' : date.toISOString().split('T')[0];
-        })() : '',
-      total_cost: requestData.total_cost || '',
-    });
-    
-    // Load existing files
-    setExistingSitePhotos(requestData.site_photo_attachement || []);
-    setExistingOldBoardPhotos(requestData.old_board_photo_attachment || []);
-    
-    // Clear new file selections
-    setSitePhotos([]);
-    setOldBoardPhotos([]);
-    
-    setEditModalOpen(true);
-  }, [canUpdate]);
+    setLoadingRequestDetails(true);
+    try {
+      // Edit modal: includeFiles=edit (site_photo, old_board_photo, vendor_quotation only; no survey_form)
+      const full = await fetchFullRequest(requestData.id, 'edit');
+      setEditingRequest(full);
+
+      const processedItems = (full.requestItems || []).map(item => {
+        return {
+          id: item.id,
+          temp_id: item.temp_id,
+          request_type_id: item.request_type_id,
+          width: item.width !== null && item.width !== undefined ? String(item.width) : '',
+          height: item.height !== null && item.height !== undefined ? String(item.height) : '',
+          price: item.price,
+          price_per_sqft: item.price_per_square_foot !== null && item.price_per_square_foot !== undefined
+            ? String(item.price_per_square_foot)
+            : ''
+        };
+      });
+
+      const dealerIdToStore = full.dealer?.code || full.dealer_id;
+      setEditFormData({
+        dealer_id: dealerIdToStore,
+        request_items: processedItems,
+        warranty_status_id: full.warranty_status_id,
+        reason_for_replacement: full.reason_for_replacement || '',
+        last_installation_date: full.last_installation_date
+          ? (() => {
+              const date = new Date(full.last_installation_date);
+              return isNaN(date.getTime()) ? '' : date.toISOString().split('T')[0];
+            })()
+          : '',
+        total_cost: full.total_cost || '',
+      });
+
+      setExistingSitePhotos(full.site_photo_attachement || []);
+      setExistingOldBoardPhotos(full.old_board_photo_attachment || []);
+      setSitePhotos([]);
+      setOldBoardPhotos([]);
+      setEditModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load request details', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [canUpdate, fetchFullRequest]);
 
   const handleApprove = React.useCallback((requestData) => {
     if (!canApprove) return;
@@ -908,33 +985,74 @@ export default function AreaHeadRequests() {
     generatePDF(requestData);
   }, [canPrint]);
 
-  const handleManualApproval = React.useCallback((requestData) => {
+  const handleManualApproval = React.useCallback(async (requestData) => {
     if (!canManualApproval) return;
-    
-    setSelectedRequest(requestData);
-    setManualApprovalModalOpen(true);
-  }, [canManualApproval]);
-  
-  const handleViewManualApproval = React.useCallback((requestData) => {
-    if (!canRead) return;
-    
-    setSelectedManualApprovalRequest(requestData);
-    setViewManualApprovalModalOpen(true);
-  }, [canRead]);
-
-
-  const handleViewInvoice = React.useCallback((requestData) => {
-    if (!canRead) return;
-    
-    // If user has read_approved_request permission, use combined modal instead
-    if (hasReadApprovedRequestPermission) {
-      setSelectedCombinedRequest(requestData);
-      setCombinedModalOpen(true);
-    } else {
-      setSelectedInvoiceRequest(requestData);
-      setInvoiceModalOpen(true);
+    setLoadingRequestDetails(true);
+    try {
+      const full = await fetchFullRequest(requestData.id, 'manual_approval');
+      setSelectedRequest(full);
+      setManualApprovalModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load request details', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setLoadingRequestDetails(false);
     }
-  }, [canRead, hasReadApprovedRequestPermission]);
+  }, [canManualApproval, fetchFullRequest]);
+
+  const handleViewManualApproval = React.useCallback(async (requestData) => {
+    if (!canRead) return;
+    setLoadingRequestDetails(true);
+    try {
+      const full = await fetchFullRequest(requestData.id, 'manual_approval');
+      setSelectedManualApprovalRequest(full);
+      setViewManualApprovalModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load request details', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [canRead, fetchFullRequest]);
+
+  const handleViewInvoice = React.useCallback(async (requestData) => {
+    if (!canRead) return;
+    setLoadingRequestDetails(true);
+    try {
+      const includeFiles = hasReadApprovedRequestPermission ? 'details,invoice' : 'invoice';
+      const full = await fetchFullRequest(requestData.id, includeFiles);
+      if (hasReadApprovedRequestPermission) {
+        setSelectedCombinedRequest(full);
+        setCombinedModalOpen(true);
+      } else {
+        setSelectedInvoiceRequest(full);
+        setInvoiceModalOpen(true);
+      }
+    } catch (e) {
+      toast.error('Failed to load request details', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [canRead, hasReadApprovedRequestPermission, fetchFullRequest]);
 
   const handleOpenRejectInvoice = React.useCallback((requestData) => {
     if (!canApprovalAction) return;
@@ -2019,13 +2137,12 @@ export default function AreaHeadRequests() {
               <Box key={`${key}-${idx}`} sx={{ mb: 1 }}>
                 <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>{title}:</Typography>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {value.map((file, i) => (
-                    <Chip key={`${key}-${i}`} label={String(file).split('/').pop()} size="small" onClick={() => {
-                      const p = String(file);
-                      const url = p.startsWith('/') ? `${BASE_URL}${p}` : `${BASE_URL}/${p}`;
-                      window.open(url, '_blank');
-                    }} />
-                  ))}
+                  {value.map((file, i) => {
+                    const { url: u, fileName: fn } = getFileUrlAndName(file, i, `File ${i + 1}`);
+                    const openUrl = u.startsWith('data:') || u.startsWith('http') ? u : (u.startsWith('/') ? `${BASE_URL}${u}` : `${BASE_URL}/${u}`);
+                    return (
+                    <Chip key={`${key}-${i}`} label={fn} size="small" onClick={() => openFileInNewTab(openUrl)} sx={{ cursor: 'pointer' }} />
+                  );})}
                 </Box>
               </Box>
             );
@@ -2325,9 +2442,10 @@ export default function AreaHeadRequests() {
         }
       }
 
-      // Send existing files that weren't deleted (so backend knows what to keep)
-      formData.append('existing_site_photos', JSON.stringify(existingSitePhotos));
-      formData.append('existing_old_board_photos', JSON.stringify(existingOldBoardPhotos));
+      // Send existing files that weren't deleted (compact: fileName + mimeType only to avoid huge payload)
+      const compactExisting = (arr) => arr.map(f => typeof f === 'object' && f && (f.url != null || f.fileName != null) ? { fileName: f.fileName || 'file', mimeType: f.mimeType } : f);
+      formData.append('existing_site_photos', JSON.stringify(compactExisting(existingSitePhotos)));
+      formData.append('existing_old_board_photos', JSON.stringify(compactExisting(existingOldBoardPhotos)));
 
       // Add new uploaded files to FormData
       sitePhotos.forEach((file, index) => {
@@ -3207,10 +3325,6 @@ export default function AreaHeadRequests() {
                     <div class="field-label">Assigned Vendor:</div>
                     <div class="field-value" id="assigned-vendor">-</div>
                 </div>
-                <div class="field">
-                    <div class="field-label">Survey Date:</div>
-                    <div class="field-value" id="survey-date">-</div>
-                </div>
             </div>
         </div>
 
@@ -3324,11 +3438,9 @@ export default function AreaHeadRequests() {
             document.getElementById('last-installation-date').textContent = formatDate(data.last_installation_date || data.lastInstallationDate);
             document.getElementById('replacement-reason').textContent = cleanText(data.reason_for_replacement || data.reasonForReplacement || 'No reason provided');
 
-            // Populate vendor information
-            document.getElementById('assigned-vendor').textContent = cleanText(data.vendor?.name || data.vendorName || 'Not assigned');
-            
-            const surveyDate = data.survey_date || data.surveyDate;
-            document.getElementById('survey-date').textContent = formatDate(surveyDate) || new Date().toLocaleDateString('en-GB');
+            // Populate vendor information (match getVendorName: vendor.card_name, vendor_name)
+            const assignedVendor = data.vendor?.card_name || data.vendor_name || data.vendorName || data.vendor?.name;
+            document.getElementById('assigned-vendor').textContent = cleanText(assignedVendor || 'Not assigned');
 
             // Update generation date
             document.getElementById('generation-date').textContent = new Date().toLocaleDateString('en-GB');
@@ -3484,20 +3596,6 @@ export default function AreaHeadRequests() {
         valueFormatter: (value) => {
           if (!value) return 'Old';
           return value === 'new' ? 'New' : 'Old';
-        },
-      },
-      {
-        name: 'survey_date',
-        label: 'Survey Date',
-        type: 'text',
-        readOnly: true,
-        valueFormatter: () => {
-          const today = new Date();
-          return today.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-          });
         },
       },
       {
@@ -4141,8 +4239,8 @@ export default function AreaHeadRequests() {
             );
           }
           
-          // Show View Manual Approval button if manual approval data exists
-          if (canRead && (row.manual_approval_reason || row.manual_approval_form)) {
+          // Show View Manual Approval button if manual approval data exists (reason or file in DB)
+          if (canRead && (row.manual_approval_reason || row.has_manual_approval_file)) {
             actions.push(
               <GridActionsCellItem
                 key="viewManualApproval"
@@ -4155,32 +4253,17 @@ export default function AreaHeadRequests() {
           }
 
 
-          // Show invoice viewer if invoice data exists
-          // Hide for users with read_approved_request permission (they will use combined modal)
-          if (canRead && row.invoice && !hasReadApprovedRequestPermission) {
-            try {
-              const invoiceData = typeof row.invoice === 'string' ? JSON.parse(row.invoice) : row.invoice;
-              const hasInvoiceData = invoiceData && (
-                (invoiceData.invoice_files && invoiceData.invoice_files.length > 0) ||
-                (invoiceData.dealer_acknowledgment_files && invoiceData.dealer_acknowledgment_files.length > 0) ||
-                (invoiceData.site_photos && invoiceData.site_photos.length > 0) ||
-                (invoiceData.site_photos_by_item && Object.keys(invoiceData.site_photos_by_item).length > 0)
-              );
-              
-              if (hasInvoiceData) {
-                actions.push(
-                  <GridActionsCellItem
-                    key="viewInvoice"
-                    icon={<Tooltip title="View Invoice Documents"><InvoiceIcon /></Tooltip>}
-                    label="View Invoice"
-                    onClick={() => handleViewInvoice(row)}
-                    color="info"
-                  />
-                );
-              }
-            } catch (error) {
-              console.error('Error parsing invoice data:', error);
-            }
+          // Show invoice viewer if invoice files exist; hide for read_approved_request (they use combined modal)
+          if (canRead && row.has_invoice_files && !hasReadApprovedRequestPermission) {
+            actions.push(
+              <GridActionsCellItem
+                key="viewInvoice"
+                icon={<Tooltip title="View Invoice Documents"><InvoiceIcon /></Tooltip>}
+                label="View Invoice"
+                onClick={() => handleViewInvoice(row)}
+                color="info"
+              />
+            );
           }
 
           // Payment proof icon removed - now using row selection for bulk payment processing
@@ -4261,6 +4344,10 @@ export default function AreaHeadRequests() {
           {error}
         </Alert>
       )}
+
+      <Backdrop open={loadingRequestDetails} sx={{ color: '#fff', zIndex: (theme) => theme.zIndex.modal + 1 }}>
+        <CircularProgress color="inherit" />
+      </Backdrop>
 
       {/* Search Filters */}
       <ShopboardRequestFilters
@@ -4433,38 +4520,22 @@ export default function AreaHeadRequests() {
               <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold', color: '#1976d2' }}>
                 Survey Form Attachments
               </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                {selectedRequest.survey_form_attachments.map((file, index) => (
-                  <Box 
-                    key={index}
-                    sx={{
-                      p: 2,
-                      border: '1px solid #e0e0e0',
-                      borderRadius: 1,
-                      backgroundColor: '#f9f9f9',
-                      '&:hover': {
-                        backgroundColor: '#f0f0f0',
-                      }
-                    }}
-                  >
-                    <a 
-                      href={file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/survey_forms/${file}`} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      style={{ 
-                        color: '#1976d2', 
-                        textDecoration: 'none',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        fontWeight: '500'
-                      }}
-                    >
-                      <span style={{ fontSize: '18px' }}>📎</span>
-                      <span>{file}</span>
-                    </a>
-                  </Box>
-                ))}
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {selectedRequest.survey_form_attachments.map((file, index) => {
+                  const { url, fileName } = getFileUrlAndName(file, index, `Survey Form ${index + 1}`);
+                  const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/survey_forms/${url}`);
+                  return (
+                    <Chip
+                      key={index}
+                      label={fileName}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                      onClick={() => openFileInNewTab(fileUrl)}
+                      sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#e3f2fd' } }}
+                    />
+                  );
+                })}
               </Box>
             </Box>
           ) : null
@@ -5413,7 +5484,11 @@ export default function AreaHeadRequests() {
                   name="site_photo_attachement"
                   multiple
                   accept="image/*,application/pdf"
-                  onChange={(e) => setSitePhotos(Array.from(e.target.files))}
+                  onChange={(e) => {
+                        const newFiles = e.target.files ? Array.from(e.target.files) : [];
+                        setSitePhotos(prev => [...prev, ...newFiles]);
+                        e.target.value = '';
+                      }}
                   style={{ display: 'none' }}
                 />
                 <label htmlFor="site_photo_attachement">
@@ -5440,17 +5515,17 @@ export default function AreaHeadRequests() {
                     <Typography variant="body2" sx={{ color: '#666', mb: 1, fontWeight: 'bold' }}>
                       Existing files: {existingSitePhotos.length}
                     </Typography>
-                    {existingSitePhotos.map((file, index) => (
+                    {existingSitePhotos.map((file, index) => {
+                      const { url, fileName } = getFileUrlAndName(file, index, `Site Photo ${index + 1}`);
+                      const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/site_photos/${url}`);
+                      return (
                       <Chip
                         key={`existing-${index}`}
-                        label={file.split('/').pop()}
+                        label={fileName}
                         size="small"
                         color="primary"
                         variant="outlined"
-                        onClick={() => {
-                          const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/site_photos/${file}`;
-                          window.open(fileUrl, '_blank');
-                        }}
+                        onClick={() => openFileInNewTab(fileUrl)}
                         onDelete={() => {
                           const newFiles = existingSitePhotos.filter((_, i) => i !== index);
                           setExistingSitePhotos(newFiles);
@@ -5465,7 +5540,7 @@ export default function AreaHeadRequests() {
                           }
                         }}
                       />
-                    ))}
+                    );})}
                   </Box>
                 )}
                 
@@ -5502,7 +5577,11 @@ export default function AreaHeadRequests() {
                   name="old_board_photo_attachment"
                   multiple
                   accept="image/*,application/pdf"
-                  onChange={(e) => setOldBoardPhotos(Array.from(e.target.files))}
+                  onChange={(e) => {
+                        const newFiles = e.target.files ? Array.from(e.target.files) : [];
+                        setOldBoardPhotos(prev => [...prev, ...newFiles]);
+                        e.target.value = '';
+                      }}
                   style={{ display: 'none' }}
                 />
                 <label htmlFor="old_board_photo_attachment">
@@ -5529,17 +5608,17 @@ export default function AreaHeadRequests() {
                     <Typography variant="body2" sx={{ color: '#666', mb: 1, fontWeight: 'bold' }}>
                       Existing files: {existingOldBoardPhotos.length}
                     </Typography>
-                    {existingOldBoardPhotos.map((file, index) => (
+                    {existingOldBoardPhotos.map((file, index) => {
+                      const { url, fileName } = getFileUrlAndName(file, index, `Old Board Photo ${index + 1}`);
+                      const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/old_board_photos/${url}`);
+                      return (
                       <Chip
                         key={`existing-old-${index}`}
-                        label={file.split('/').pop()}
+                        label={fileName}
                         size="small"
                         color="primary"
                         variant="outlined"
-                        onClick={() => {
-                          const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/old_board_photos/${file}`;
-                          window.open(fileUrl, '_blank');
-                        }}
+                        onClick={() => openFileInNewTab(fileUrl)}
                         onDelete={() => {
                           const newFiles = existingOldBoardPhotos.filter((_, i) => i !== index);
                           setExistingOldBoardPhotos(newFiles);
@@ -5554,7 +5633,7 @@ export default function AreaHeadRequests() {
                           }
                         }}
                       />
-                    ))}
+                    );})}
                   </Box>
                 )}
                 
@@ -6133,26 +6212,21 @@ export default function AreaHeadRequests() {
                   </Typography>
                   {selectedDetailedRequest.site_photo_attachement && selectedDetailedRequest.site_photo_attachement.length > 0 ? (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {selectedDetailedRequest.site_photo_attachement.map((file, index) => (
-                        <Chip
-                          key={`site-${index}`}
-                          label={file.split('/').pop()}
-                          size="small"
-                          color="primary"
-                          variant="outlined"
-                          onClick={() => {
-                            const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/site_photos/${file}`;
-                            window.open(fileUrl, '_blank');
-                          }}
-                          sx={{ 
-                            cursor: 'pointer',
-                            '&:hover': {
-                              backgroundColor: '#e3f2fd',
-                              transform: 'scale(1.05)'
-                            }
-                          }}
-                        />
-                      ))}
+                      {selectedDetailedRequest.site_photo_attachement.map((file, index) => {
+                        const { url, fileName } = getFileUrlAndName(file, index, `Site Photo ${index + 1}`);
+                        const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/site_photos/${url}`);
+                        return (
+                          <Chip
+                            key={`site-${index}`}
+                            label={fileName}
+                            size="small"
+                            color="primary"
+                            variant="outlined"
+                            onClick={() => openFileInNewTab(fileUrl)}
+                            sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#e3f2fd' } }}
+                          />
+                        );
+                      })}
                     </Box>
                   ) : (
                     <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
@@ -6168,26 +6242,21 @@ export default function AreaHeadRequests() {
                   </Typography>
                   {selectedDetailedRequest.old_board_photo_attachment && selectedDetailedRequest.old_board_photo_attachment.length > 0 ? (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {selectedDetailedRequest.old_board_photo_attachment.map((file, index) => (
-                        <Chip
-                          key={`old-${index}`}
-                          label={file.split('/').pop()}
-                          size="small"
-                          color="secondary"
-                          variant="outlined"
-                          onClick={() => {
-                            const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/old_board_photos/${file}`;
-                            window.open(fileUrl, '_blank');
-                          }}
-                          sx={{ 
-                            cursor: 'pointer',
-                            '&:hover': {
-                              backgroundColor: '#f3e5f5',
-                              transform: 'scale(1.05)'
-                            }
-                          }}
-                        />
-                      ))}
+                      {selectedDetailedRequest.old_board_photo_attachment.map((file, index) => {
+                        const { url, fileName } = getFileUrlAndName(file, index, `Old Board Photo ${index + 1}`);
+                        const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/old_board_photos/${url}`);
+                        return (
+                          <Chip
+                            key={`old-${index}`}
+                            label={fileName}
+                            size="small"
+                            color="secondary"
+                            variant="outlined"
+                            onClick={() => openFileInNewTab(fileUrl)}
+                            sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#f3e5f5' } }}
+                          />
+                        );
+                      })}
                     </Box>
                   ) : (
                     <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
@@ -6203,26 +6272,21 @@ export default function AreaHeadRequests() {
                   </Typography>
                   {selectedDetailedRequest.survey_form_attachments && selectedDetailedRequest.survey_form_attachments.length > 0 ? (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {selectedDetailedRequest.survey_form_attachments.map((file, index) => (
-                        <Chip
-                          key={`survey-${index}`}
-                          label={file.split('/').pop()}
-                          size="small"
-                          color="success"
-                          variant="outlined"
-                          onClick={() => {
-                            const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/survey_forms/${file}`;
-                            window.open(fileUrl, '_blank');
-                          }}
-                          sx={{ 
-                            cursor: 'pointer',
-                            '&:hover': {
-                              backgroundColor: '#e8f5e8',
-                              transform: 'scale(1.05)'
-                            }
-                          }}
-                        />
-                      ))}
+                      {selectedDetailedRequest.survey_form_attachments.map((file, index) => {
+                        const { url, fileName } = getFileUrlAndName(file, index, `Survey Form ${index + 1}`);
+                        const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/survey_forms/${url}`);
+                        return (
+                          <Chip
+                            key={`survey-${index}`}
+                            label={fileName}
+                            size="small"
+                            color="success"
+                            variant="outlined"
+                            onClick={() => openFileInNewTab(fileUrl)}
+                            sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#e8f5e8' } }}
+                          />
+                        );
+                      })}
                     </Box>
                   ) : (
                     <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
@@ -6277,16 +6341,6 @@ export default function AreaHeadRequests() {
                     </Typography>
                     <Typography variant="body1" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
                       {selectedDetailedRequest.total_cost ? `₨${parseFloat(selectedDetailedRequest.total_cost).toFixed(2)}` : 'N/A'}
-                    </Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
-                      Survey Date
-                    </Typography>
-                    <Typography variant="body1">
-                      {selectedDetailedRequest.survey_date ? 
-                        new Date(selectedDetailedRequest.survey_date).toLocaleDateString() : 
-                        new Date().toLocaleDateString()}
                     </Typography>
                   </Box>
                   <Box>
@@ -6490,93 +6544,32 @@ export default function AreaHeadRequests() {
                 </Typography>
               </Paper>
 
-              {/* Manual Approval Form/File */}
-              {selectedManualApprovalRequest.manual_approval_form && (
+              {/* Manual Approval File from DB (manual_approval_files) */}
+              {selectedManualApprovalRequest.manual_approval_files?.length > 0 && (
                 <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
                   <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: '#ff9800' }}>
                     Uploaded File
                   </Typography>
-                  {(() => {
-                    try {
-                      const formData = typeof selectedManualApprovalRequest.manual_approval_form === 'string' 
-                        ? JSON.parse(selectedManualApprovalRequest.manual_approval_form) 
-                        : selectedManualApprovalRequest.manual_approval_form;
-                      
-                      // Construct file URL - check if path exists, otherwise construct from filename
-                      const getFileUrl = () => {
-                        if (formData.path) {
-                          return formData.path.startsWith('/uploads/') 
-                            ? `${BASE_URL}${formData.path}` 
-                            : `${BASE_URL}/uploads/${formData.path}`;
-                        } else if (formData.filename) {
-                          // Try to construct path from filename - manual approval files are in manual_approvals folder
-                          return `${BASE_URL}/uploads/manual_approvals/${formData.filename}`;
-                        }
-                        return null;
-                      };
-
-                      const fileUrl = getFileUrl();
-                      
-                      return (
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#666' }}>
-                              File Name:
-                            </Typography>
-                            <Typography variant="body2">
-                              {formData.filename || 'N/A'}
-                            </Typography>
-                          </Box>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#666' }}>
-                              File Size:
-                            </Typography>
-                            <Typography variant="body2">
-                              {formData.size ? `${(formData.size / 1024).toFixed(2)} KB` : 'N/A'}
-                            </Typography>
-                          </Box>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#666' }}>
-                              File Type:
-                            </Typography>
-                            <Typography variant="body2">
-                              {formData.type || 'N/A'}
-                            </Typography>
-                          </Box>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#666' }}>
-                              Uploaded At:
-                            </Typography>
-                            <Typography variant="body2">
-                              {formData.uploadedAt 
-                                ? new Date(formData.uploadedAt).toLocaleString() 
-                                : 'N/A'}
-                            </Typography>
-                          </Box>
-                          {fileUrl && (
-                            <Box sx={{ mt: 2 }}>
-                              <Button
-                                variant="contained"
-                                color="primary"
-                                startIcon={<VisibilityIcon />}
-                                onClick={() => window.open(fileUrl, '_blank')}
-                                sx={{ minWidth: '150px' }}
-                              >
-                                View File
-                              </Button>
-                            </Box>
-                          )}
-                        </Box>
-                      );
-                    } catch (error) {
-                      console.error('Error parsing manual approval form:', error);
-                      return (
-                        <Typography variant="body2" color="error">
-                          Error displaying file data
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {selectedManualApprovalRequest.manual_approval_files.map((file, idx) => (
+                      <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                        <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#666' }}>
+                          File:
                         </Typography>
-                      );
-                    }
-                  })()}
+                        <Typography variant="body2">{file.fileName || 'N/A'}</Typography>
+                        <Button
+                          variant="contained"
+                          color="primary"
+                          size="small"
+                          startIcon={<VisibilityIcon />}
+                          onClick={() => openFileInNewTab(file.url)}
+                          sx={{ ml: 1 }}
+                        >
+                          View File
+                        </Button>
+                      </Box>
+                    ))}
+                  </Box>
                 </Paper>
               )}
             </Box>
@@ -6609,6 +6602,9 @@ export default function AreaHeadRequests() {
         requestItems={selectedInvoiceRequest?.requestItems}
         invoiceNumber={selectedInvoiceRequest?.invoice_number}
         invoiceDate={selectedInvoiceRequest?.invoice_date}
+        invoice_files_data={selectedInvoiceRequest?.invoice_files_data}
+        dealer_acknowledgment_files_data={selectedInvoiceRequest?.dealer_acknowledgment_files_data}
+        invoice_site_photos_by_item_data={selectedInvoiceRequest?.invoice_site_photos_by_item_data}
       />
 
       {/* Combined Request Details & Invoice Modal (for read_approved_request users) */}

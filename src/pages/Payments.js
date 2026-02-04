@@ -10,6 +10,8 @@ import {
   Button,
   Tooltip,
   Box,
+  Backdrop,
+  CircularProgress,
 } from '@mui/material';
 import {
   Description as RequestIcon,
@@ -40,6 +42,31 @@ import {
 import { useApi } from '../hooks/useApi';
 
 const INITIAL_PAGE_SIZE = 10;
+
+function getFileUrlAndName(item, index, fallbackLabel) {
+  if (item == null) return { url: '', fileName: fallbackLabel };
+  if (typeof item === 'object' && item.url != null) return { url: item.url, fileName: item.fileName || fallbackLabel };
+  const str = typeof item === 'string' ? item : '';
+  return { url: str, fileName: str.startsWith('data:') ? fallbackLabel : str.split('/').pop() || fallbackLabel };
+}
+
+// Open file in new tab; for data URLs use blob URL so image/PDF loads reliably
+async function openFileInNewTab(url) {
+  if (!url) return;
+  if (url.startsWith('data:')) {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch {
+      window.open(url, '_blank');
+    }
+  } else {
+    window.open(url, '_blank');
+  }
+}
 
 // Custom toolbar with only columns button
 function CustomToolbar() {
@@ -127,6 +154,9 @@ export default function Payments() {
   // Invoice viewer modal state
   const [invoiceModalOpen, setInvoiceModalOpen] = React.useState(false);
   const [selectedInvoiceRequest, setSelectedInvoiceRequest] = React.useState(null);
+
+  // Loading full request details when opening view/details/invoice modals
+  const [loadingRequestDetails, setLoadingRequestDetails] = React.useState(false);
   
   // History state for viewing request history
   const [historyDialogOpen, setHistoryDialogOpen] = React.useState(false);
@@ -310,30 +340,81 @@ export default function Payments() {
     }
   }, [paginationModel, get, canRead, filters]);
 
+  // Fetch full request by ID. includeFiles: 'details' | 'invoice' loads only those file sets.
+  const fetchFullRequest = React.useCallback(async (id, includeFiles) => {
+    const url = includeFiles ? `/api/shopboard-requests/${id}?includeFiles=${encodeURIComponent(includeFiles)}` : `/api/shopboard-requests/${id}`;
+    const res = await get(url);
+    if (res?.success && res?.data) return res.data;
+    throw new Error('Failed to load request details');
+  }, [get]);
+
   // Load data when component mounts or pagination/filters change
   React.useEffect(() => {
     loadRequests();
   }, [loadRequests]);
 
-  // Action handlers
-  const handleView = React.useCallback((requestData) => {
+  // Action handlers - fetch full request with only the file set needed for each modal
+  const handleView = React.useCallback(async (requestData) => {
     if (!canRead) return;
-    
-    setSelectedRequest(requestData);
-    setModalOpen(true);
-  }, [canRead]);
+    setLoadingRequestDetails(true);
+    try {
+      const full = await fetchFullRequest(requestData.id, 'details');
+      setSelectedRequest(full);
+      setModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load request details', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [canRead, fetchFullRequest]);
 
-  const handleViewDetails = React.useCallback((requestData) => {
-    setSelectedDetailedRequest(requestData);
-    setDetailedViewModalOpen(true);
-  }, []);
+  const handleViewDetails = React.useCallback(async (requestData) => {
+    setLoadingRequestDetails(true);
+    try {
+      const full = await fetchFullRequest(requestData.id, 'details');
+      setSelectedDetailedRequest(full);
+      setDetailedViewModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load request details', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [fetchFullRequest]);
 
-  const handleViewInvoice = React.useCallback((requestData) => {
+  const handleViewInvoice = React.useCallback(async (requestData) => {
     if (!canRead) return;
-    
-    setSelectedInvoiceRequest(requestData);
-    setInvoiceModalOpen(true);
-  }, [canRead]);
+    setLoadingRequestDetails(true);
+    try {
+      const full = await fetchFullRequest(requestData.id, 'invoice');
+      setSelectedInvoiceRequest(full);
+      setInvoiceModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load request details', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [canRead, fetchFullRequest]);
 
   const handleViewHistory = React.useCallback((requestData) => {
     if (!canRead) return;
@@ -1241,31 +1322,17 @@ export default function Payments() {
             />
           );
 
-          // Show invoice viewer if invoice data exists
-          if (row.invoice) {
-            try {
-              const invoiceData = typeof row.invoice === 'string' ? JSON.parse(row.invoice) : row.invoice;
-              const hasInvoiceData = invoiceData && (
-                (invoiceData.invoice_files && invoiceData.invoice_files.length > 0) ||
-                (invoiceData.dealer_acknowledgment_files && invoiceData.dealer_acknowledgment_files.length > 0) ||
-                (invoiceData.site_photos && invoiceData.site_photos.length > 0) ||
-                (invoiceData.site_photos_by_item && Object.keys(invoiceData.site_photos_by_item).length > 0)
-              );
-              
-              if (hasInvoiceData) {
-                actions.push(
-                  <GridActionsCellItem
-                    key="viewInvoice"
-                    icon={<Tooltip title="View Invoice Documents"><InvoiceIcon /></Tooltip>}
-                    label="View Invoice"
-                    onClick={() => handleViewInvoice(row)}
-                    color="info"
-                  />
-                );
-              }
-            } catch (error) {
-              console.error('Error parsing invoice data:', error);
-            }
+          // Show invoice viewer if invoice files exist (from shopboard_request_files)
+          if (row.has_invoice_files) {
+            actions.push(
+              <GridActionsCellItem
+                key="viewInvoice"
+                icon={<Tooltip title="View Invoice Documents"><InvoiceIcon /></Tooltip>}
+                label="View Invoice"
+                onClick={() => handleViewInvoice(row)}
+                color="info"
+              />
+            );
           }
 
           // Show old purchases action for all requests (dealer history)
@@ -1350,6 +1417,10 @@ export default function Payments() {
           {error}
         </Alert>
       )}
+
+      <Backdrop open={loadingRequestDetails} sx={{ color: '#fff', zIndex: (theme) => theme.zIndex.modal + 1 }}>
+        <CircularProgress color="inherit" />
+      </Backdrop>
 
       {/* Filters - same as AreaHeadRequests */}
       <ShopboardRequestFilters
@@ -1454,38 +1525,23 @@ export default function Payments() {
               <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold', color: '#1976d2' }}>
                 Survey Form Attachments
               </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                {selectedRequest.survey_form_attachments.map((file, index) => (
-                  <Box 
-                    key={index}
-                    sx={{
-                      p: 2,
-                      border: '1px solid #e0e0e0',
-                      borderRadius: 1,
-                      backgroundColor: '#f9f9f9',
-                      '&:hover': {
-                        backgroundColor: '#f0f0f0',
-                      }
-                    }}
-                  >
-                    <a 
-                      href={file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/survey_forms/${file}`} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      style={{ 
-                        color: '#1976d2', 
-                        textDecoration: 'none',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        fontWeight: '500'
-                      }}
-                    >
-                      <span style={{ fontSize: '18px' }}>📎</span>
-                      <span>{file}</span>
-                    </a>
-                  </Box>
-                ))}
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {selectedRequest.survey_form_attachments.map((file, index) => {
+                  const { url, fileName } = getFileUrlAndName(file, index, `Survey Form ${index + 1}`);
+                  const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/survey_forms/${url}`);
+                  const handleClick = () => (url.startsWith('data:') ? openFileInNewTab(fileUrl) : window.open(fileUrl, '_blank'));
+                  return (
+                    <Chip
+                      key={index}
+                      label={fileName}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                      onClick={handleClick}
+                      sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#e3f2fd' } }}
+                    />
+                  );
+                })}
               </Box>
             </Box>
           ) : null
@@ -1649,6 +1705,103 @@ export default function Payments() {
                 )}
               </Box>
 
+              {/* Attachments - Site Photos, Old Board Photos, Survey Forms */}
+              <Box sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa', border: '1px solid #e0e0e0' }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                  📎 Attachments
+                </Typography>
+
+                {/* Site Photos */}
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                    Site Photos
+                  </Typography>
+                  {selectedDetailedRequest.site_photo_attachement && selectedDetailedRequest.site_photo_attachement.length > 0 ? (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {selectedDetailedRequest.site_photo_attachement.map((file, index) => {
+                        const { url, fileName } = getFileUrlAndName(file, index, `Site Photo ${index + 1}`);
+                        const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/site_photos/${url}`);
+                        return (
+                          <Chip
+                            key={`site-${index}`}
+                            label={fileName}
+                            size="small"
+                            color="primary"
+                            variant="outlined"
+                            onClick={() => openFileInNewTab(fileUrl)}
+                            sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#e3f2fd' } }}
+                          />
+                        );
+                      })}
+                    </Box>
+                  ) : (
+                    <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
+                      No site photos uploaded
+                    </Typography>
+                  )}
+                </Box>
+
+                {/* Old Board Photos */}
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                    Old Board Photos
+                  </Typography>
+                  {selectedDetailedRequest.old_board_photo_attachment && selectedDetailedRequest.old_board_photo_attachment.length > 0 ? (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {selectedDetailedRequest.old_board_photo_attachment.map((file, index) => {
+                        const { url, fileName } = getFileUrlAndName(file, index, `Old Board Photo ${index + 1}`);
+                        const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/old_board_photos/${url}`);
+                        return (
+                          <Chip
+                            key={`old-${index}`}
+                            label={fileName}
+                            size="small"
+                            color="secondary"
+                            variant="outlined"
+                            onClick={() => openFileInNewTab(fileUrl)}
+                            sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#f3e5f5' } }}
+                          />
+                        );
+                      })}
+                    </Box>
+                  ) : (
+                    <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
+                      No old board photos uploaded
+                    </Typography>
+                  )}
+                </Box>
+
+                {/* Survey Forms */}
+                <Box>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                    Survey Forms
+                  </Typography>
+                  {selectedDetailedRequest.survey_form_attachments && selectedDetailedRequest.survey_form_attachments.length > 0 ? (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {selectedDetailedRequest.survey_form_attachments.map((file, index) => {
+                        const { url, fileName } = getFileUrlAndName(file, index, `Survey Form ${index + 1}`);
+                        const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/survey_forms/${url}`);
+                        return (
+                          <Chip
+                            key={`survey-${index}`}
+                            label={fileName}
+                            size="small"
+                            color="success"
+                            variant="outlined"
+                            onClick={() => openFileInNewTab(fileUrl)}
+                            sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#e8f5e8' } }}
+                          />
+                        );
+                      })}
+                    </Box>
+                  ) : (
+                    <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
+                      No survey forms uploaded
+                    </Typography>
+                  )}
+                </Box>
+              </Box>
+
               {/* Status & Vendor Info */}
               <Box sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa', border: '1px solid #e0e0e0' }}>
                 <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
@@ -1723,6 +1876,11 @@ export default function Payments() {
         invoiceData={selectedInvoiceRequest?.invoice}
         requestId={selectedInvoiceRequest?.id}
         requestItems={selectedInvoiceRequest?.requestItems}
+        invoiceNumber={selectedInvoiceRequest?.invoice_number}
+        invoiceDate={selectedInvoiceRequest?.invoice_date}
+        invoice_files_data={selectedInvoiceRequest?.invoice_files_data}
+        dealer_acknowledgment_files_data={selectedInvoiceRequest?.dealer_acknowledgment_files_data}
+        invoice_site_photos_by_item_data={selectedInvoiceRequest?.invoice_site_photos_by_item_data}
       />
 
       {/* View History Dialog */}

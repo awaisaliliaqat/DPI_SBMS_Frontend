@@ -6,6 +6,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import GetAppIcon from '@mui/icons-material/GetApp';
 import { BASE_URL } from '../constants/Constants';
 
 export default function RequestPrintView() {
@@ -77,6 +78,61 @@ export default function RequestPrintView() {
 
     fetchRequest();
   }, [id, token]);
+
+  // Open file in new tab (must be before any early return - hooks rule)
+  const openFileInNewTab = React.useCallback(async (url) => {
+    if (!url) return;
+    if (url.startsWith('data:')) {
+      try {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank');
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      } catch (e) {
+        console.error('Failed to open data URL:', e);
+        window.open(url, '_blank');
+      }
+      return;
+    }
+    window.open(url, '_blank');
+  }, []);
+
+  // Download file (mobile-friendly: saves to device instead of opening in same tab)
+  const downloadFile = React.useCallback(async (url, fileName) => {
+    if (!url) return;
+    const safeName = (fileName || 'document').replace(/[^\w.\-() ]/g, '_');
+    const hasExtension = /\.[a-z0-9]+$/i.test(safeName);
+    const ext = hasExtension ? '' : (url.toLowerCase().includes('pdf') || (url.startsWith('data:') && url.includes('pdf')) ? '.pdf' : '.bin');
+    const downloadName = hasExtension ? safeName : `${safeName}${ext}`;
+    if (url.startsWith('data:')) {
+      try {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = downloadName;
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+      } catch (e) {
+        console.error('Failed to download:', e);
+        openFileInNewTab(url);
+      }
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = downloadName;
+    a.rel = 'noopener';
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }, [openFileInNewTab]);
 
   const cleanText = (text) => {
     if (!text) return 'N/A';
@@ -218,167 +274,104 @@ export default function RequestPrintView() {
 
   const normalizeUrl = (url) => {
     if (!url) return '';
-    
-    // If already a full URL, return as is
-    if (url.startsWith('http://') || url.startsWith('https://')) return url;
-    
-    // Handle different path formats
+    if (url.startsWith('data:') || url.startsWith('http://') || url.startsWith('https://')) return url;
     let path = String(url).trim();
-    
-    // If it's just a filename (no slashes), assume it's in uploads directory
     if (!path.includes('/') && !path.includes('\\')) {
-      // Try to determine which subdirectory based on filename pattern
-      if (path.includes('site_photo')) {
-        path = `uploads/site_photos/${path}`;
-      } else if (path.includes('old_board')) {
-        path = `uploads/old_board_photos/${path}`;
-      } else {
-        path = `uploads/${path}`;
-      }
+      if (path.includes('site_photo')) path = `uploads/site_photos/${path}`;
+      else if (path.includes('old_board')) path = `uploads/old_board_photos/${path}`;
+      else path = `uploads/${path}`;
     }
-    
-    // If path already starts with uploads/, ensure it has leading slash
-    if (path.startsWith('uploads/') && !path.startsWith('/uploads/')) {
-      path = `/${path}`;
+    if (!path.startsWith('/')) {
+      if (path.startsWith('uploads/')) path = `/${path}`;
+      else path = `/${path.startsWith('uploads/') ? path : 'uploads/' + path}`;
     }
-    
-    // If path doesn't start with /uploads/, add it
-    if (!path.startsWith('/uploads/')) {
-      // Remove leading slash if present
-      if (path.startsWith('/')) {
-        path = path.slice(1);
-      }
-      // Add /uploads/ prefix if not already there
-      if (!path.startsWith('uploads/')) {
-        path = `uploads/${path}`;
-      }
-      path = `/${path}`;
-    }
-    
-    // Ensure BASE_URL doesn't have trailing slash
     const baseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
-    
-    const fullUrl = `${baseUrl}${path}`;
-    
-    // Debug logging (remove in production)
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Normalized URL:', { original: url, normalized: fullUrl });
-    }
-    
-    return fullUrl;
+    return `${baseUrl}${path}`;
   };
 
-  // Process arrays - handle both string arrays and already processed arrays
-  const processImageArray = (arr, type = 'unknown') => {
-    if (!arr || !Array.isArray(arr)) {
-      console.log(`[${type}] No array or empty:`, arr);
-      return [];
-    }
-    const processed = arr
-      .filter(item => item) // Remove null/undefined
-      .map(item => {
-        // If item is already a string, normalize it
+  // Normalize to array of { url, fileName } (API returns this from DB; legacy may be string or { path/url })
+  const processFileArray = (arr, type = 'unknown') => {
+    if (!arr || !Array.isArray(arr)) return [];
+    return arr
+      .filter(item => item)
+      .map((item, idx) => {
         if (typeof item === 'string') {
-          const normalized = normalizeUrl(item);
-          console.log(`[${type}] Original:`, item, '→ Normalized:', normalized);
-          return normalized;
+          const url = item.startsWith('data:') ? item : normalizeUrl(item);
+          const fileName = item.startsWith('data:') ? `File ${idx + 1}` : (item.split(/[/\\]/).pop() || `File ${idx + 1}`);
+          return { url, fileName };
         }
-        // If it's an object with a path/url property, use that
-        if (item && typeof item === 'object' && (item.path || item.url)) {
-          const normalized = normalizeUrl(item.path || item.url);
-          console.log(`[${type}] Object item:`, item, '→ Normalized:', normalized);
-          return normalized;
+        if (item && typeof item === 'object' && (item.url != null || item.path != null)) {
+          const raw = item.url ?? item.path;
+          const url = typeof raw === 'string' && !raw.startsWith('data:') && !raw.startsWith('http') ? normalizeUrl(raw) : raw;
+          const fileName = item.fileName || (typeof raw === 'string' ? raw.split(/[/\\]/).pop() : null) || `File ${idx + 1}`;
+          return { url, fileName };
         }
-        console.warn(`[${type}] Unhandled item type:`, item);
-        return '';
+        return null;
       })
-      .filter(url => url); // Remove empty strings
-    
-    console.log(`[${type}] Final processed URLs (${processed.length} items):`, processed);
-    return processed;
+      .filter(Boolean);
   };
 
-  console.log('=== Image URL Processing ===');
-  console.log('BASE_URL:', BASE_URL);
-  console.log('Raw site_photo_attachement:', requestData.site_photo_attachement);
-  console.log('Raw old_board_photo_attachment:', requestData.old_board_photo_attachment);
-  
-  const sitePhotos = processImageArray(requestData.site_photo_attachement, 'site_photos');
-  const oldBoardPhotos = processImageArray(requestData.old_board_photo_attachment, 'old_board_photos');
-  const surveyForms = processImageArray(requestData.survey_form_attachments, 'survey_forms');
-  
-  console.log('=== Final Image Arrays ===');
-  console.log('Site Photos URLs:', sitePhotos);
-  console.log('Old Board Photos URLs:', oldBoardPhotos);
-  console.log('Survey Forms URLs:', surveyForms);
+  const sitePhotos = processFileArray(requestData.site_photo_attachement, 'site_photos');
+  const oldBoardPhotos = processFileArray(requestData.old_board_photo_attachment, 'old_board_photos');
+  const surveyForms = processFileArray(requestData.survey_form_attachments, 'survey_forms');
 
-  // Helper to check if file is an image
-  const isImageFile = (url) => {
+  const isImageFile = (urlOrItem) => {
+    const url = typeof urlOrItem === 'string' ? urlOrItem : (urlOrItem?.url || '');
     if (!url) return false;
-    const lowerUrl = url.toLowerCase();
-    return /\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(lowerUrl);
+    if (url.startsWith('data:')) {
+      const m = url.match(/^data:([^;]+);/);
+      return m && (m[1] || '').toLowerCase().startsWith('image/');
+    }
+    return /\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(url.toLowerCase());
   };
 
-  // Helper to get file type label
-  const getFileTypeLabel = (url) => {
+  const getFileTypeLabel = (urlOrItem) => {
+    const url = typeof urlOrItem === 'string' ? urlOrItem : (urlOrItem?.url || '');
     if (!url) return 'File';
-    const lowerUrl = url.toLowerCase();
-    if (/\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(lowerUrl)) return 'Image';
-    if (/\.(pdf)$/i.test(lowerUrl)) return 'PDF';
-    if (/\.(doc|docx)$/i.test(lowerUrl)) return 'Document';
+    if (url.startsWith('data:')) {
+      const m = url.match(/^data:([^/]+)\//);
+      if (m && (m[1] || '').toLowerCase().startsWith('image')) return 'Image';
+      if (m && (m[1] || '').toLowerCase().includes('pdf')) return 'PDF';
+      return 'File';
+    }
+    const lower = url.toLowerCase();
+    if (/\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(lower)) return 'Image';
+    if (/\.(pdf)$/i.test(lower)) return 'PDF';
+    if (/\.(doc|docx)$/i.test(lower)) return 'Document';
     return 'File';
   };
 
   const openGallery = (type, index = 0) => {
     let items = [];
-    if (type === 'old') {
-      items = oldBoardPhotos;
-    } else if (type === 'survey') {
-      items = surveyForms;
-    } else {
-      items = sitePhotos;
-    }
-    
+    if (type === 'old') items = oldBoardPhotos;
+    else if (type === 'survey') items = surveyForms;
+    else items = sitePhotos;
     if (!items || items.length === 0) return;
-    
-    // Check if the clicked item is an image
-    const clickedItem = items[index];
-    if (clickedItem && !isImageFile(clickedItem)) {
-      // If clicked item is not an image, open in new tab
-      window.open(clickedItem, '_blank');
+    const clicked = items[index];
+    const clickedUrl = clicked?.url;
+    if (clickedUrl && !isImageFile(clickedUrl)) {
+      openFileInNewTab(clickedUrl);
       return;
     }
-    
-    // Filter to only show images in gallery (non-images will open in new tab)
-    const imageItems = items.filter(item => isImageFile(item));
+    const imageItems = items.filter(item => isImageFile(item.url));
     if (imageItems.length === 0) {
-      // If no images, open first item in new tab
-      if (items[0]) {
-        window.open(items[0], '_blank');
-      }
+      if (items[0]?.url) openFileInNewTab(items[0].url);
       return;
     }
-    
-    // Find the index in the filtered image array
     const imageIndex = imageItems.findIndex(item => item === items[index]);
-    
     setGalleryType(type);
     setGalleryIndex(imageIndex >= 0 ? imageIndex : 0);
     setGalleryOpen(true);
   };
 
-  const closeGallery = () => {
-    setGalleryOpen(false);
-  };
+  const closeGallery = () => setGalleryOpen(false);
 
   const getCurrentGalleryItems = () => {
-    if (galleryType === 'old') {
-      return oldBoardPhotos.filter(item => isImageFile(item));
-    } else if (galleryType === 'survey') {
-      return surveyForms.filter(item => isImageFile(item));
-    } else {
-      return sitePhotos.filter(item => isImageFile(item));
-    }
+    let items = [];
+    if (galleryType === 'old') items = oldBoardPhotos;
+    else if (galleryType === 'survey') items = surveyForms;
+    else items = sitePhotos;
+    return items.filter(item => isImageFile(item.url)).map(item => item.url);
   };
 
   const currentGalleryItems = getCurrentGalleryItems();
@@ -944,21 +937,13 @@ export default function RequestPrintView() {
         >
           Request Status & Vendor Information
         </Typography>
-        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 2 }}>
           <Box>
             <Typography variant="caption" sx={{ fontSize: '9.5px', fontWeight: 'bold', color: '#555', mb: 0.25 }}>
               Assigned Vendor:
             </Typography>
             <Typography variant="body2" sx={{ fontSize: '10.5px', color: '#333', pb: 0.25, borderBottom: '0.5px solid #ddd' }}>
               {cleanText(requestData.vendor?.card_name || requestData.vendor_name || requestData.vendor?.name || 'Not assigned')}
-            </Typography>
-          </Box>
-          <Box>
-            <Typography variant="caption" sx={{ fontSize: '9.5px', fontWeight: 'bold', color: '#555', mb: 0.25 }}>
-              Survey Date:
-            </Typography>
-            <Typography variant="body2" sx={{ fontSize: '10.5px', color: '#333', pb: 0.25, borderBottom: '0.5px solid #ddd' }}>
-              {formatDate(requestData.survey_date) || formatDate(new Date())}
             </Typography>
           </Box>
         </Box>
@@ -1069,12 +1054,11 @@ export default function RequestPrintView() {
             startIcon={<VisibilityIcon />}
             onClick={() => {
               if (sitePhotos.length > 0) {
-                const firstImageIndex = sitePhotos.findIndex(item => isImageFile(item));
+                const firstImageIndex = sitePhotos.findIndex(item => isImageFile(item.url));
                 if (firstImageIndex >= 0) {
                   openGallery('site', firstImageIndex);
                 } else {
-                  // If no images, open first file in new tab
-                  window.open(sitePhotos[0], '_blank');
+                  openFileInNewTab(sitePhotos[0].url);
                 }
               }
             }}
@@ -1099,12 +1083,11 @@ export default function RequestPrintView() {
             startIcon={<VisibilityIcon />}
             onClick={() => {
               if (surveyForms.length > 0) {
-                const firstImageIndex = surveyForms.findIndex(item => isImageFile(item));
+                const firstImageIndex = surveyForms.findIndex(item => isImageFile(item.url));
                 if (firstImageIndex >= 0) {
                   openGallery('survey', firstImageIndex);
                 } else {
-                  // If no images, open first file in new tab
-                  window.open(surveyForms[0], '_blank');
+                  openFileInNewTab(surveyForms[0].url);
                 }
               }
             }}
@@ -1129,12 +1112,11 @@ export default function RequestPrintView() {
             startIcon={<VisibilityIcon />}
             onClick={() => {
               if (oldBoardPhotos.length > 0) {
-                const firstImageIndex = oldBoardPhotos.findIndex(item => isImageFile(item));
+                const firstImageIndex = oldBoardPhotos.findIndex(item => isImageFile(item.url));
                 if (firstImageIndex >= 0) {
                   openGallery('old', firstImageIndex);
                 } else {
-                  // If no images, open first file in new tab
-                  window.open(oldBoardPhotos[0], '_blank');
+                  openFileInNewTab(oldBoardPhotos[0].url);
                 }
               }
             }}
@@ -1154,75 +1136,138 @@ export default function RequestPrintView() {
           </Button>
         </Box>
 
-        {/* File List with Individual Links for Non-Images */}
+        {/* File List with Individual Links – Open in new tab + Download (mobile-friendly) */}
         {(sitePhotos.length > 0 || surveyForms.length > 0 || oldBoardPhotos.length > 0) && (
           <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #e0e0e0' }}>
             <Typography variant="caption" sx={{ fontSize: '10px', fontWeight: 'bold', color: '#666', mb: 0.5, display: 'block' }}>
-              Individual Files (Click to open in new tab):
+              Individual files – tap to open in new tab or use ↓ to download:
             </Typography>
             <Typography variant="caption" sx={{ fontSize: '9px', color: '#999', mb: 1, display: 'block', fontStyle: 'italic' }}>
               All files belong to: {requestData.dealer?.name || 'N/A'} ({requestData.dealer?.code || 'N/A'})
             </Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
               {sitePhotos.map((file, idx) => (
-                <Button
+                <Box
                   key={`site-file-${idx}`}
-                  size="small"
-                  variant="outlined"
-                  onClick={() => window.open(file, '_blank')}
                   sx={{
-                    justifyContent: 'flex-start',
-                    textTransform: 'none',
-                    fontSize: '11px',
-                    py: 0.5,
-                    px: 1,
-                    borderColor: '#1976d2',
-                    color: '#1976d2',
-                    '&:hover': { borderColor: '#1565c0', backgroundColor: '#e3f2fd' },
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 0.5,
+                    border: '1px solid #1976d2',
+                    borderRadius: 1,
+                    overflow: 'hidden',
+                    '&:hover': { backgroundColor: '#e3f2fd' },
                   }}
                 >
-                  📷 Site Photo {idx + 1} ({getFileTypeLabel(file)})
-                </Button>
+                  <Button
+                    size="small"
+                    variant="text"
+                    onClick={() => openFileInNewTab(file.url)}
+                    sx={{
+                      flex: 1,
+                      justifyContent: 'flex-start',
+                      textTransform: 'none',
+                      fontSize: '11px',
+                      py: 0.75,
+                      px: 1,
+                      color: '#1976d2',
+                      minWidth: 0,
+                    }}
+                  >
+                    📷 Site Photo {idx + 1} ({file.fileName || getFileTypeLabel(file.url)})
+                  </Button>
+                  <IconButton
+                    size="small"
+                    onClick={() => downloadFile(file.url, file.fileName || `site-photo-${idx + 1}`)}
+                    sx={{ color: '#1976d2', mr: 0.25 }}
+                    title="Download"
+                    aria-label="Download file"
+                  >
+                    <GetAppIcon fontSize="small" />
+                  </IconButton>
+                </Box>
               ))}
               {surveyForms.map((file, idx) => (
-                <Button
+                <Box
                   key={`survey-file-${idx}`}
-                  size="small"
-                  variant="outlined"
-                  onClick={() => window.open(file, '_blank')}
                   sx={{
-                    justifyContent: 'flex-start',
-                    textTransform: 'none',
-                    fontSize: '11px',
-                    py: 0.5,
-                    px: 1,
-                    borderColor: '#2e7d32',
-                    color: '#2e7d32',
-                    '&:hover': { borderColor: '#1b5e20', backgroundColor: '#e8f5e9' },
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 0.5,
+                    border: '1px solid #2e7d32',
+                    borderRadius: 1,
+                    overflow: 'hidden',
+                    '&:hover': { backgroundColor: '#e8f5e9' },
                   }}
                 >
-                  📄 Survey Form {idx + 1} ({getFileTypeLabel(file)})
-                </Button>
+                  <Button
+                    size="small"
+                    variant="text"
+                    onClick={() => openFileInNewTab(file.url)}
+                    sx={{
+                      flex: 1,
+                      justifyContent: 'flex-start',
+                      textTransform: 'none',
+                      fontSize: '11px',
+                      py: 0.75,
+                      px: 1,
+                      color: '#2e7d32',
+                      minWidth: 0,
+                    }}
+                  >
+                    📄 Survey Form {idx + 1} ({file.fileName || getFileTypeLabel(file.url)})
+                  </Button>
+                  <IconButton
+                    size="small"
+                    onClick={() => downloadFile(file.url, file.fileName || `survey-form-${idx + 1}`)}
+                    sx={{ color: '#2e7d32', mr: 0.25 }}
+                    title="Download"
+                    aria-label="Download file"
+                  >
+                    <GetAppIcon fontSize="small" />
+                  </IconButton>
+                </Box>
               ))}
               {oldBoardPhotos.map((file, idx) => (
-                <Button
+                <Box
                   key={`old-file-${idx}`}
-                  size="small"
-                  variant="outlined"
-                  onClick={() => window.open(file, '_blank')}
                   sx={{
-                    justifyContent: 'flex-start',
-                    textTransform: 'none',
-                    fontSize: '11px',
-                    py: 0.5,
-                    px: 1,
-                    borderColor: '#9c27b0',
-                    color: '#9c27b0',
-                    '&:hover': { borderColor: '#7b1fa2', backgroundColor: '#f3e5f5' },
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 0.5,
+                    border: '1px solid #9c27b0',
+                    borderRadius: 1,
+                    overflow: 'hidden',
+                    '&:hover': { backgroundColor: '#f3e5f5' },
                   }}
                 >
-                  🖼️ Old Board Photo {idx + 1} ({getFileTypeLabel(file)})
-                </Button>
+                  <Button
+                    size="small"
+                    variant="text"
+                    onClick={() => openFileInNewTab(file.url)}
+                    sx={{
+                      flex: 1,
+                      justifyContent: 'flex-start',
+                      textTransform: 'none',
+                      fontSize: '11px',
+                      py: 0.75,
+                      px: 1,
+                      color: '#9c27b0',
+                      minWidth: 0,
+                    }}
+                  >
+                    🖼️ Old Board Photo {idx + 1} ({file.fileName || getFileTypeLabel(file.url)})
+                  </Button>
+                  <IconButton
+                    size="small"
+                    onClick={() => downloadFile(file.url, file.fileName || `old-board-${idx + 1}`)}
+                    sx={{ color: '#9c27b0', mr: 0.25 }}
+                    title="Download"
+                    aria-label="Download file"
+                  >
+                    <GetAppIcon fontSize="small" />
+                  </IconButton>
+                </Box>
               ))}
             </Box>
           </Box>
