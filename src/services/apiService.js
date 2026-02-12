@@ -57,11 +57,21 @@ class ApiService {
       
       // Handle error responses
       if (!response.ok) {
+        // Clone response before reading to avoid "body stream already read" error
+        const responseClone = response.clone();
         let errorData;
         try {
-          errorData = await response.json();
+          // Read as text first, then try to parse as JSON
+          const text = await responseClone.text();
+          try {
+            errorData = JSON.parse(text);
+          } catch {
+            // If not valid JSON, use the text as error message
+            errorData = { message: text || `HTTP ${response.status}: ${response.statusText}` };
+          }
         } catch {
-          errorData = await response.text();
+          // If reading fails completely, use a default error message
+          errorData = { message: `HTTP ${response.status}: ${response.statusText}` };
         }
 
         // For login endpoint, don't handle 401 as unauthorized - let the component handle it
