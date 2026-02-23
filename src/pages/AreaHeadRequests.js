@@ -4443,11 +4443,11 @@ export default function AreaHeadRequests() {
         // Row interaction
         onRowClick={canRead ? handleRowClick : null}
         
-        // Row styling - highlight "not decided" requests
+        // Row styling - highlight "not decided" requests only (no other status gets bold)
         getRowClassName={(params) => {
           const status = params.row.status;
-          // Check if status is "not decided" (case-insensitive)
-          if (status && String(status).toLowerCase().trim() === 'not decided') {
+          const normalized = status != null ? String(status).toLowerCase().trim() : '';
+          if (normalized === SHOPBOARD_REQUEST_STATUS.NOT_DECIDED) {
             return 'not-decided-row';
           }
           return '';
@@ -4463,6 +4463,17 @@ export default function AreaHeadRequests() {
           toolbar: CustomToolbar
         }}
         sx={{
+          // Explicit normal font weight for all rows so only "not decided" rows appear bold.
+          // (If system theme or OS "Bold Text" is on, all text may still look bold - that's outside our control.)
+          '& .MuiDataGrid-row': {
+            fontWeight: 400,
+          },
+          '& .MuiDataGrid-cell': {
+            fontWeight: 400,
+          },
+          '& .MuiDataGrid-cell *': {
+            fontWeight: 400,
+          },
           // Custom styling for "not decided" rows - Professional blue theme matching Filters section
           '& .not-decided-row': {
             backgroundColor: '#f0f4ff !important', // Very light blue background (matches Filters border)
