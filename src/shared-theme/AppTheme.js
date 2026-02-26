@@ -9,23 +9,40 @@ import { navigationCustomizations } from './customizations/navigation';
 import { surfacesCustomizations } from './customizations/surfaces';
 import { colorSchemes, typography, shadows, shape } from './themePrimitives';
 
+const LIGHT_ATTR = 'data-mui-color-scheme';
+
+// Keeps the app in light mode; resets if something (e.g. theme toggle) changes it
+function ForceLightMode({ children }) {
+  React.useEffect(() => {
+    const el = document.documentElement;
+    const force = () => {
+      if (el.getAttribute(LIGHT_ATTR) !== 'light') {
+        el.setAttribute(LIGHT_ATTR, 'light');
+      }
+    };
+    force();
+    const obs = new MutationObserver(force);
+    obs.observe(el, { attributes: true, attributeFilter: [LIGHT_ATTR] });
+    return () => obs.disconnect();
+  }, []);
+  return children;
+}
+
 function AppTheme(props) {
   const { children, disableCustomTheme, themeComponents } = props;
   const theme = React.useMemo(() => {
     return disableCustomTheme
       ? {}
       : createTheme({
-          // For more details about CSS variables configuration, see https://mui.com/material-ui/customization/css-theme-variables/configuration/
           cssVariables: {
-            colorSchemeSelector: 'data-mui-color-scheme',
+            colorSchemeSelector: LIGHT_ATTR,
             cssVarPrefix: 'template',
           },
-          colorSchemes, // Recently added in v6 for building light & dark mode app, see https://mui.com/material-ui/customization/palette/#color-schemes
+          colorSchemes,
           typography,
           shadows,
           shape,
           components: {
-            // ...inputsCustomizations,
             ...dataDisplayCustomizations,
             ...feedbackCustomizations,
             ...navigationCustomizations,
@@ -39,7 +56,9 @@ function AppTheme(props) {
   }
   return (
     <ThemeProvider theme={theme} disableTransitionOnChange>
-      {children}
+      <ForceLightMode>
+        {children}
+      </ForceLightMode>
     </ThemeProvider>
   );
 }
