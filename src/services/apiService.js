@@ -54,23 +54,22 @@ class ApiService {
 
     try {
       const response = await fetch(`${this.baseURL}${endpoint}`, config);
-      
+
       // Handle error responses
       if (!response.ok) {
-        // Clone response before reading to avoid "body stream already read" error
-        const responseClone = response.clone();
+        console.log('[apiService] Error response:', response.status, response.statusText, endpoint);
         let errorData;
         try {
-          // Read as text first, then try to parse as JSON
-          const text = await responseClone.text();
+          // Read body once (no clone) to avoid stream/clone issues
+          const text = await response.text();
+          console.log('[apiService] Error body (raw):', text?.substring?.(0, 200));
           try {
             errorData = JSON.parse(text);
           } catch {
-            // If not valid JSON, use the text as error message
             errorData = { message: text || `HTTP ${response.status}: ${response.statusText}` };
           }
-        } catch {
-          // If reading fails completely, use a default error message
+        } catch (readErr) {
+          console.warn('[apiService] Failed to read error response body:', readErr);
           errorData = { message: `HTTP ${response.status}: ${response.statusText}` };
         }
 
@@ -79,15 +78,11 @@ class ApiService {
           throw new Error(JSON.stringify(errorData));
         }
 
-        // Handle unauthorized responses (401 = not authenticated, 403 = forbidden/no permission)
-        if (response.status === 401) {
-          // Only log out on 401 (not authenticated)
+        // Handle unauthorized / forbidden (401 = not authenticated, 403 = expired token or no permission)
+        if (response.status === 401 || response.status === 403) {
+          console.log('[apiService] 401/403 -> handleUnauthorized(), status:', response.status);
           this.handleUnauthorized();
-          throw new Error('Authentication required');
-        }
-        // For 403 (Forbidden), don't log out - just throw error
-        if (response.status === 403) {
-          throw new Error(JSON.stringify(errorData));
+          throw new Error(errorData?.message || (response.status === 403 ? 'Session expired or access denied' : 'Authentication required'));
         }
 
         // Handle other error responses
@@ -121,14 +116,16 @@ class ApiService {
 
   // Handle unauthorized access
   handleUnauthorized() {
-    // Clear local storage
+    console.log('[apiService] handleUnauthorized: clearing storage, redirecting to signin');
     localStorage.removeItem('authToken');
     localStorage.removeItem('userData');
-    
-    // Redirect to login (check if not already on signin page)
-    const signinPath = `${BASENAME}/signin`;
-    if (!window.location.pathname.endsWith('/signin')) {
-      window.location.href = signinPath;
+    // HashRouter: signin route is at BASENAME/#/signin — use full URL so hash is replaced (avoids .../signin#/area-head-requests)
+    const signinUrl = `${window.location.origin}${BASENAME}/#/signin`;
+    const isOnSigninRoute = window.location.hash === '#/signin';
+    if (!isOnSigninRoute) {
+      window.location.href = signinUrl;
+    } else {
+      console.log('[apiService] handleUnauthorized: already on signin, skip redirect');
     }
   }
 
