@@ -4443,12 +4443,18 @@ export default function AreaHeadRequests() {
         // Row interaction
         onRowClick={canRead ? handleRowClick : null}
         
-        // Row styling - highlight "not decided" requests only (no other status gets bold)
+        // Row styling - for manual_approval users highlight "under_review", for others highlight "not decided"
         getRowClassName={(params) => {
           const status = params.row.status;
           const normalized = status != null ? String(status).toLowerCase().trim() : '';
-          if (normalized === SHOPBOARD_REQUEST_STATUS.NOT_DECIDED) {
-            return 'not-decided-row';
+          if (canManualApproval) {
+            if (normalized === SHOPBOARD_REQUEST_STATUS.UNDER_REVIEW) {
+              return 'not-decided-row';
+            }
+          } else {
+            if (normalized === SHOPBOARD_REQUEST_STATUS.NOT_DECIDED) {
+              return 'not-decided-row';
+            }
           }
           return '';
         }}
