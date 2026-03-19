@@ -260,6 +260,11 @@ export default function AreaHeadRequests() {
   // Comments state for viewing vendor rejection comments
   const [requestComments, setRequestComments] = React.useState([]);
   const [loadingComments, setLoadingComments] = React.useState(false);
+
+  // Rejection comments state
+  const [rejectionCommentsDialogOpen, setRejectionCommentsDialogOpen] = React.useState(false);
+  const [rejectionCommentsList, setRejectionCommentsList] = React.useState([]);
+  const [loadingRejectionComments, setLoadingRejectionComments] = React.useState(false);
   
   // Marketing comments state for ceo_pending requests
   const [marketingComments, setMarketingComments] = React.useState([]);
@@ -1630,6 +1635,45 @@ export default function AreaHeadRequests() {
     }
   }, [get]);
 
+  // Fetch rejection comments for a specific request
+  const fetchRejectionComments = React.useCallback(async (requestId) => {
+    setLoadingRejectionComments(true);
+    try {
+      const response = await get(`/api/comments/rejection/${requestId}`);
+      if (response.success && response.data) {
+        setRejectionCommentsList(response.data);
+      } else {
+        setRejectionCommentsList([]);
+      }
+    } catch (error) {
+      console.error('Error fetching rejection comments:', error);
+      toast.error('Failed to load rejection comments', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      setRejectionCommentsList([]);
+    } finally {
+      setLoadingRejectionComments(false);
+    }
+  }, [get]);
+
+  const handleViewRejectionComments = React.useCallback((requestData) => {
+    if (!canRead) return;
+    setRequestToAction(requestData);
+    setRejectionCommentsDialogOpen(true);
+    fetchRejectionComments(requestData.id);
+  }, [canRead, fetchRejectionComments]);
+
+  const cancelRejectionComments = () => {
+    setRejectionCommentsDialogOpen(false);
+    setRequestToAction(null);
+    setRejectionCommentsList([]);
+  };
+
   // Fetch marketing comments for a specific request
   const fetchMarketingComments = React.useCallback(async (requestId) => {
     setLoadingMarketingComments(true);
@@ -1797,21 +1841,29 @@ export default function AreaHeadRequests() {
   // Confirm reject function
   const confirmReject = async () => {
     if (!requestToAction) return;
+
+    if (!rejectionComment || !rejectionComment.trim()) {
+      toast.error('A rejection comment is required.', {
+        position: "top-right",
+        autoClose: 4000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
     
     setIsLoading(true);
     setRejectDialogOpen(false);
     
     try {
       const updateData = {
-        status: 'review requested',
-        updated_by: user.id
+        status: 'rejected',
+        updated_by: user.id,
+        comment: rejectionComment.trim(),
+        comment_type: 'rejection',
       };
-
-      // Add comment if provided
-      if (rejectionComment && rejectionComment.trim()) {
-        updateData.comment = rejectionComment.trim();
-        updateData.comment_type = 'areahead';
-      }
 
       const response = await patch(`/api/shopboard-requests/${requestToAction.id}`, updateData);
 
@@ -3949,6 +4001,11 @@ export default function AreaHeadRequests() {
           const isRfqNotAccepted = row.status === 'rfq not accepted';
           const isQuotationReceived = row.status === 'quotation sent';
           const isInvoiceSent = row.status === 'invoice_sent';
+          const isUnderReview = row.status === 'under_review';
+          const isCeoPending = row.status === 'ceo_pending';
+          const isRejectableByUpdate = row.status === 'not decided' || row.status === 'Rfq' || row.status === 'quotation sent';
+          const isRejectableByManualApproval = row.status === 'under_review' || row.status === 'ceo_pending';
+          const isRejectableStatus = isRejectableByUpdate || isRejectableByManualApproval;
           
           const actions = [];
           
@@ -4023,6 +4080,42 @@ export default function AreaHeadRequests() {
             );
           }
           
+          // Show reject action:
+          // - 'not decided', 'Rfq', 'quotation sent' → update permission only
+          // - 'under_review', 'ceo_pending' → update + manual_approval permission
+          if ((isRejectableByUpdate && canReject) || (isRejectableByManualApproval && canReject && canManualApproval)) {
+            actions.push(
+              <GridActionsCellItem
+                key="reject"
+                icon={
+                  <Tooltip title="Reject Request">
+                    <RejectIcon sx={{ color: '#d32f2f' }} />
+                  </Tooltip>
+                }
+                label="Reject Request"
+                onClick={() => handleReject(row)}
+                color="error"
+              />
+            );
+          }
+
+          // Show view rejection comments icon when request is rejected
+          if (row.status === 'rejected' && canRead) {
+            actions.push(
+              <GridActionsCellItem
+                key="viewRejectionComments"
+                icon={
+                  <Tooltip title="View Rejection Comments">
+                    <CommentIcon sx={{ color: '#d32f2f' }} />
+                  </Tooltip>
+                }
+                label="View Rejection Comments"
+                onClick={() => handleViewRejectionComments(row)}
+                color="error"
+              />
+            );
+          }
+
           // Show approve/reject only for not decided requests - COMMENTED OUT
           // if (isNotDecided) {
           //   if (canApprove) {
@@ -4122,7 +4215,7 @@ export default function AreaHeadRequests() {
           // Show combined view & send messages for requests with add_comment permission
           // Exclude statuses: not decided, Rfq, quotation sent, under_review, and null/undefined/empty
           if (canAddComment) {
-            const excludedStatuses = ['not decided', 'Rfq', 'quotation sent', 'under_review'];
+            const excludedStatuses = ['not decided', 'Rfq', 'quotation sent', 'under_review', 'rejected', 'manual_approval', 'ceo_pending', 'invoice_sent', 'invoice rejected'];
             const status = row.status;
             const isExcludedStatus = !status || excludedStatuses.includes(status);
             
@@ -4301,7 +4394,7 @@ export default function AreaHeadRequests() {
 
     return baseColumns;
     },
-    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, canPaymentRelease, showSelectionColumn, selectedRequests, filteredRows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleViewManualApproval, handleViewInvoice, handleViewOldPurchases, handleSelectAll, handleSelectRequest, handleBulkReleasePayment, getVendorName],
+    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, canPaymentRelease, showSelectionColumn, selectedRequests, filteredRows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleViewRejectionComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleViewManualApproval, handleViewInvoice, handleViewOldPurchases, handleSelectAll, handleSelectRequest, handleBulkReleasePayment, getVendorName],
   );
 
   const pageTitle = 'Area Head Requests';
@@ -4634,27 +4727,29 @@ export default function AreaHeadRequests() {
             fontWeight: 'bold',
           }}
         >
-          Request Review
+          Reject Request
         </DialogTitle>
         <DialogContent>
           <Typography sx={{ color: '#333', mb: 2 }}>
             Are you sure you want to reject request <strong>#{requestToAction?.id}</strong>?
           </Typography>
           <Typography variant="body2" sx={{ color: '#666', mb: 2 }}>
-            This action will mark the request as review requested.
+            This action will permanently reject this request.
           </Typography>
           
           <TextField
             fullWidth
             multiline
             rows={3}
-            label="Rejection Comment (Optional)"
+            label="Rejection Comment *"
             placeholder="Please provide a reason for rejection..."
             value={rejectionComment}
             onChange={(e) => setRejectionComment(e.target.value)}
             variant="outlined"
+            required
+            error={rejectionComment !== undefined && rejectionComment.trim() === ''}
             sx={{ mt: 2 }}
-            helperText="Adding a comment helps provide context for the rejection"
+            helperText="A comment is required to reject this request"
           />
         </DialogContent>
         <DialogActions sx={{ p: 2, gap: 1 }}>
@@ -4679,7 +4774,7 @@ export default function AreaHeadRequests() {
             color="error"
             disabled={isLoading}
           >
-            {isLoading ? 'Rejecting...' : 'Request Review'}
+            {isLoading ? 'Rejecting...' : 'Reject'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -5841,6 +5936,81 @@ export default function AreaHeadRequests() {
                 borderColor: '#999',
                 backgroundColor: '#f5f5f5',
               }
+            }}
+          >
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* View Rejection Comments Dialog */}
+      <Dialog
+        open={rejectionCommentsDialogOpen}
+        onClose={cancelRejectionComments}
+        aria-labelledby="rejection-comments-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '500px',
+            maxWidth: '700px',
+            maxHeight: '80vh',
+            overflow: 'auto',
+          }
+        }}
+      >
+        <DialogTitle
+          id="rejection-comments-dialog-title"
+          sx={{ color: 'error.main', fontWeight: 'bold' }}
+        >
+          Rejection Comments — Request #{requestToAction?.id}
+        </DialogTitle>
+        <DialogContent>
+          {loadingRejectionComments ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+              <Typography>Loading rejection comments...</Typography>
+            </Box>
+          ) : rejectionCommentsList.length === 0 ? (
+            <Box sx={{ textAlign: 'center', p: 4 }}>
+              <Typography variant="body1" sx={{ color: '#666' }}>
+                No rejection comments found for this request.
+              </Typography>
+            </Box>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {rejectionCommentsList.map((comment, index) => (
+                <Box
+                  key={index}
+                  sx={{
+                    p: 2,
+                    border: '1px solid #ffcdd2',
+                    borderRadius: 1,
+                    backgroundColor: '#fff8f8'
+                  }}
+                >
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#b71c1c' }}>
+                      {comment.user ? comment.user.username : 'Unknown User'}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#666' }}>
+                      {comment.created_at ? new Date(comment.created_at).toLocaleString() : 'Unknown Date'}
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" sx={{ color: '#333' }}>
+                    {comment.comment}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={cancelRejectionComments}
+            variant="outlined"
+            sx={{
+              color: '#666',
+              borderColor: '#ddd',
+              '&:hover': { borderColor: '#999', backgroundColor: '#f5f5f5' }
             }}
           >
             Close

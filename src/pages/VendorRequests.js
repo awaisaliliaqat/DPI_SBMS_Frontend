@@ -305,11 +305,17 @@ export default function VendorRequests() {
   const [existingDealerAcknowledgmentFiles, setExistingDealerAcknowledgmentFiles] = React.useState([]);
   const [existingSitePhotosPerItem, setExistingSitePhotosPerItem] = React.useState({});
   
-  // Rejection comments modal state
+  // Rejection comments modal state (invoice_rejected)
   const [rejectionCommentsModalOpen, setRejectionCommentsModalOpen] = React.useState(false);
   const [selectedRejectionRequest, setSelectedRejectionRequest] = React.useState(null);
   const [rejectionComments, setRejectionComments] = React.useState([]);
   const [loadingRejectionComments, setLoadingRejectionComments] = React.useState(false);
+
+  // Request rejection comments modal state (rejected status)
+  const [requestRejectionCommentsModalOpen, setRequestRejectionCommentsModalOpen] = React.useState(false);
+  const [requestRejectionCommentsList, setRequestRejectionCommentsList] = React.useState([]);
+  const [loadingRequestRejectionComments, setLoadingRequestRejectionComments] = React.useState(false);
+  const [selectedRequestRejection, setSelectedRequestRejection] = React.useState(null);
   
   // Edit modal state
   const [editModalOpen, setEditModalOpen] = React.useState(false);
@@ -884,6 +890,34 @@ export default function VendorRequests() {
       setRejectionComments([]);
     } finally {
       setLoadingRejectionComments(false);
+    }
+  }, [get]);
+
+  // Handle viewing request rejection comments (status = 'rejected')
+  const handleViewRequestRejectionComments = React.useCallback(async (requestData) => {
+    setSelectedRequestRejection(requestData);
+    setRequestRejectionCommentsModalOpen(true);
+    setLoadingRequestRejectionComments(true);
+    try {
+      const response = await get(`/api/comments/rejection/${requestData.id}`);
+      if (response.success && response.data) {
+        setRequestRejectionCommentsList(response.data);
+      } else {
+        setRequestRejectionCommentsList([]);
+      }
+    } catch (error) {
+      console.error('Error fetching request rejection comments:', error);
+      toast.error('Failed to load rejection comments', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      setRequestRejectionCommentsList([]);
+    } finally {
+      setLoadingRequestRejectionComments(false);
     }
   }, [get]);
 
@@ -2157,6 +2191,19 @@ export default function VendorRequests() {
             );
           }
           
+          // Show view rejection comments for rejected status
+          if (row.status === SHOPBOARD_REQUEST_STATUS.REJECTED && canRead) {
+            actions.push(
+              <GridActionsCellItem
+                key="viewRequestRejectionComments"
+                icon={<Tooltip title="View Rejection Comments"><CommentIcon sx={{ color: '#d32f2f' }} /></Tooltip>}
+                label="View Rejection Comments"
+                onClick={() => handleViewRequestRejectionComments(row)}
+                color="error"
+              />
+            );
+          }
+
           // Show invoice viewer if invoice files exist (invoice_sent, Submitted for Payment, or payment successful)
           if (canRead && (row.status === SHOPBOARD_REQUEST_STATUS.INVOICE_SENT || row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT || row.status === SHOPBOARD_REQUEST_STATUS.PAYMENT_SUCCESSFUL) && row.has_invoice_files) {
             actions.push(
@@ -2174,7 +2221,7 @@ export default function VendorRequests() {
         },
       },
     ],
-    [canApprove, canUpdate, canRead, handleViewDetails, handleEdit, handleApprove, handleViewComments, handleViewHistory, handleShareInvoice, handleViewRejectionComments, handleEditInvoiceAfterRejection, handleViewInvoice, handlePrintWorkOrder],
+    [canApprove, canUpdate, canRead, handleViewDetails, handleEdit, handleApprove, handleViewComments, handleViewHistory, handleShareInvoice, handleViewRejectionComments, handleEditInvoiceAfterRejection, handleViewInvoice, handlePrintWorkOrder, handleViewRequestRejectionComments],
   );
 
   const pageTitle = 'Vendor Requests';
@@ -4954,6 +5001,89 @@ export default function VendorRequests() {
               Edit Invoice
             </Button>
           )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Request Rejection Comments Dialog */}
+      <Dialog
+        open={requestRejectionCommentsModalOpen}
+        onClose={() => {
+          setRequestRejectionCommentsModalOpen(false);
+          setSelectedRequestRejection(null);
+          setRequestRejectionCommentsList([]);
+        }}
+        aria-labelledby="request-rejection-comments-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '500px',
+            maxWidth: '700px',
+            maxHeight: '80vh',
+            overflow: 'auto',
+          }
+        }}
+      >
+        <DialogTitle
+          id="request-rejection-comments-dialog-title"
+          sx={{ color: 'error.main', fontWeight: 'bold' }}
+        >
+          Rejection Comments — Request #{selectedRequestRejection?.id}
+        </DialogTitle>
+        <DialogContent>
+          {loadingRequestRejectionComments ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+              <Typography>Loading rejection comments...</Typography>
+            </Box>
+          ) : requestRejectionCommentsList.length === 0 ? (
+            <Box sx={{ textAlign: 'center', p: 4 }}>
+              <Typography variant="body1" sx={{ color: '#666' }}>
+                No rejection comments found for this request.
+              </Typography>
+            </Box>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {requestRejectionCommentsList.map((comment, index) => (
+                <Box
+                  key={index}
+                  sx={{
+                    p: 2,
+                    border: '1px solid #ffcdd2',
+                    borderRadius: 1,
+                    backgroundColor: '#fff8f8'
+                  }}
+                >
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#b71c1c' }}>
+                      {comment.user ? comment.user.username : 'Unknown User'}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#666' }}>
+                      {comment.created_at ? new Date(comment.created_at).toLocaleString() : 'Unknown Date'}
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" sx={{ color: '#333' }}>
+                    {comment.comment}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={() => {
+              setRequestRejectionCommentsModalOpen(false);
+              setSelectedRequestRejection(null);
+              setRequestRejectionCommentsList([]);
+            }}
+            variant="outlined"
+            sx={{
+              color: '#666',
+              borderColor: '#ddd',
+              '&:hover': { borderColor: '#999', backgroundColor: '#f5f5f5' }
+            }}
+          >
+            Close
+          </Button>
         </DialogActions>
       </Dialog>
 
