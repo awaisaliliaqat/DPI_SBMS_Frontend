@@ -13,6 +13,11 @@ import {
   Checkbox,
   CircularProgress,
   Tooltip,
+  MenuItem,
+  Chip,
+  Select,
+  InputLabel,
+  FormControl,
 } from '@mui/material';
 import {
   Email as EmailIcon,
@@ -146,23 +151,17 @@ export default function SmtpSettings() {
     }
   }, [canRead]);
 
-  // Define SMTP settings form fields
+  // Fields shared by both SMTP and EWS.
+  // Protocol selector and SMTP-only fields are rendered inside CustomModalContent
+  // using a plain MUI Select (not Autocomplete) to avoid rendering issues.
   const smtpFields = [
     {
       name: 'smtp_host',
-      label: 'SMTP Host',
+      label: 'Host',
       type: 'text',
       required: true,
       validate: validateSmtpHost,
-      tooltip: 'e.g., smtp.gmail.com',
-    },
-    {
-      name: 'smtp_port',
-      label: 'SMTP Port',
-      type: 'number',
-      required: true,
-      validate: validateSmtpPort,
-      tooltip: 'Common ports: 587 (TLS), 465 (SSL), 25',
+      tooltip: 'SMTP: e.g. smtp.gmail.com   |   EWS: e.g. webmail.company.com',
     },
     {
       name: 'username',
@@ -170,7 +169,7 @@ export default function SmtpSettings() {
       type: 'text',
       required: true,
       validate: validateUsername,
-      tooltip: 'SMTP username/email',
+      tooltip: 'SMTP username / Exchange account email',
     },
     {
       name: 'password',
@@ -178,23 +177,7 @@ export default function SmtpSettings() {
       type: 'password',
       required: true,
       validate: validatePassword,
-      tooltip: 'SMTP password (stored in plain text)',
-    },
-    {
-      name: 'from_name',
-      label: 'From Name',
-      type: 'text',
-      required: true,
-      validate: validateFromName,
-      tooltip: 'Display name for the sender',
-    },
-    {
-      name: 'from_email',
-      label: 'From Email',
-      type: 'email',
-      required: true,
-      validate: validateFromEmail,
-      tooltip: 'Email address for the sender',
+      tooltip: 'Password (stored in plain text)',
     },
   ];
 
@@ -477,20 +460,26 @@ export default function SmtpSettings() {
   }, [testEmailSetting, testEmailTo, testEmailText, post, handleCloseTestEmailDialog]);
 
   const handleTestCredentials = React.useCallback((formData) => {
-    // Validate required fields
-    if (!formData.smtp_host || !formData.smtp_port || !formData.username || !formData.password) {
-      toast.error('Please fill in all required fields (SMTP Host, Port, Username, Password)', {
-        position: "top-right",
-        autoClose: 5000,
-        hideProgressBar: false,
-        closeOnClick: true,
-        pauseOnHover: true,
-        draggable: true,
-      });
-      return;
+    const isEws = formData.protocol === 'ews';
+
+    if (isEws) {
+      if (!formData.smtp_host || !formData.username || !formData.password) {
+        toast.error('Please fill in Host, Username, and Password to test EWS credentials', {
+          position: "top-right", autoClose: 5000, hideProgressBar: false,
+          closeOnClick: true, pauseOnHover: true, draggable: true,
+        });
+        return;
+      }
+    } else {
+      if (!formData.smtp_host || !formData.smtp_port || !formData.username || !formData.password) {
+        toast.error('Please fill in all required fields (Host, Port, Username, Password)', {
+          position: "top-right", autoClose: 5000, hideProgressBar: false,
+          closeOnClick: true, pauseOnHover: true, draggable: true,
+        });
+        return;
+      }
     }
 
-    // Open dialog to ask for recipient email and message
     setTestCredentialsFormData(formData);
     setTestCredentialsTo('');
     setTestCredentialsText('');
@@ -534,6 +523,7 @@ export default function SmtpSettings() {
     setTestingCredentials(true);
     try {
       const response = await post('/api/smtp-settings/test-credentials', {
+        protocol: testCredentialsFormData.protocol || 'smtp',
         smtp_host: testCredentialsFormData.smtp_host,
         smtp_port: testCredentialsFormData.smtp_port,
         secure: testCredentialsFormData.secure || false,
@@ -542,7 +532,7 @@ export default function SmtpSettings() {
         from_name: testCredentialsFormData.from_name,
         from_email: testCredentialsFormData.from_email,
         to: testCredentialsTo.trim(),
-        text: testCredentialsText.trim() || 'This is a test email from the SMTP Settings configuration.'
+        text: testCredentialsText.trim() || 'This is a test email from the Email Settings configuration.'
       });
 
       if (response.success) {
@@ -573,24 +563,31 @@ export default function SmtpSettings() {
   }, [testCredentialsFormData, testCredentialsTo, testCredentialsText, post, handleCloseTestCredentialsDialog]);
 
   const handleModalSubmit = async (formData) => {
-    // Validate all fields
-    const errors = {};
+    const isEws = formData.protocol === 'ews';
+
+    // Shared field validation
+    const sharedErrors = {};
     smtpFields.forEach(field => {
       if (field.validate) {
         const error = field.validate(formData[field.name]);
-        if (error) errors[field.name] = error;
+        if (error) sharedErrors[field.name] = error;
       }
     });
 
-    if (Object.keys(errors).length > 0) {
-      const firstError = Object.values(errors)[0];
-      toast.error(firstError, {
-        position: "top-right",
-        autoClose: 5000,
-        hideProgressBar: false,
-        closeOnClick: true,
-        pauseOnHover: true,
-        draggable: true,
+    // SMTP-only field validation
+    if (!isEws) {
+      const portError = validateSmtpPort(formData.smtp_port);
+      if (portError) sharedErrors.smtp_port = portError;
+      const fromNameError = validateFromName(formData.from_name);
+      if (fromNameError) sharedErrors.from_name = fromNameError;
+      const fromEmailError = validateFromEmail(formData.from_email);
+      if (fromEmailError) sharedErrors.from_email = fromEmailError;
+    }
+
+    if (Object.keys(sharedErrors).length > 0) {
+      toast.error(Object.values(sharedErrors)[0], {
+        position: "top-right", autoClose: 5000, hideProgressBar: false,
+        closeOnClick: true, pauseOnHover: true, draggable: true,
       });
       return;
     }
@@ -598,14 +595,15 @@ export default function SmtpSettings() {
     setIsLoading(true);
     try {
       const submitData = {
+        protocol: formData.protocol || 'smtp',
         smtp_host: formData.smtp_host.trim(),
-        smtp_port: parseInt(formData.smtp_port),
-        secure: formData.secure || false,
+        smtp_port: isEws ? null : parseInt(formData.smtp_port),
+        secure: isEws ? false : (formData.secure || false),
         username: formData.username.trim(),
         password: formData.password,
-        from_name: formData.from_name.trim(),
-        from_email: formData.from_email.trim().toLowerCase(),
-        is_active: true, // Always set to true by default
+        from_name: isEws ? null : (formData.from_name ? formData.from_name.trim() : null),
+        from_email: isEws ? null : (formData.from_email ? formData.from_email.trim().toLowerCase() : null),
+        is_active: true,
         is_default: formData.is_default !== undefined ? formData.is_default : false
       };
 
@@ -659,34 +657,103 @@ export default function SmtpSettings() {
     }
   };
 
-  // Custom content for modal - add Secure and Default checkboxes
+  // Custom content for modal — renders protocol selector, SMTP-only fields + shared checkboxes
   const CustomModalContent = ({ formData = {}, setFormData, mode = 'view' }) => {
-    // Safety check for formData and setFormData
-    if (!formData || !setFormData) {
-      return null;
-    }
+    if (!formData || !setFormData) return null;
 
-    const handleDefaultChange = (checked) => {
-      setFormData({ ...formData, is_default: checked });
-    };
+    const isEws = formData.protocol === 'ews';
+    const isView = mode === 'view';
+
+    const fieldSx = { mb: 2 };
 
     return (
-      <Box sx={{ mt: 2, mb: 2 }}>
+      <Box sx={{ mt: 1 }}>
+
+        {/* ── Protocol selector (plain Select — no Autocomplete) ───────────── */}
+        <FormControl fullWidth sx={{ mb: 2, mt: 1 }} variant={isView ? 'filled' : 'outlined'}>
+          <InputLabel id="protocol-label">Protocol *</InputLabel>
+          <Select
+            labelId="protocol-label"
+            value={formData.protocol || 'smtp'}
+            label="Protocol *"
+            onChange={(e) => setFormData({ ...formData, protocol: e.target.value })}
+            disabled={isView}
+          >
+            <MenuItem value="smtp">SMTP</MenuItem>
+            <MenuItem value="ews">Exchange Web Services (EWS)</MenuItem>
+          </Select>
+        </FormControl>
+
+        {/* ── SMTP-only fields ─────────────────────────────────────────────── */}
+        {!isEws && (
+          <Box>
+            <TextField
+              fullWidth
+              label="SMTP Port *"
+              type="number"
+              value={formData.smtp_port || ''}
+              onChange={(e) => setFormData({ ...formData, smtp_port: e.target.value })}
+              disabled={isView}
+              variant="outlined"
+              sx={fieldSx}
+              helperText="Common ports: 587 (TLS), 465 (SSL), 25"
+              inputProps={{ min: 1, max: 65535 }}
+            />
+            <TextField
+              fullWidth
+              label="From Name *"
+              value={formData.from_name || ''}
+              onChange={(e) => setFormData({ ...formData, from_name: e.target.value })}
+              disabled={isView}
+              variant="outlined"
+              sx={fieldSx}
+              helperText="Display name shown to recipients"
+            />
+            <TextField
+              fullWidth
+              label="From Email *"
+              type="email"
+              value={formData.from_email || ''}
+              onChange={(e) => setFormData({ ...formData, from_email: e.target.value })}
+              disabled={isView}
+              variant="outlined"
+              sx={fieldSx}
+              helperText="Sender email address"
+            />
+          </Box>
+        )}
+
+        {/* EWS info banner */}
+        {isEws && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            <Typography variant="body2" sx={{ fontWeight: 'medium', mb: 0.5 }}>
+              Exchange Web Services (EWS)
+            </Typography>
+            <Typography variant="body2">
+              Only <strong>Host</strong>, <strong>Username</strong> (Exchange email), and <strong>Password</strong> are required.
+              Emails are sent via the authenticated Exchange account — no port or From fields needed.
+            </Typography>
+          </Alert>
+        )}
+
+        {/* ── Additional settings ───────────────────────────────────────────── */}
         <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 'bold', color: 'text.primary' }}>
           Additional Settings
         </Typography>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={formData.secure || false}
-                onChange={(e) => setFormData({ ...formData, secure: e.target.checked })}
-                disabled={mode === 'view'}
-                color="primary"
-              />
-            }
-            label="Secure (TLS/SSL)"
-          />
+          {!isEws && (
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={formData.secure || false}
+                  onChange={(e) => setFormData({ ...formData, secure: e.target.checked })}
+                  disabled={isView}
+                  color="primary"
+                />
+              }
+              label="Secure (TLS/SSL)"
+            />
+          )}
           <Box>
             <FormControlLabel
               control={
@@ -694,38 +761,29 @@ export default function SmtpSettings() {
                   checked={formData.is_default || false}
                   onChange={(e) => {
                     const isChecked = e.target.checked;
-                    if (isChecked && mode !== 'view') {
-                      // Show warning when checking default
-                      toast.warning('From now on this will be the default setting for sending email. Only one setting at a time can be marked as default.', {
-                        position: "top-right",
-                        autoClose: 6000,
-                        hideProgressBar: false,
-                        closeOnClick: true,
-                        pauseOnHover: true,
-                        draggable: true,
-                      });
+                    if (isChecked && !isView) {
+                      toast.warning(
+                        'From now on this will be the default setting for sending email. Only one setting at a time can be marked as default.',
+                        { position: "top-right", autoClose: 6000, hideProgressBar: false, closeOnClick: true, pauseOnHover: true, draggable: true }
+                      );
                     }
-                    handleDefaultChange(isChecked);
+                    setFormData({ ...formData, is_default: isChecked });
                   }}
-                  disabled={mode === 'view'}
+                  disabled={isView}
                   color="primary"
                 />
               }
               label="Default"
             />
-            {formData.is_default && mode !== 'view' && (
-              <Alert 
-                severity="info" 
-                sx={{ 
+            {formData.is_default && !isView && (
+              <Alert
+                severity="info"
+                sx={{
                   mt: 1.5,
                   backgroundColor: '#e3f2fd',
                   border: '1px solid #90caf9',
-                  '& .MuiAlert-icon': {
-                    color: '#1976d2',
-                  },
-                  '& .MuiAlert-message': {
-                    color: '#1976d2',
-                  }
+                  '& .MuiAlert-icon': { color: '#1976d2' },
+                  '& .MuiAlert-message': { color: '#1976d2' }
                 }}
               >
                 <Typography variant="body2" sx={{ fontWeight: 'medium', mb: 0.5 }}>
@@ -753,8 +811,25 @@ export default function SmtpSettings() {
         headerAlign: 'left',
       },
       {
+        field: 'protocol',
+        headerName: 'Protocol',
+        width: 130,
+        align: 'left',
+        headerAlign: 'left',
+        renderCell: (params) => (
+          <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+            <Chip
+              label={params.value === 'ews' ? 'EWS' : 'SMTP'}
+              size="small"
+              color={params.value === 'ews' ? 'secondary' : 'primary'}
+              variant="outlined"
+            />
+          </Box>
+        ),
+      },
+      {
         field: 'smtp_host',
-        headerName: 'SMTP Host',
+        headerName: 'Host',
         width: 200,
         align: 'left',
         headerAlign: 'left',
@@ -762,20 +837,25 @@ export default function SmtpSettings() {
       {
         field: 'smtp_port',
         headerName: 'Port',
-        width: 100,
+        width: 90,
         align: 'left',
         headerAlign: 'left',
+        renderCell: (params) => (
+          <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+            <Typography variant="body2">{params.value || '—'}</Typography>
+          </Box>
+        ),
       },
       {
         field: 'secure',
         headerName: 'Secure',
-        width: 100,
+        width: 90,
         align: 'left',
         headerAlign: 'left',
         renderCell: (params) => (
           <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
             <Typography variant="body2">
-              {params.value ? 'Yes' : 'No'}
+              {params.row?.protocol === 'ews' ? '—' : (params.value ? 'Yes' : 'No')}
             </Typography>
           </Box>
         ),
@@ -793,6 +873,11 @@ export default function SmtpSettings() {
         width: 150,
         align: 'left',
         headerAlign: 'left',
+        renderCell: (params) => (
+          <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+            <Typography variant="body2">{params.value || '—'}</Typography>
+          </Box>
+        ),
       },
       {
         field: 'from_email',
@@ -800,6 +885,11 @@ export default function SmtpSettings() {
         width: 200,
         align: 'left',
         headerAlign: 'left',
+        renderCell: (params) => (
+          <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+            <Typography variant="body2">{params.value || '—'}</Typography>
+          </Box>
+        ),
       },
       {
         field: 'is_active',
@@ -909,7 +999,7 @@ export default function SmtpSettings() {
     [canRead, canUpdate, canDelete, handleView, handleEdit, handleDelete],
   );
 
-  const pageTitle = 'SMTP Settings';
+  const pageTitle = 'Email Settings';
 
   // If user doesn't have read permission, show error message
   if (!canRead) {
@@ -992,7 +1082,7 @@ export default function SmtpSettings() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         mode={modalMode}
-        title={`${modalMode === 'create' ? 'Create' : modalMode === 'edit' ? 'Edit' : 'View'} SMTP Setting`}
+        title={`${modalMode === 'create' ? 'Create' : modalMode === 'edit' ? 'Edit' : 'View'} Email Setting`}
         initialData={selectedSetting || {}}
         fields={smtpFields}
         onSubmit={handleModalSubmit}
@@ -1201,7 +1291,9 @@ export default function SmtpSettings() {
         </DialogTitle>
         <DialogContent>
           <Typography sx={{ color: '#333', mb: 2 }}>
-            Test SMTP credentials and send a test email to verify the configuration.
+            {testCredentialsFormData?.protocol === 'ews'
+              ? 'Send a test email via Exchange Web Services (EWS) to verify credentials.'
+              : 'Test SMTP credentials and send a test email to verify the configuration.'}
           </Typography>
           
           <TextField
