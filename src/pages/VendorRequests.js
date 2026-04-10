@@ -1100,6 +1100,7 @@ export default function VendorRequests() {
       });
     } finally {
       setIsLoading(false);
+      setInvoiceModalOpen(false);
       setSelectedInvoiceRequest(null);
       setInvoiceFile(null);
       setDealerAcknowledgmentFile(null);
@@ -1116,9 +1117,7 @@ export default function VendorRequests() {
     if (!selectedInvoiceRequest) return;
     
     setInvoiceLoading(true);
-    setInvoiceModalOpen(false);
-    
-    // Call the confirm function to update status
+    // Keep modal open so user sees the loading state during upload
     confirmInvoiceUpload();
   }, [selectedInvoiceRequest, confirmInvoiceUpload]);
 
