@@ -4215,7 +4215,7 @@ export default function AreaHeadRequests() {
           // Show combined view & send messages for requests with add_comment permission
           // Exclude statuses: not decided, Rfq, quotation sent, under_review, and null/undefined/empty
           if (canAddComment) {
-            const excludedStatuses = ['not decided', 'Rfq', 'quotation sent', 'under_review', 'rejected', 'manual_approval', 'ceo_pending', 'invoice rejected'];
+            const excludedStatuses = ['not decided', 'Rfq', 'quotation sent', 'under_review', 'rejected', 'manual_approval', 'ceo_pending','invoice_sent',  'invoice rejected'];
             const status = row.status;
             const isExcludedStatus = !status || excludedStatuses.includes(status);
             
