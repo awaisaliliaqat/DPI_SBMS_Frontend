@@ -1,5 +1,5 @@
 // services/apiService.js
-import { BASE_URL } from '../constants/Constants';
+import { BASE_URL, BASENAME } from '../constants/Constants';
 
 class ApiService {
   constructor() {
@@ -13,41 +13,64 @@ class ApiService {
       data = null,
       headers = {},
       requiresAuth = true,
+      responseType,
       ...restOptions
     } = options;
 
     // Get token from localStorage or context
     const token = localStorage.getItem('authToken');
     
+    // Check if data is FormData
+    const isFormData = data instanceof FormData;
+    
     // Prepare headers
     const defaultHeaders = {
-      'Content-Type': 'application/json',
+      // Don't set Content-Type for FormData - let browser set it with boundary
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(requiresAuth && token && { 'Authorization': `Bearer ${token}` }),
       ...headers,
     };
+
+    // Note: responseType is for the response, not the request
+    // We still send JSON in the request body, but expect blob in response
 
     // Prepare request config
     const config = {
       method,
       headers: defaultHeaders,
+      responseType, // Pass responseType through
       ...restOptions,
     };
 
     // Add body for non-GET requests
     if (data && method !== 'GET') {
-      config.body = JSON.stringify(data);
+      // For FormData, send as-is (browser will set Content-Type with boundary)
+      if (isFormData) {
+        config.body = data;
+      } else {
+        config.body = JSON.stringify(data);
+      }
     }
 
     try {
       const response = await fetch(`${this.baseURL}${endpoint}`, config);
-      
+
       // Handle error responses
       if (!response.ok) {
+        console.log('[apiService] Error response:', response.status, response.statusText, endpoint);
         let errorData;
         try {
-          errorData = await response.json();
-        } catch {
-          errorData = await response.text();
+          // Read body once (no clone) to avoid stream/clone issues
+          const text = await response.text();
+          console.log('[apiService] Error body (raw):', text?.substring?.(0, 200));
+          try {
+            errorData = JSON.parse(text);
+          } catch {
+            errorData = { message: text || `HTTP ${response.status}: ${response.statusText}` };
+          }
+        } catch (readErr) {
+          console.warn('[apiService] Failed to read error response body:', readErr);
+          errorData = { message: `HTTP ${response.status}: ${response.statusText}` };
         }
 
         // For login endpoint, don't handle 401 as unauthorized - let the component handle it
@@ -55,10 +78,11 @@ class ApiService {
           throw new Error(JSON.stringify(errorData));
         }
 
-        // Handle unauthorized responses for other endpoints
+        // Handle unauthorized / forbidden (401 = not authenticated, 403 = expired token or no permission)
         if (response.status === 401 || response.status === 403) {
+          console.log('[apiService] 401/403 -> handleUnauthorized(), status:', response.status);
           this.handleUnauthorized();
-          throw new Error('Authentication required');
+          throw new Error(errorData?.message || (response.status === 403 ? 'Session expired or access denied' : 'Authentication required'));
         }
 
         // Handle other error responses
@@ -67,6 +91,17 @@ class ApiService {
 
       // Parse successful response
       const contentType = response.headers.get('content-type');
+      
+      // Handle blob responses (Excel files, PDFs, images, etc.)
+      if (responseType === 'blob' || 
+          options.responseType === 'blob' ||
+          contentType?.includes('application/vnd.openxmlformats-officedocument') || 
+          contentType?.includes('application/pdf') || 
+          contentType?.includes('image/') ||
+          contentType?.includes('application/octet-stream')) {
+        return await response.blob();
+      }
+      
       if (contentType && contentType.includes('application/json')) {
         return await response.json();
       }
@@ -81,13 +116,16 @@ class ApiService {
 
   // Handle unauthorized access
   handleUnauthorized() {
-    // Clear local storage
+    console.log('[apiService] handleUnauthorized: clearing storage, redirecting to signin');
     localStorage.removeItem('authToken');
     localStorage.removeItem('userData');
-    
-    // Redirect to login
-    if (window.location.pathname !== '/signin') {
-      window.location.href = '/signin';
+    // HashRouter: signin route is at BASENAME/#/signin — use full URL so hash is replaced (avoids .../signin#/area-head-requests)
+    const signinUrl = `${window.location.origin}${BASENAME}/#/signin`;
+    const isOnSigninRoute = window.location.hash === '#/signin';
+    if (!isOnSigninRoute) {
+      window.location.href = signinUrl;
+    } else {
+      console.log('[apiService] handleUnauthorized: already on signin, skip redirect');
     }
   }
 

@@ -19,6 +19,8 @@ import {
   FormControlLabel,
   Checkbox,
   CircularProgress,
+  Chip,
+  FormHelperText,
 } from '@mui/material';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast, ToastContainer } from 'react-toastify';
@@ -27,7 +29,8 @@ import { useAuth } from '../auth/AuthContext';
 import { useApi } from '../hooks/useApi';
 import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
-import { Visibility, VisibilityOff, Refresh } from '@mui/icons-material';
+import { Visibility, VisibilityOff, Refresh, CloudSync } from '@mui/icons-material';
+import { BASE_URL } from '../constants/Constants';
 
 const INITIAL_PAGE_SIZE = 10;
 
@@ -37,7 +40,7 @@ export default function VendorAssignment() {
   const navigate = useNavigate();
 
   const { user } = useAuth();
-  const { get, post, del } = useApi();
+  const { get, post, put, del } = useApi();
 
   // Permissions based on tab key 'vendorAssignment'
   const permKey = 'vendorAssignment';
@@ -73,7 +76,7 @@ export default function VendorAssignment() {
   const [loadingRegions, setLoadingRegions] = React.useState(false);
   const [formData, setFormData] = React.useState({
     vendor_id: '',
-    region_id: '',
+    region_ids: [],
     password: '',
     confirmPassword: '',
   });
@@ -85,6 +88,33 @@ export default function VendorAssignment() {
   // Delete confirmation state
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [userToDelete, setUserToDelete] = React.useState(null);
+  
+  // Refresh sales head data state
+  const [refreshingSalesHead, setRefreshingSalesHead] = React.useState(false);
+  const [refreshingVendors, setRefreshingVendors] = React.useState(false);
+  const [refreshingRegions, setRefreshingRegions] = React.useState(false);
+  const [refreshProgressDialog, setRefreshProgressDialog] = React.useState(false);
+  const [refreshProgress, setRefreshProgress] = React.useState({
+    stage: '',
+    message: '',
+    startTime: null
+  });
+  const [elapsedTime, setElapsedTime] = React.useState(0);
+
+  // Update elapsed time while operation is running
+  React.useEffect(() => {
+    let interval = null;
+    if (refreshProgressDialog && refreshProgress.startTime && refreshProgress.stage !== 'completed' && refreshProgress.stage !== 'error') {
+      interval = setInterval(() => {
+        setElapsedTime(Math.floor((Date.now() - refreshProgress.startTime) / 1000));
+      }, 1000);
+    } else {
+      setElapsedTime(0);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [refreshProgressDialog, refreshProgress.startTime, refreshProgress.stage]);
 
   // Load vendors from SAP
   const loadVendors = React.useCallback(async (excludeAssigned = false) => {
@@ -242,20 +272,36 @@ export default function VendorAssignment() {
       errors.vendor_id = 'Vendor is required';
     }
 
-    if (!formData.region_id) {
-      errors.region_id = 'Region is required';
+    if (!formData.region_ids || !Array.isArray(formData.region_ids) || formData.region_ids.length === 0) {
+      errors.region_ids = 'At least one region is required';
     }
 
-    if (!formData.password) {
-      errors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
-      errors.password = 'Password must be at least 6 characters';
-    }
+    // Password validation - required for create, optional for edit
+    if (modalMode === 'create') {
+      if (!formData.password) {
+        errors.password = 'Password is required';
+      } else if (formData.password.length < 6) {
+        errors.password = 'Password must be at least 6 characters';
+      }
 
-    if (!formData.confirmPassword) {
-      errors.confirmPassword = 'Confirm password is required';
-    } else if (formData.password !== formData.confirmPassword) {
-      errors.confirmPassword = 'Passwords do not match';
+      if (!formData.confirmPassword) {
+        errors.confirmPassword = 'Confirm password is required';
+      } else if (formData.password !== formData.confirmPassword) {
+        errors.confirmPassword = 'Passwords do not match';
+      }
+    } else if (modalMode === 'edit') {
+      // For edit mode, password is optional but if provided, must be valid
+      if (formData.password && formData.password.trim() !== '') {
+        if (formData.password.length < 6) {
+          errors.password = 'Password must be at least 6 characters';
+        }
+        
+        if (!formData.confirmPassword) {
+          errors.confirmPassword = 'Confirm password is required when changing password';
+        } else if (formData.password !== formData.confirmPassword) {
+          errors.confirmPassword = 'Passwords do not match';
+        }
+      }
     }
 
     setFormErrors(errors);
@@ -268,7 +314,7 @@ export default function VendorAssignment() {
     setSelectedRow(null);
     setFormData({
       vendor_id: '',
-      region_id: '',
+      region_ids: [],
       password: '',
       confirmPassword: '',
     });
@@ -285,9 +331,13 @@ export default function VendorAssignment() {
   const handleView = React.useCallback((row) => {
     if (!canRead) return;
     setSelectedRow(row);
+    // Transform regions array to region_ids array
+    const regionIds = row.regions && Array.isArray(row.regions) && row.regions.length > 0
+      ? row.regions.map(r => r.id)
+      : [];
     setFormData({
       vendor_id: row.username || '',
-      region_id: row.region_id || '',
+      region_ids: regionIds,
       password: '••••••', // Don't show actual password
       confirmPassword: '••••••',
     });
@@ -298,9 +348,13 @@ export default function VendorAssignment() {
   const handleEdit = React.useCallback((row) => {
     if (!canUpdate) return;
     setSelectedRow(row);
+    // Transform regions array to region_ids array
+    const regionIds = row.regions && Array.isArray(row.regions) && row.regions.length > 0
+      ? row.regions.map(r => r.id)
+      : [];
     setFormData({
       vendor_id: row.username || '',
-      region_id: row.region_id || '',
+      region_ids: regionIds,
       password: '', // Leave empty for editing
       confirmPassword: '',
     });
@@ -365,6 +419,280 @@ export default function VendorAssignment() {
     }
   }, [isLoading, canRead, loadSapUsers]);
 
+  // Handle refresh sales head data
+  const handleRefreshSalesHeadData = React.useCallback(async () => {
+    const startTime = Date.now();
+    setRefreshingSalesHead(true);
+    setRefreshProgressDialog(true);
+    setRefreshProgress({
+      stage: 'starting',
+      message: 'Initializing refresh process...',
+      startTime: startTime
+    });
+
+    // Create AbortController for timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 900000); // 15 minutes timeout
+
+    try {
+      // Use fetch directly with longer timeout
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${BASE_URL}/api/sap-users/refresh-sales-head-data`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data?.success) {
+        const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(0);
+        setRefreshProgress({
+          stage: 'completed',
+          message: `Successfully refreshed ${data.data?.recordsInserted || 0} records in ${elapsedTime} seconds`,
+          startTime: startTime
+        });
+        
+        // Wait a moment to show success message
+        setTimeout(() => {
+          setRefreshProgressDialog(false);
+          toast.success(
+            `Sales head data refreshed successfully! ${data.data?.recordsInserted || 0} records inserted in ${elapsedTime} seconds.`,
+            {
+              position: "top-right",
+              autoClose: 7000,
+              hideProgressBar: false,
+              closeOnClick: true,
+              pauseOnHover: true,
+              draggable: true,
+            }
+          );
+        }, 2000);
+      } else {
+        throw new Error(data?.message || 'Failed to refresh sales head data');
+      }
+    } catch (error) {
+      clearTimeout(timeoutId);
+      console.error('Error refreshing sales head data:', error);
+      
+      let errorMessage = 'Failed to refresh sales head data';
+      if (error.name === 'AbortError') {
+        errorMessage = 'Request timed out. This operation can take up to 15 minutes. Please try again.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      setRefreshProgress({
+        stage: 'error',
+        message: errorMessage,
+        startTime: startTime
+      });
+
+      setTimeout(() => {
+        setRefreshProgressDialog(false);
+        toast.error(errorMessage, {
+          position: "top-right",
+          autoClose: 8000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      }, 2000);
+    } finally {
+      setRefreshingSalesHead(false);
+    }
+  }, []);
+
+  const handleRefreshVendorsData = React.useCallback(async () => {
+    const startTime = Date.now();
+    setRefreshingVendors(true);
+    setRefreshProgressDialog(true);
+    setRefreshProgress({
+      stage: 'starting',
+      message: 'Initializing vendors refresh process...',
+      startTime: startTime
+    });
+
+    // Create AbortController for timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 900000); // 15 minutes timeout
+
+    try {
+      setRefreshProgress({
+        stage: 'queuing',
+        message: 'Queuing vendors sync job...',
+        startTime: startTime
+      });
+
+      const response = await fetch(`${BASE_URL}/api/sap-users/refresh-vendors-data`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`Failed to refresh vendors data: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        setRefreshProgress({
+          stage: 'success',
+          message: 'Vendors data sync job queued successfully! Worker will process it shortly.',
+          startTime: startTime,
+          jobId: result.data?.jobId
+        });
+
+        toast.success('Vendors data sync job queued successfully!', {
+          position: 'top-right',
+          autoClose: 5000,
+        });
+
+        // Auto-close after success
+        setTimeout(() => {
+          setRefreshProgressDialog(false);
+        }, 3000);
+      } else {
+        throw new Error(result.message || 'Unknown error occurred');
+      }
+    } catch (error) {
+      clearTimeout(timeoutId);
+      
+      if (error.name === 'AbortError') {
+        setRefreshProgress({
+          stage: 'error',
+          message: 'Request timed out after 15 minutes. Please try again.',
+          startTime: startTime
+        });
+        toast.error('Request timed out. Please try again.', {
+          position: 'top-right',
+          autoClose: 5000,
+        });
+      } else {
+        setRefreshProgress({
+          stage: 'error',
+          message: `Error: ${error.message}`,
+          startTime: startTime
+        });
+        toast.error(`Failed to refresh vendors data: ${error.message}`, {
+          position: 'top-right',
+          autoClose: 5000,
+        });
+      }
+    } finally {
+      setRefreshingVendors(false);
+    }
+  }, []);
+
+  const handleRefreshRegionsData = React.useCallback(async () => {
+    const startTime = Date.now();
+    setRefreshingRegions(true);
+    setRefreshProgressDialog(true);
+    setRefreshProgress({
+      stage: 'starting',
+      message: 'Initializing regions refresh process...',
+      startTime: startTime
+    });
+
+    // Create AbortController for timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 900000); // 15 minutes timeout
+
+    try {
+      setRefreshProgress({
+        stage: 'queuing',
+        message: 'Queuing regions sync job...',
+        startTime: startTime
+      });
+
+      const response = await fetch(`${BASE_URL}/api/sap-users/refresh-regions-data`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`Failed to refresh regions data: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        setRefreshProgress({
+          stage: 'success',
+          message: 'Regions data sync job queued successfully! Worker will process it shortly.',
+          startTime: startTime,
+          jobId: result.data?.jobId
+        });
+
+        toast.success('Regions data sync job queued successfully!', {
+          position: 'top-right',
+          autoClose: 5000,
+        });
+
+        // Auto-close after success and reload regions
+        setTimeout(() => {
+          setRefreshProgressDialog(false);
+          loadRegions(); // Reload regions to show new ones
+        }, 3000);
+      } else {
+        throw new Error(result.message || 'Unknown error occurred');
+      }
+    } catch (error) {
+      clearTimeout(timeoutId);
+      
+      if (error.name === 'AbortError') {
+        setRefreshProgress({
+          stage: 'error',
+          message: 'Request timed out after 15 minutes. Please try again.',
+          startTime: startTime
+        });
+        toast.error('Request timed out. Please try again.', {
+          position: 'top-right',
+          autoClose: 5000,
+        });
+      } else {
+        setRefreshProgress({
+          stage: 'error',
+          message: `Error: ${error.message}`,
+          startTime: startTime
+        });
+        toast.error(`Failed to refresh regions data: ${error.message}`, {
+          position: 'top-right',
+          autoClose: 5000,
+        });
+      }
+    } finally {
+      setRefreshingRegions(false);
+    }
+  }, [loadRegions]);
+
   // Submit handler
   const handleSubmit = async () => {
     if (!validateForm()) {
@@ -380,7 +708,7 @@ export default function VendorAssignment() {
       // Prepare payload for SAP user creation
       const payload = {
         vendor_id: formData.vendor_id,
-        region_id: formData.region_id,
+        region_ids: Array.isArray(formData.region_ids) ? formData.region_ids : [],
         password: formData.password,
         card_name: selectedVendor?.name || selectedVendor?.CardName || 'Unknown Vendor',
         contact_person: selectedVendor?.contact_person || selectedVendor?.CntctPrsn || null,
@@ -392,13 +720,32 @@ export default function VendorAssignment() {
       // Console log the payload as requested
       console.log('Vendor Assignment Payload:', payload);
       console.log('Selected Vendor:', vendors.find(v => (v.id || v.CardCode) === formData.vendor_id));
-      console.log('Selected Region:', regions.find(r => r.id === formData.region_id));
+      console.log('Selected Regions:', formData.region_ids.map(id => regions.find(r => r.id === id)).filter(Boolean));
 
-      // Create SAP user via API
-      const response = await post('/api/sap-users/create', payload);
+      let response;
+      if (modalMode === 'create') {
+        // Create SAP user via API
+        response = await post('/api/sap-users/create', payload);
+      } else if (modalMode === 'edit' && selectedRow) {
+        // Update SAP user via API
+        const updatePayload = {
+          region_ids: Array.isArray(formData.region_ids) ? formData.region_ids : [],
+        };
+        
+        // Only include password if it's provided (not empty)
+        if (formData.password && formData.password.trim() !== '') {
+          updatePayload.password = formData.password;
+        }
+        
+        response = await put(`/api/sap-users/${selectedRow.id}`, updatePayload);
+      } else {
+        throw new Error('Invalid operation mode');
+      }
       
       if (response.success) {
-        toast.success('SAP user created successfully!', {
+        toast.success(modalMode === 'create' 
+          ? 'SAP user created successfully!' 
+          : 'SAP user updated successfully!', {
           position: "top-right",
           autoClose: 3000,
           hideProgressBar: false,
@@ -413,21 +760,22 @@ export default function VendorAssignment() {
         // Reset form
         setFormData({
           vendor_id: '',
-          region_id: '',
+          region_ids: [],
           password: '',
           confirmPassword: '',
         });
         setUseSystemPassword(false);
         setFormErrors({});
+        setSelectedRow(null);
         
-        // Reload SAP users to show the new one
+        // Reload SAP users to show the updated data
         loadSapUsers();
       } else {
-        throw new Error(response.message || 'Failed to create SAP user');
+        throw new Error(response.message || `Failed to ${modalMode === 'create' ? 'create' : 'update'} SAP user`);
       }
     } catch (error) {
-      console.error('Error creating SAP user:', error);
-      toast.error(`Failed to create SAP user: ${error.message}`, {
+      console.error(`Error ${modalMode === 'create' ? 'creating' : 'updating'} SAP user:`, error);
+      toast.error(`Failed to ${modalMode === 'create' ? 'create' : 'update'} SAP user: ${error.message}`, {
         position: "top-right",
         autoClose: 5000,
         hideProgressBar: false,
@@ -459,12 +807,41 @@ export default function VendorAssignment() {
       width: 200,
       renderCell: (params) => params.value || 'N/A'
     },
-    { 
-      field: 'region', 
-      headerName: 'Region', 
-      width: 150,
-      renderCell: (params) => params.value?.name || 'N/A'
-    },
+    // { 
+    //   field: 'regions', 
+    //   headerName: 'Regions', 
+    //   width: 250,
+    //   align: 'left',
+    //   headerAlign: 'left',
+    //   renderCell: (params) => {
+    //     const regions = params.value;
+    //     if (!regions || !Array.isArray(regions) || regions.length === 0) {
+    //       return (
+    //         <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+    //           <Chip 
+    //             label="No Regions" 
+    //             variant="outlined" 
+    //             size="small"
+    //             color="default"
+    //           />
+    //         </Box>
+    //       );
+    //     }
+    //     return (
+    //       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center', py: 0.5 }}>
+    //         {regions.map((region) => (
+    //           <Chip 
+    //             key={region.id}
+    //             label={`${region.name}${region.code ? ` (${region.code})` : ''}`} 
+    //             variant="outlined" 
+    //             size="small"
+    //             color="secondary"
+    //           />
+    //         ))}
+    //       </Box>
+    //     );
+    //   }
+    // },
     { 
       field: 'contact_person', 
       headerName: 'Contact Person', 
@@ -525,6 +902,42 @@ export default function VendorAssignment() {
           {error}
         </Alert>
       )}
+
+      {/* Refresh Sales Head Data Button */}
+      <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+        <Button
+          variant="outlined"
+          color="primary"
+          startIcon={refreshingSalesHead ? <CircularProgress size={20} /> : <CloudSync />}
+          onClick={handleRefreshSalesHeadData}
+          disabled={refreshingSalesHead || refreshingVendors || refreshingRegions}
+          sx={{ minWidth: 200 }}
+        >
+          {refreshingSalesHead ? 'Refreshing...' : 'Refresh Sales Head Data'}
+        </Button>
+        
+        <Button
+          variant="outlined"
+          color="secondary"
+          startIcon={refreshingVendors ? <CircularProgress size={20} /> : <CloudSync />}
+          onClick={handleRefreshVendorsData}
+          disabled={refreshingSalesHead || refreshingVendors || refreshingRegions}
+          sx={{ minWidth: 200 }}
+        >
+          {refreshingVendors ? 'Refreshing...' : 'Refresh Vendors Data'}
+        </Button>
+
+        <Button
+          variant="outlined"
+          color="success"
+          startIcon={refreshingRegions ? <CircularProgress size={20} /> : <CloudSync />}
+          onClick={handleRefreshRegionsData}
+          disabled={refreshingSalesHead || refreshingVendors || refreshingRegions}
+          sx={{ minWidth: 200 }}
+        >
+          {refreshingRegions ? 'Refreshing...' : 'Sync Regions from SAP'}
+        </Button>
+      </Box>
 
       <ReusableDataTable
         data={rowsState.rows}
@@ -634,20 +1047,35 @@ export default function VendorAssignment() {
               openOnFocus
             />
 
-            {/* Region Selection */}
-            <FormControl fullWidth error={!!formErrors.region_id}>
-              <InputLabel>Region *</InputLabel>
+            {/* Region Selection - Multi-select */}
+            <FormControl fullWidth error={!!formErrors.region_ids} disabled={loadingRegions}>
+              <InputLabel>Regions *</InputLabel>
               <Select
-                value={formData.region_id}
-                label="Region *"
+                multiple
+                value={Array.isArray(formData.region_ids) ? formData.region_ids : []}
+                label="Regions *"
                 onChange={(e) => {
-                  setFormData(prev => ({ ...prev, region_id: e.target.value }));
+                  const value = e.target.value;
+                  setFormData(prev => ({ 
+                    ...prev, 
+                    region_ids: typeof value === 'string' ? value.split(',') : value 
+                  }));
                   // Clear region error when selection is made
-                  if (formErrors.region_id) {
-                    setFormErrors(prev => ({ ...prev, region_id: '' }));
+                  if (formErrors.region_ids) {
+                    setFormErrors(prev => ({ ...prev, region_ids: '' }));
                   }
                 }}
                 disabled={modalMode === 'view' || loadingRegions}
+                renderValue={(selected) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {selected.map((regionId) => {
+                      const region = regions.find(r => r.id === regionId);
+                      return region ? (
+                        <Chip key={regionId} label={region.name} size="small" />
+                      ) : null;
+                    })}
+                  </Box>
+                )}
               >
                 {loadingRegions ? (
                   <MenuItem disabled>
@@ -664,10 +1092,11 @@ export default function VendorAssignment() {
                   ))
                 )}
               </Select>
-              {formErrors.region_id && (
-                <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1.75 }}>
-                  {formErrors.region_id}
-                </Typography>
+              {formErrors.region_ids && (
+                <FormHelperText error>{formErrors.region_ids}</FormHelperText>
+              )}
+              {!formErrors.region_ids && (
+                <FormHelperText>Select one or more regions</FormHelperText>
               )}
             </FormControl>
 
@@ -687,7 +1116,7 @@ export default function VendorAssignment() {
 
                 {/* Password Field */}
                 <TextField
-                  label="Password *"
+                  label={modalMode === 'create' ? "Password *" : "New Password (Optional)"}
                   type={showPassword ? 'text' : 'password'}
                   value={formData.password}
                   onChange={(e) => {
@@ -700,7 +1129,7 @@ export default function VendorAssignment() {
                   variant="outlined"
                   disabled={useSystemPassword}
                   error={!!formErrors.password}
-                  helperText={formErrors.password || 'Minimum 6 characters'}
+                  helperText={formErrors.password || (modalMode === 'create' ? 'Minimum 6 characters' : 'Leave empty to keep current password')}
                   InputProps={{
                     endAdornment: (
                       <InputAdornment position="end">
@@ -718,7 +1147,7 @@ export default function VendorAssignment() {
 
                 {/* Confirm Password Field */}
                 <TextField
-                  label="Confirm Password *"
+                  label={modalMode === 'create' ? "Confirm Password *" : "Confirm New Password (Optional)"}
                   type={showConfirmPassword ? 'text' : 'password'}
                   value={formData.confirmPassword}
                   onChange={(e) => {
@@ -731,7 +1160,7 @@ export default function VendorAssignment() {
                   variant="outlined"
                   disabled={useSystemPassword}
                   error={!!formErrors.confirmPassword}
-                  helperText={formErrors.confirmPassword}
+                  helperText={formErrors.confirmPassword || (modalMode === 'edit' ? 'Required only if changing password' : '')}
                   InputProps={{
                     endAdornment: (
                       <InputAdornment position="end">
@@ -857,6 +1286,65 @@ export default function VendorAssignment() {
           >
             {isLoading ? 'Deleting...' : 'Delete'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Refresh Progress Dialog */}
+      <Dialog
+        open={refreshProgressDialog}
+        onClose={() => {}} // Prevent closing during operation
+        aria-labelledby="refresh-progress-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '400px',
+            maxWidth: '500px',
+          }
+        }}
+      >
+        <DialogTitle id="refresh-progress-dialog-title" sx={{ fontWeight: 'bold' }}>
+          Refreshing Sales Head Data
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, py: 2 }}>
+            <CircularProgress size={60} thickness={4} />
+            <Box sx={{ textAlign: 'center', width: '100%' }}>
+              <Typography variant="h6" sx={{ mb: 1, color: '#1976d2' }}>
+                {refreshProgress.stage === 'starting' && 'Initializing...'}
+                {refreshProgress.stage === 'completed' && '✓ Completed!'}
+                {refreshProgress.stage === 'error' && '✗ Error'}
+                {!['starting', 'completed', 'error'].includes(refreshProgress.stage) && 'Processing...'}
+              </Typography>
+              <Typography variant="body1" sx={{ color: '#666', mb: 2 }}>
+                {refreshProgress.message || 'This may take several minutes. Please do not close this window.'}
+              </Typography>
+              {refreshProgress.startTime && refreshProgress.stage !== 'completed' && refreshProgress.stage !== 'error' && (
+                <Typography variant="body2" sx={{ color: '#999', fontStyle: 'italic' }}>
+                  Elapsed time: {elapsedTime} seconds
+                </Typography>
+              )}
+              {refreshProgress.stage === 'starting' && (
+                <Typography variant="body2" sx={{ color: '#666', mt: 2, fontStyle: 'italic' }}>
+                  Fetching data from SAP database...
+                </Typography>
+              )}
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, justifyContent: 'center' }}>
+          {refreshProgress.stage === 'completed' || refreshProgress.stage === 'error' ? (
+            <Button 
+              onClick={() => setRefreshProgressDialog(false)} 
+              variant="contained"
+              color={refreshProgress.stage === 'completed' ? 'primary' : 'error'}
+            >
+              Close
+            </Button>
+          ) : (
+            <Typography variant="body2" sx={{ color: '#999', fontStyle: 'italic' }}>
+              Please wait... This operation may take up to 15 minutes
+            </Typography>
+          )}
         </DialogActions>
       </Dialog>
 

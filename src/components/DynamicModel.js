@@ -20,6 +20,8 @@ import {
   Divider,
   Alert,
   Tooltip,
+  Autocomplete,
+  CircularProgress,
 } from '@mui/material';
 import { Close, Edit, Visibility, VpnKey, Cancel } from '@mui/icons-material';
 
@@ -36,6 +38,9 @@ const DynamicModal = ({
   showPasswordChange = false,
   onTogglePasswordChange,
   isEditMode = false,
+  submitButtonText = null, // Custom submit button text
+  onTestCredentials = null, // Function to test credentials
+  testingCredentials = false, // Loading state for testing credentials
 }) => {
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
@@ -49,6 +54,34 @@ const DynamicModal = ({
       setTouched({});
     }
   }, [open, initialData]);
+
+  // Clear password fields when password change is canceled, or initialize when enabled
+  useEffect(() => {
+    if (isEditMode) {
+      if (!showPasswordChange) {
+        // Clear password fields when password change is canceled
+        setFormData(prev => {
+          const { password, confirmPassword, ...rest } = prev;
+          return rest;
+        });
+        setErrors(prev => {
+          const { password, confirmPassword, ...rest } = prev;
+          return rest;
+        });
+        setTouched(prev => {
+          const { password, confirmPassword, ...rest } = prev;
+          return rest;
+        });
+      } else {
+        // Initialize password fields when password change is enabled
+        setFormData(prev => ({
+          ...prev,
+          password: prev.password || '',
+          confirmPassword: prev.confirmPassword || '',
+        }));
+      }
+    }
+  }, [showPasswordChange, isEditMode]);
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -134,8 +167,11 @@ const DynamicModal = ({
       ...otherProps
     } = field;
     
-    const rawValue = formData[name] || '';
-    const value = valueFormatter ? valueFormatter(rawValue) : rawValue;
+    const rawValue = formData[name];
+    // For multi-select, default to empty array if undefined/null
+    const defaultValue = field.multiple ? [] : '';
+    const rawValueWithDefault = rawValue !== undefined && rawValue !== null ? rawValue : defaultValue;
+    const value = valueFormatter ? valueFormatter(rawValueWithDefault) : rawValueWithDefault;
     const error = errors[name] || '';
     const isViewMode = mode === 'view';
     const isDisabled = isViewMode || disabled;
@@ -167,30 +203,197 @@ const DynamicModal = ({
             }}
           />
         ) : type === 'select' ? (
-          <FormControl 
-            key={name} 
-            fullWidth 
-            margin="normal" 
-            error={!!error}
-            disabled={isDisabled}
-          >
-            <InputLabel>{label}{required ? ' *' : ''}</InputLabel>
-            <Select
-              value={value}
-              label={label}
-              onChange={(e) => handleChange(name, e.target.value)}
+          // Use Autocomplete for select fields with search functionality
+          field.multiple ? (
+            // Multiple select with Autocomplete
+            <Autocomplete
+              key={name}
+              multiple
+              options={options || []}
+              getOptionLabel={(option) => option.label || ''}
+              value={
+                Array.isArray(value) 
+                  ? options?.filter(opt => value.includes(opt.value)) || []
+                  : []
+              }
+              onChange={(event, newValue) => {
+                const selectedValues = newValue.map(item => item.value);
+                handleChange(name, selectedValues);
+              }}
               onBlur={() => handleBlur(name)}
-              variant={isViewMode ? "filled" : "outlined"}
+              disabled={isDisabled}
+              loading={field.loading}
+              disableListWrap
+              disableCloseOnSelect
+              limitTags={3}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label={label + (required ? ' *' : '')}
+                  error={!!error}
+                  helperText={error || field.helperText}
+                  margin="normal"
+                  variant={isViewMode ? "filled" : "outlined"}
+                  placeholder={isViewMode ? "" : "Search and select..."}
+                  InputProps={{
+                    ...params.InputProps,
+                    readOnly: isViewMode,
+                    endAdornment: (
+                      <>
+                        {field.loading ? <CircularProgress color="inherit" size={20} /> : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                    sx: {
+                      maxHeight: '120px',
+                      overflowY: 'auto',
+                      flexWrap: 'wrap',
+                      '&::-webkit-scrollbar': {
+                        width: '8px',
+                      },
+                      '&::-webkit-scrollbar-track': {
+                        background: '#f1f1f1',
+                      },
+                      '&::-webkit-scrollbar-thumb': {
+                        background: '#888',
+                        borderRadius: '4px',
+                      },
+                      '&::-webkit-scrollbar-thumb:hover': {
+                        background: '#555',
+                      },
+                    }
+                  }}
+                />
+              )}
+              renderTags={(tagValue, getTagProps) =>
+                tagValue.map((option, index) => (
+                  <Chip
+                    key={option.value}
+                    label={option.label}
+                    {...getTagProps({ index })}
+                    size="small"
+                    disabled={isViewMode}
+                  />
+                ))
+              }
+              ListboxProps={{
+                style: {
+                  maxHeight: '300px',
+                },
+              }}
+              PopperComponent={(props) => (
+                <Box 
+                  {...props} 
+                  sx={{ 
+                    zIndex: 1300,
+                    '& .MuiAutocomplete-listbox': {
+                      maxHeight: '300px',
+                      overflow: 'auto',
+                    }
+                  }}
+                  placement="bottom-start"
+                  modifiers={[
+                    {
+                      name: 'flip',
+                      enabled: false,
+                    },
+                    {
+                      name: 'preventOverflow',
+                      enabled: true,
+                      options: {
+                        altAxis: true,
+                        altBoundary: true,
+                        tether: true,
+                        rootBoundary: 'viewport',
+                        padding: 8,
+                      },
+                    },
+                  ]}
+                />
+              )}
+              isOptionEqualToValue={(option, value) => option.value === value.value}
               readOnly={isViewMode}
-            >
-              {options?.map(option => (
-                <MenuItem key={option.value} value={option.value}>
-                  {option.label}
-                </MenuItem>
-              ))}
-            </Select>
-            {error && <FormHelperText>{error}</FormHelperText>}
-          </FormControl>
+              disableClearable={isViewMode}
+              filterSelectedOptions
+              sx={{ 
+                mt: 1,
+                '& .MuiAutocomplete-tag': {
+                  maxWidth: 'calc(100% - 50px)',
+                },
+              }}
+            />
+          ) : (
+            // Single select with Autocomplete
+            <Autocomplete
+              key={name}
+              options={options || []}
+              getOptionLabel={(option) => option.label || ''}
+              value={options?.find(opt => opt.value === value) || null}
+              onChange={(event, newValue) => {
+                handleChange(name, newValue ? newValue.value : '');
+              }}
+              onBlur={() => handleBlur(name)}
+              disabled={isDisabled}
+              loading={field.loading}
+              disableListWrap
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label={label + (required ? ' *' : '')}
+                  error={!!error}
+                  helperText={error || field.helperText}
+                  margin="normal"
+                  variant={isViewMode ? "filled" : "outlined"}
+                  placeholder={isViewMode ? "" : "Search and select..."}
+                  InputProps={{
+                    ...params.InputProps,
+                    readOnly: isViewMode,
+                    endAdornment: (
+                      <>
+                        {field.loading ? <CircularProgress color="inherit" size={20} /> : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                  }}
+                />
+              )}
+              ListboxProps={{
+                style: {
+                  maxHeight: '300px',
+                },
+              }}
+              PopperComponent={(props) => (
+                <Box 
+                  {...props} 
+                  sx={{ 
+                    zIndex: 1300,
+                  }}
+                  placement="bottom-start"
+                  modifiers={[
+                    {
+                      name: 'flip',
+                      enabled: false,
+                    },
+                    {
+                      name: 'preventOverflow',
+                      enabled: true,
+                      options: {
+                        altAxis: true,
+                        altBoundary: true,
+                        tether: true,
+                        rootBoundary: 'viewport',
+                        padding: 8,
+                      },
+                    },
+                  ]}
+                />
+              )}
+              isOptionEqualToValue={(option, value) => option.value === value.value}
+              readOnly={isViewMode}
+              disableClearable={isViewMode}
+              sx={{ mt: 1 }}
+            />
+          )
         ) : type === 'checkbox' ? (
           <FormControlLabel
             key={name}
@@ -206,7 +409,7 @@ const DynamicModal = ({
             sx={{ mt: 2 }}
           />
         ) : type === 'custom' ? (
-          field.render ? field.render(value, (val) => handleChange(name, val), isViewMode) : null
+          field.render ? field.render(value, (val) => handleChange(name, val), isViewMode, formData) : null
         ) : isViewMode ? (
           <Box key={name} sx={{ mt: 2 }}>
             <Typography variant="body2" color="textSecondary">
@@ -332,9 +535,11 @@ const DynamicModal = ({
           {mode === 'create' && passwordFields.map(field => renderField(field))}
           
           {/* Add custom content section */}
-          {customContent && (
+          {customContent && formData && (
             <Box sx={{ mt: 3 }}>
-              {customContent}
+              {typeof customContent === 'function' 
+                ? customContent({ formData, setFormData, mode })
+                : customContent}
             </Box>
           )}
         </Box>
@@ -346,13 +551,32 @@ const DynamicModal = ({
         </Button>
         
         {mode !== 'view' && (
-          <Button 
-            onClick={handleSubmit} 
-            variant="contained" 
-            disabled={loading}
-          >
-            {loading ? 'Saving...' : mode === 'edit' ? 'Update' : 'Create'}
-          </Button>
+          <>
+            {onTestCredentials && (
+              <Button 
+                onClick={() => onTestCredentials(formData)} 
+                variant="outlined"
+                color="primary"
+                disabled={loading || testingCredentials}
+                sx={{ mr: 'auto' }}
+              >
+                {testingCredentials ? 'Testing...' : 'Test Credentials'}
+              </Button>
+            )}
+            <Button 
+              onClick={handleSubmit} 
+              variant="contained" 
+              disabled={loading || testingCredentials}
+            >
+              {loading 
+                ? 'Saving...' 
+                : submitButtonText 
+                  ? submitButtonText 
+                  : mode === 'edit' 
+                    ? 'Update' 
+                    : 'Create'}
+            </Button>
+          </>
         )}
       </DialogActions>
     </Dialog>

@@ -16,8 +16,10 @@ import {
   Divider,
   InputAdornment,
   Paper,
-  FormControlLabel,
-  Checkbox,
+  Grid,
+  Popover,
+  Backdrop,
+  CircularProgress,
 } from '@mui/material';
 import {
   CheckCircle as ApproveIcon,
@@ -31,8 +33,18 @@ import {
   History as HistoryIcon,
   Visibility as ViewIcon,
   Receipt as InvoiceIcon,
+  Assignment as WorkOrderIcon,
+  Print as PrintIcon,
+  Group as SalesHeadIcon,
+  Store as DealerIcon,
+  FilterList as FilterListIcon,
+  Clear as ClearIcon,
+  Label as StatusIcon,
+  CalendarToday as DateIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import { GridActionsCellItem } from '@mui/x-data-grid';
+import { GridToolbarContainer, GridToolbarColumnsButton } from '@mui/x-data-grid';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -40,10 +52,61 @@ import { useAuth } from '../auth/AuthContext';
 import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
+import InvoiceViewer from '../components/InvoiceViewer';
+import WorkOrderPDFGenerator from '../components/WorkOrderPDFGenerator';
 import { BASE_URL } from "../constants/Constants";
+import { 
+  SHOPBOARD_REQUEST_STATUS, 
+  getVendorStatusDisplayName, 
+  getVendorStatusColor,
+  mapStatusForVendor,
+  VENDOR_APPROVAL_STATUS
+} from "../constants/VendorRequestStatus";
 import { useApi } from '../hooks/useApi';
 
 const INITIAL_PAGE_SIZE = 10;
+
+function getFileUrlAndName(item, index, fallbackLabel) {
+  if (item == null) return { url: '', fileName: fallbackLabel };
+  if (typeof item === 'object' && item.url != null) return { url: item.url, fileName: item.fileName || fallbackLabel };
+  const str = typeof item === 'string' ? item : '';
+  return { url: str, fileName: str.startsWith('data:') ? fallbackLabel : str.split('/').pop() || fallbackLabel };
+}
+
+// Open file in new tab; for data URLs use blob URL so image/PDF loads reliably
+async function openFileInNewTab(url) {
+  if (!url) return;
+  if (url.startsWith('data:')) {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch {
+      window.open(url, '_blank');
+    }
+  } else {
+    window.open(url, '_blank');
+  }
+}
+
+// Custom toolbar with only columns button
+function CustomToolbar() {
+  return (
+    <GridToolbarContainer>
+      <GridToolbarColumnsButton 
+        sx={{
+          color: '#757575', // Light grey color to match default
+          '&:hover': {
+            color: '#424242', // Slightly darker on hover
+            backgroundColor: 'rgba(0, 0, 0, 0.04)',
+          },
+        }}
+      />
+    </GridToolbarContainer>
+  );
+}
 
 export default function VendorRequests() {
   const { pathname } = useLocation();
@@ -51,6 +114,9 @@ export default function VendorRequests() {
   const navigate = useNavigate();
   
   const { user, hasPermission, token } = useAuth();
+  
+  // Check if user is a vendor (not admin or other user types)
+  const isVendor = user?.user_type === 'vendor';
   
   // Check user permissions - using vendorRequests permissions
   const canRead = user?.permissions?.vendorRequests?.includes('read') || false;
@@ -70,6 +136,145 @@ export default function VendorRequests() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState(null);
   
+  // Filter state - inline filter management
+  const [selectedSalesHead, setSelectedSalesHead] = React.useState(null);
+  const [salesHeads, setSalesHeads] = React.useState([]);
+  const [loadingSalesHeads, setLoadingSalesHeads] = React.useState(false);
+  
+  const [selectedDealer, setSelectedDealer] = React.useState(null);
+  const [filterDealers, setFilterDealers] = React.useState([]);
+  const [loadingDealers, setLoadingDealers] = React.useState(false);
+  
+  const [selectedStatus, setSelectedStatus] = React.useState(null);
+  const [statusOptions, setStatusOptions] = React.useState([]);
+  const [loadingStatusOptions, setLoadingStatusOptions] = React.useState(false);
+  
+  const [startDate, setStartDate] = React.useState(null);
+  const [endDate, setEndDate] = React.useState(null);
+  const [dateRangeAnchor, setDateRangeAnchor] = React.useState(null);
+  
+  // Use filters state for API calls
+  const [filters, setFilters] = React.useState({
+    salesHead: null,
+    dealer: null,
+    status: null,
+    startDate: null,
+    endDate: null,
+  });
+  
+  // Use ref to store current filters to avoid recreating loadRequests
+  const filtersRef = React.useRef(filters);
+  React.useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
+  
+  // Fetch sales heads from API - run once on mount
+  // Fetch for all users - backend will return empty array for non-vendors
+  React.useEffect(() => {
+    const fetchSalesHeads = async () => {
+      if (!canRead) {
+        setLoadingSalesHeads(false);
+        setSalesHeads([]);
+        return;
+      }
+      
+      setLoadingSalesHeads(true);
+      try {
+        const response = await get('/api/shopboard-requests/vendor/sales-heads');
+        if (response.success && Array.isArray(response.data)) {
+          setSalesHeads(response.data);
+        } else {
+          setSalesHeads([]);
+        }
+      } catch (error) {
+        console.error('Error fetching sales heads:', error);
+        setSalesHeads([]);
+      } finally {
+        setLoadingSalesHeads(false);
+      }
+    };
+
+    fetchSalesHeads();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
+  
+  // Fetch dealers from API - run once on mount
+  // Fetch for all users - backend will return empty array for non-vendors
+  React.useEffect(() => {
+    const fetchDealers = async () => {
+      if (!canRead) {
+        setLoadingDealers(false);
+        setFilterDealers([]);
+        return;
+      }
+      
+      setLoadingDealers(true);
+      try {
+        const response = await get('/api/shopboard-requests/vendor/dealers');
+        if (response.success && Array.isArray(response.data)) {
+          setFilterDealers(response.data);
+        } else {
+          setFilterDealers([]);
+        }
+      } catch (error) {
+        console.error('Error fetching dealers:', error);
+        setFilterDealers([]);
+      } finally {
+        setLoadingDealers(false);
+      }
+    };
+
+    fetchDealers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
+  
+  // Fetch status options from API - run once on mount
+  React.useEffect(() => {
+    const fetchStatusOptions = async () => {
+      if (!canRead) {
+        setLoadingStatusOptions(false);
+        setStatusOptions([]);
+        return;
+      }
+      
+      setLoadingStatusOptions(true);
+      try {
+        const response = await get('/api/shopboard-requests/vendor/status-options');
+        if (response.success && Array.isArray(response.data)) {
+          setStatusOptions(response.data);
+        } else {
+          setStatusOptions([]);
+        }
+      } catch (error) {
+        console.error('Error fetching status options:', error);
+        setStatusOptions([]);
+      } finally {
+        setLoadingStatusOptions(false);
+      }
+    };
+
+    fetchStatusOptions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
+  
+  // Update filters when selectedSalesHead, selectedDealer, selectedStatus, startDate, or endDate changes
+  React.useEffect(() => {
+    setFilters({
+      salesHead: selectedSalesHead,
+      dealer: selectedDealer,
+      status: selectedStatus,
+      startDate: startDate,
+      endDate: endDate
+    });
+    // Reset to first page when filter changes
+    if (selectedSalesHead !== null || selectedDealer !== null || selectedStatus !== null || startDate !== null || endDate !== null) {
+      setPaginationModel(prev => {
+        if (prev.page === 0) return prev;
+        return { ...prev, page: 0 };
+      });
+    }
+  }, [selectedSalesHead, selectedDealer, selectedStatus, startDate, endDate]);
+  
   // Modal state for viewing request details
   const [modalOpen, setModalOpen] = React.useState(false);
   const [selectedRequest, setSelectedRequest] = React.useState(null);
@@ -86,17 +291,31 @@ export default function VendorRequests() {
   // Per-item site photos for invoice modal: { [itemId]: File[] }
   const [sitePhotosPerItem, setSitePhotosPerItem] = React.useState({});
   const [invoiceLoading, setInvoiceLoading] = React.useState(false);
+  const [invoiceNumber, setInvoiceNumber] = React.useState('');
+  
+  // Loading full request details when opening details/invoice modals
+  const [loadingRequestDetails, setLoadingRequestDetails] = React.useState(false);
+
+  // Invoice viewer modal state
+  const [invoiceViewerModalOpen, setInvoiceViewerModalOpen] = React.useState(false);
+  const [selectedInvoiceViewerRequest, setSelectedInvoiceViewerRequest] = React.useState(null);
   
   // Existing invoice files state (for display when editing)
   const [existingInvoiceFiles, setExistingInvoiceFiles] = React.useState([]);
   const [existingDealerAcknowledgmentFiles, setExistingDealerAcknowledgmentFiles] = React.useState([]);
   const [existingSitePhotosPerItem, setExistingSitePhotosPerItem] = React.useState({});
   
-  // Rejection comments modal state
+  // Rejection comments modal state (invoice_rejected)
   const [rejectionCommentsModalOpen, setRejectionCommentsModalOpen] = React.useState(false);
   const [selectedRejectionRequest, setSelectedRejectionRequest] = React.useState(null);
   const [rejectionComments, setRejectionComments] = React.useState([]);
   const [loadingRejectionComments, setLoadingRejectionComments] = React.useState(false);
+
+  // Request rejection comments modal state (rejected status)
+  const [requestRejectionCommentsModalOpen, setRequestRejectionCommentsModalOpen] = React.useState(false);
+  const [requestRejectionCommentsList, setRequestRejectionCommentsList] = React.useState([]);
+  const [loadingRequestRejectionComments, setLoadingRequestRejectionComments] = React.useState(false);
+  const [selectedRequestRejection, setSelectedRequestRejection] = React.useState(null);
   
   // Edit modal state
   const [editModalOpen, setEditModalOpen] = React.useState(false);
@@ -109,9 +328,6 @@ export default function VendorRequests() {
   const [existingSitePhotos, setExistingSitePhotos] = React.useState([]);
   const [existingOldBoardPhotos, setExistingOldBoardPhotos] = React.useState([]);
 
-  // Suggested pricing state
-  const [suggestedPricing, setSuggestedPricing] = React.useState({});
-  const [loadingSuggestedPricing, setLoadingSuggestedPricing] = React.useState({});
 
   // Action confirmation dialogs
   const [approveDialogOpen, setApproveDialogOpen] = React.useState(false);
@@ -147,6 +363,12 @@ export default function VendorRequests() {
       ? Number(searchParams.get('pageSize'))
       : INITIAL_PAGE_SIZE,
   });
+  
+  // Use refs to track pagination and filters to avoid recreating loadRequests
+  const paginationModelRef = React.useRef(paginationModel);
+  React.useEffect(() => {
+    paginationModelRef.current = paginationModel;
+  }, [paginationModel]);
 
   const [filterModel, setFilterModel] = React.useState(
     searchParams.get('filter')
@@ -155,7 +377,9 @@ export default function VendorRequests() {
   );
 
   const [sortModel, setSortModel] = React.useState(
-    searchParams.get('sort') ? JSON.parse(searchParams.get('sort') ?? '') : [],
+    searchParams.get('sort')
+      ? JSON.parse(searchParams.get('sort') ?? '')
+      : [{ field: 'created_at', sort: 'desc' }],
   );
 
   // Check if user has read permission on mount
@@ -171,34 +395,14 @@ export default function VendorRequests() {
         draggable: true,
       });
     }
-  }, [canRead, navigate]);
+  }, [canRead]);
 
-  // Load dropdown data for edit form
-  const loadDropdownData = React.useCallback(async (dealerCode = null) => {
+  // Load dropdown data for edit form (warranty statuses only - dealer is already in editingRequest)
+  const loadDropdownData = React.useCallback(async () => {
     setLoadingDropdowns(true);
     try {
-      // If we have a dealer code, fetch that specific dealer
-      // Otherwise, fetch the first page of dealers
-      const dealerPromise = dealerCode 
-        ? get(`/api/dealers/code/${dealerCode}`)
-        : get('/api/dealers');
-      
-      const [dealersRes, requestTypesRes, warrantyStatusesRes] = await Promise.all([
-        dealerPromise,
-        get('/api/request-types'),
-        get('/api/warranty-statuses')
-      ]);
-
-      // Handle dealer response - could be single dealer or list
-      if (dealersRes.success) {
-        if (Array.isArray(dealersRes.data)) {
-          setDealers(dealersRes.data);
-        } else {
-          // Single dealer returned - put it in an array
-          setDealers([dealersRes.data]);
-        }
-      }
-      if (requestTypesRes.success) setRequestTypes(requestTypesRes.data);
+      // Only fetch warranty statuses - dealer data is already available in editingRequest.dealer
+      const warrantyStatusesRes = await get('/api/warranty-statuses');
       if (warrantyStatusesRes.success) setWarrantyStatuses(warrantyStatusesRes.data);
     } catch (error) {
       console.error('Error loading dropdown data:', error);
@@ -215,45 +419,153 @@ export default function VendorRequests() {
     }
   }, [get]);
 
+  // Load allowed request types for vendor
+  // existingRequestTypeIds: optional array of request type IDs that should be included even if is_allowed=false
+  const loadAllowedRequestTypes = React.useCallback(async (vendorCode, existingRequestTypeIds = null) => {
+    if (!vendorCode) {
+      setRequestTypes([]);
+      return;
+    }
+
+    try {
+      // Build query string
+      let queryString = `vendor_code=${encodeURIComponent(vendorCode)}`;
+      
+      // If existing request type IDs are provided, include them in the query
+      if (existingRequestTypeIds && Array.isArray(existingRequestTypeIds) && existingRequestTypeIds.length > 0) {
+        const idsString = existingRequestTypeIds.map(id => String(id)).join(',');
+        queryString += `&existing_request_type_ids=${encodeURIComponent(idsString)}`;
+      }
+      
+      // Use vendor_code query parameter (vendorCode is the vendor_code from shopboard request)
+      const response = await get(`/api/vendor-request-pricing/allowed-request-types?${queryString}`);
+      
+      if (response?.success && Array.isArray(response.data)) {
+        setRequestTypes(response.data);
+        if (response.data.length === 0) {
+          toast.info('No allowed request types found for this vendor', {
+            position: "top-right",
+            autoClose: 5000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          });
+        }
+      } else {
+        setRequestTypes([]);
+        toast.warning('Failed to load allowed request types', {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      }
+    } catch (error) {
+      console.error('Error loading allowed request types:', error);
+      setRequestTypes([]);
+      toast.error('Failed to load allowed request types', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    }
+  }, [get]);
+
   // Load dropdown data when edit modal opens
   React.useEffect(() => {
     if (editModalOpen && editingRequest) {
-      // Pass the dealer code to load that specific dealer
-      const dealerCode = editingRequest.dealer?.code || editFormData.dealer_id;
-      loadDropdownData(dealerCode);
-    }
-  }, [editModalOpen, editingRequest, editFormData.dealer_id, loadDropdownData]);
-
-  // Function to fetch suggested pricing for a vendor and request type
-  const fetchSuggestedPricing = React.useCallback(async (vendorCode, requestTypeId, itemIndex) => {
-    if (!vendorCode || !requestTypeId) return;
-    
-    setLoadingSuggestedPricing(prev => ({ ...prev, [itemIndex]: true }));
-    
-    try {
-      const response = await get(`/api/vendor-request-pricing/suggested?vendor_id=${encodeURIComponent(vendorCode)}&request_type_id=${requestTypeId}`);
+      // Load warranty statuses (dealer is already in editingRequest.dealer, no need to fetch)
+      loadDropdownData();
       
-      if (response.success && response.data) {
-        setSuggestedPricing(prev => ({
-          ...prev,
-          [itemIndex]: response.data.lump_sum_price || 0
-        }));
+      // Set dealer from editingRequest.dealer (no API call needed)
+      if (editingRequest.dealer) {
+        setDealers([editingRequest.dealer]);
+      }
+      
+      // Load allowed request types for this vendor
+      // Include existing request type IDs from the request items (even if is_allowed=false)
+      const vendorCode = editingRequest.vendor_code || editingRequest.vendor?.code;
+      if (vendorCode) {
+        // Extract existing request type IDs from requestItems
+        const existingRequestTypeIds = (editingRequest.requestItems || [])
+          .map(item => item.request_type_id)
+          .filter(id => id != null);
+        
+        loadAllowedRequestTypes(vendorCode, existingRequestTypeIds.length > 0 ? existingRequestTypeIds : null);
       } else {
-        setSuggestedPricing(prev => ({
+        setRequestTypes([]);
+        toast.warning('Vendor code not found for this request', {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      }
+    }
+  }, [editModalOpen, editingRequest, loadDropdownData, loadAllowedRequestTypes]);
+
+  // Update items when requestTypes are loaded to handle manual and fees types
+  React.useEffect(() => {
+    if (editModalOpen && requestTypes.length > 0 && editFormData.request_items) {
+      const updatedItems = editFormData.request_items.map(item => {
+        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+        const isManual = selectedRequestType?.request_type === 'manual';
+        const isFees = selectedRequestType?.request_type === 'fees';
+        
+        if (isManual) {
+          // For manual type: set price_per_sqft from API if not already set, calculate price
+          const pricePerSqft = item.price_per_sqft || selectedRequestType?.price || '';
+          const widthFt = parseFloat(item.width) || 0;
+          const heightFt = parseFloat(item.height) || 0;
+          const areaSqft = widthFt * heightFt;
+          const pricePerSqftNum = parseFloat(pricePerSqft) || 0;
+          const total = areaSqft * pricePerSqftNum;
+          
+          return {
+            ...item,
+            price_per_sqft: pricePerSqft,
+            price: isNaN(total) ? (item.price || '') : Number(total.toFixed(2))
+          };
+        } else if (isFees) {
+          // For fees type: set width/height to 0, price_per_sqft from API, keep price (editable)
+          const pricePerSqft = selectedRequestType?.price || '';
+          return {
+            ...item,
+            width: '0',
+            height: '0',
+            price_per_sqft: pricePerSqft,
+            price: item.price || '' // Keep existing price, allow editing
+          };
+        }
+        return item;
+      });
+      
+      // Only update if there were changes
+      const hasChanges = updatedItems.some((item, index) => {
+        const original = editFormData.request_items[index];
+        return item.width !== original.width ||
+               item.height !== original.height ||
+               item.price_per_sqft !== original.price_per_sqft ||
+               item.price !== original.price;
+      });
+      
+      if (hasChanges) {
+        setEditFormData(prev => ({
           ...prev,
-          [itemIndex]: 0
+          request_items: updatedItems
         }));
       }
-    } catch (error) {
-      console.error('Error fetching suggested pricing:', error);
-      setSuggestedPricing(prev => ({
-        ...prev,
-        [itemIndex]: 0
-      }));
-    } finally {
-      setLoadingSuggestedPricing(prev => ({ ...prev, [itemIndex]: false }));
     }
-  }, [get]);
+  }, [requestTypes, editModalOpen]); // Only depend on requestTypes and editModalOpen
+
 
   // URL state synchronization
   const handlePaginationModelChange = React.useCallback(
@@ -305,6 +617,7 @@ export default function VendorRequests() {
   );
 
   // API call to fetch vendor shopboard requests
+  // Not using useCallback to avoid dependency issues - will be recreated but that's okay
   const loadRequests = React.useCallback(async () => {
     if (!canRead) return;
     
@@ -312,9 +625,45 @@ export default function VendorRequests() {
     setIsLoading(true);
 
     try {
+      // Use current state values directly (not refs) since this function will be recreated when needed
       const { page, pageSize } = paginationModel;
+      const currentFilters = filters;
       
-      const apiUrl = `/api/shopboard-requests/vendor?page=${page}&size=${pageSize}`;
+      // Build query parameters
+      const queryParams = new URLSearchParams({
+        page: page.toString(),
+        size: pageSize.toString()
+      });
+      
+      // Add sales head filter if selected
+      if (currentFilters.salesHead && currentFilters.salesHead.id) {
+        queryParams.append('sales_head_id', currentFilters.salesHead.id.toString());
+      }
+      
+      // Add dealer filter if selected
+      if (currentFilters.dealer && currentFilters.dealer.id) {
+        queryParams.append('dealer_id', currentFilters.dealer.id.toString());
+      }
+      
+      // Add status filter if selected
+      if (currentFilters.status && currentFilters.status.value) {
+        queryParams.append('status', currentFilters.status.value.toString());
+      }
+      
+      // Add date range filter if both start and end dates are provided
+      if (currentFilters.startDate && currentFilters.endDate) {
+        queryParams.append('start_date', currentFilters.startDate);
+        queryParams.append('end_date', currentFilters.endDate);
+      }
+
+      // Always sort by created_at desc (matches backend default) and allow future extension
+      const sortItem = (sortModel && sortModel[0]) || { field: 'created_at', sort: 'desc' };
+      if (sortItem?.field) {
+        queryParams.append('sort_field', sortItem.field);
+        queryParams.append('sort_order', sortItem.sort || 'desc');
+      }
+      
+      const apiUrl = `/api/shopboard-requests/vendor?${queryParams.toString()}`;
       
       const requestData = await get(apiUrl);
       
@@ -357,54 +706,158 @@ export default function VendorRequests() {
     } finally {
       setIsLoading(false);
     }
-  }, [paginationModel, get, canRead]);
+  }, [paginationModel, filters, sortModel, get, canRead]);
 
-  // Load data when component mounts or pagination changes
+  // Fetch full request by ID. includeFiles: 'details' | 'invoice' loads only those file sets (vendor page has no manual approval).
+  const fetchFullRequest = React.useCallback(async (id, includeFiles) => {
+    const url = includeFiles ? `/api/shopboard-requests/${id}?includeFiles=${encodeURIComponent(includeFiles)}` : `/api/shopboard-requests/${id}`;
+    const res = await get(url);
+    if (res?.success && res?.data) return res.data;
+    throw new Error('Failed to load request details');
+  }, [get]);
+
+  // Load data when component mounts, pagination changes, or filters change
   React.useEffect(() => {
-    loadRequests();
-  }, [loadRequests]);
-
-  // Action handlers
-  const handleView = React.useCallback((requestData) => {
-    if (!canRead) return;
-    
-    setSelectedRequest(requestData);
-    setModalOpen(true);
-  }, [canRead]);
-
-  const handleViewDetails = React.useCallback((requestData) => {
-    setSelectedDetailedRequest(requestData);
-    setDetailedViewModalOpen(true);
-  }, []);
-
-  const handleShareInvoice = React.useCallback((requestData) => {
-    setSelectedInvoiceRequest(requestData);
-    
-    // Parse and load existing invoice data if available
-    let invoiceData = {};
-    if (requestData.invoice) {
-      try {
-        invoiceData = typeof requestData.invoice === 'string' 
-          ? JSON.parse(requestData.invoice) 
-          : requestData.invoice;
-      } catch (error) {
-        console.error('Error parsing invoice data:', error);
-        invoiceData = {};
-      }
+    if (canRead) {
+      loadRequests();
     }
-    
-    // Set existing files
-    setExistingInvoiceFiles(invoiceData.invoice_files || []);
-    setExistingDealerAcknowledgmentFiles(invoiceData.dealer_acknowledgment_files || []);
-    setExistingSitePhotosPerItem(invoiceData.site_photos_by_item || {});
-    
-    // Clear new file selections
-    setInvoiceFile(null);
-    setDealerAcknowledgmentFile(null);
-    setSitePhotosPerItem({});
-    
-    setInvoiceModalOpen(true);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paginationModel, filters, sortModel]); // Watch pagination, filters, and sorting
+
+  // Action handlers - fetch full request with only the file set needed for each modal
+  const handleView = React.useCallback(async (requestData) => {
+    if (!canRead) return;
+    setLoadingRequestDetails(true);
+    try {
+      const full = await fetchFullRequest(requestData.id, 'details');
+      setSelectedRequest(full);
+      setModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load request details', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [canRead, fetchFullRequest]);
+
+  const handleViewDetails = React.useCallback(async (requestData) => {
+    setLoadingRequestDetails(true);
+    try {
+      const full = await fetchFullRequest(requestData.id, 'details');
+      setSelectedDetailedRequest(full);
+      setDetailedViewModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load request details', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [fetchFullRequest]);
+
+  const handleViewInvoice = React.useCallback(async (requestData) => {
+    if (!canRead) return;
+    setLoadingRequestDetails(true);
+    try {
+      const full = await fetchFullRequest(requestData.id, 'invoice');
+      setSelectedInvoiceViewerRequest(full);
+      setInvoiceViewerModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load request details', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [canRead, fetchFullRequest]);
+
+  const handleShareInvoice = React.useCallback(async (requestData) => {
+    setLoadingRequestDetails(true);
+    try {
+      const full = await fetchFullRequest(requestData.id, 'invoice');
+      setSelectedInvoiceRequest(full);
+      setInvoiceNumber(full.invoice_number || '');
+      let invoiceData = {};
+      if (full.invoice) {
+        try {
+          invoiceData = typeof full.invoice === 'string' ? JSON.parse(full.invoice) : full.invoice;
+        } catch (error) {
+          console.error('Error parsing invoice data:', error);
+          invoiceData = {};
+        }
+      }
+      setExistingInvoiceFiles(full.invoice_files_data?.length ? full.invoice_files_data : (invoiceData.invoice_files || []));
+      setExistingDealerAcknowledgmentFiles(full.dealer_acknowledgment_files_data?.length ? full.dealer_acknowledgment_files_data : (invoiceData.dealer_acknowledgment_files || []));
+      setExistingSitePhotosPerItem(full.invoice_site_photos_by_item_data && Object.keys(full.invoice_site_photos_by_item_data).length > 0 ? full.invoice_site_photos_by_item_data : (invoiceData.site_photos_by_item || {}));
+      setInvoiceFile(null);
+      setDealerAcknowledgmentFile(null);
+      setSitePhotosPerItem({});
+      setInvoiceModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load request details', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [fetchFullRequest]);
+
+  const handleEditInvoiceAfterRejection = React.useCallback(async (requestData) => {
+    setLoadingRequestDetails(true);
+    try {
+      const full = await fetchFullRequest(requestData.id, 'invoice');
+      setSelectedInvoiceRequest(full);
+      setInvoiceNumber(full.invoice_number || '');
+      let invoiceData = {};
+      if (full.invoice) {
+        try {
+          invoiceData = typeof full.invoice === 'string' ? JSON.parse(full.invoice) : full.invoice;
+        } catch (error) {
+          console.error('Error parsing invoice data:', error);
+          invoiceData = {};
+        }
+      }
+      setExistingInvoiceFiles(full.invoice_files_data?.length ? full.invoice_files_data : (invoiceData.invoice_files || []));
+      setExistingDealerAcknowledgmentFiles(full.dealer_acknowledgment_files_data?.length ? full.dealer_acknowledgment_files_data : (invoiceData.dealer_acknowledgment_files || []));
+      setExistingSitePhotosPerItem(full.invoice_site_photos_by_item_data && Object.keys(full.invoice_site_photos_by_item_data).length > 0 ? full.invoice_site_photos_by_item_data : (invoiceData.site_photos_by_item || {}));
+      setInvoiceFile(null);
+      setDealerAcknowledgmentFile(null);
+      setSitePhotosPerItem({});
+      setInvoiceModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load request details', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [fetchFullRequest]);
 
   // Handle viewing rejection comments for invoice rejected status
   const handleViewRejectionComments = React.useCallback(async (requestData) => {
@@ -440,40 +893,100 @@ export default function VendorRequests() {
     }
   }, [get]);
 
-  // Handle editing invoice after rejection
-  const handleEditInvoiceAfterRejection = React.useCallback((requestData) => {
-    // Set the request
-    setSelectedInvoiceRequest(requestData);
-    
-    // Parse and load existing invoice data if available
-    let invoiceData = {};
-    if (requestData.invoice) {
-      try {
-        invoiceData = typeof requestData.invoice === 'string' 
-          ? JSON.parse(requestData.invoice) 
-          : requestData.invoice;
-      } catch (error) {
-        console.error('Error parsing invoice data:', error);
-        invoiceData = {};
+  // Handle viewing request rejection comments (status = 'rejected')
+  const handleViewRequestRejectionComments = React.useCallback(async (requestData) => {
+    setSelectedRequestRejection(requestData);
+    setRequestRejectionCommentsModalOpen(true);
+    setLoadingRequestRejectionComments(true);
+    try {
+      const response = await get(`/api/comments/rejection/${requestData.id}`);
+      if (response.success && response.data) {
+        setRequestRejectionCommentsList(response.data);
+      } else {
+        setRequestRejectionCommentsList([]);
       }
+    } catch (error) {
+      console.error('Error fetching request rejection comments:', error);
+      toast.error('Failed to load rejection comments', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      setRequestRejectionCommentsList([]);
+    } finally {
+      setLoadingRequestRejectionComments(false);
     }
-    
-    // Set existing files
-    setExistingInvoiceFiles(invoiceData.invoice_files || []);
-    setExistingDealerAcknowledgmentFiles(invoiceData.dealer_acknowledgment_files || []);
-    setExistingSitePhotosPerItem(invoiceData.site_photos_by_item || {});
-    
-    // Clear new file selections
-    setInvoiceFile(null);
-    setDealerAcknowledgmentFile(null);
-    setSitePhotosPerItem({});
-    
-    setInvoiceModalOpen(true);
-  }, []);
+  }, [get]);
 
   // Confirm invoice upload function
   const confirmInvoiceUpload = React.useCallback(async () => {
     if (!selectedInvoiceRequest) return;
+    
+    // Validate invoice number is provided
+    if (!invoiceNumber || invoiceNumber.trim() === '') {
+      toast.error('Invoice number is required', {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+    
+    // Validate invoice file is provided (new file or existing files)
+    const hasInvoiceFile = invoiceFile || (existingInvoiceFiles && existingInvoiceFiles.length > 0);
+    if (!hasInvoiceFile) {
+      toast.error('Invoice file is required', {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+    
+    // Validate dealer acknowledgment form is provided (new file or existing files)
+    const hasDealerAcknowledgment = dealerAcknowledgmentFile || (existingDealerAcknowledgmentFiles && existingDealerAcknowledgmentFiles.length > 0);
+    if (!hasDealerAcknowledgment) {
+      toast.error('Dealer acknowledgment form is required', {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+    
+    // Validate status before proceeding
+    // Check both mapped status (approval) and actual database statuses (ceo_approval, manual_approval)
+    const currentStatus = selectedInvoiceRequest.status;
+    const isResubmission = currentStatus === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED;
+    // Check for approval status - can be 'approval' (mapped) or 'ceo_approval'/'manual_approval' (actual DB status)
+    const isInitialUpload = currentStatus === VENDOR_APPROVAL_STATUS || 
+                           currentStatus === 'ceo_approval' || 
+                           currentStatus === 'manual_approval';
+    
+    // Only allow upload if status is either invoice_rejected (resubmission) or approval (initial upload)
+    if (!isResubmission && !isInitialUpload) {
+      toast.error(`Cannot upload invoice. Request must be in 'Approved for work' or 'Invoice Rejected' status. Current status: ${getVendorStatusDisplayName(selectedInvoiceRequest.status)}`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
     
     setIsLoading(true);
     
@@ -482,9 +995,25 @@ export default function VendorRequests() {
       // Create FormData for file uploads
       const formData = new FormData();
 
-      // Add basic data - set status to invoice_sent (works for both initial upload and resubmission after rejection)
-      formData.append('status', 'invoice_sent');
+      // Don't send status field - let backend automatically set status to invoice_sent when invoice files are uploaded
+      // The backend will handle status transition validation and set the status appropriately
+      // EXCEPTION: For initial upload or resubmission, explicitly set status to ensure it transitions correctly
+      // This covers cases where files might not be re-uploaded during resubmission
+      if (isInitialUpload || isResubmission) {
+        formData.append('status', SHOPBOARD_REQUEST_STATUS.INVOICE_SENT);
+      }
+      
       formData.append('updated_by', user.id);
+      
+      // Add invoice number if provided
+      if (invoiceNumber && invoiceNumber.trim() !== '') {
+        formData.append('invoice_number', invoiceNumber.trim());
+      }
+      
+      // Add flag to indicate if this is a resubmission
+      if (isResubmission) {
+        formData.append('is_resubmission', 'true');
+      }
 
 
       // Get existing invoice data or create empty structure
@@ -530,12 +1059,24 @@ export default function VendorRequests() {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // Try to parse error message from response
+        let errorMessage = `HTTP error! status: ${response.status}`;
+        try {
+          const errorData = await response.json();
+          if (errorData.message) {
+            errorMessage = errorData.message;
+          } else if (errorData.error) {
+            errorMessage = errorData.error;
+          }
+        } catch (parseError) {
+          // If JSON parsing fails, use default message
+          console.error('Error parsing error response:', parseError);
+        }
+        throw new Error(errorMessage);
       }
 
       await response.json();
 
-      const isResubmission = selectedInvoiceRequest.status === 'invoice rejected';
       toast.success(isResubmission ? 'Invoice resubmitted successfully!' : 'Invoice sent successfully!', {
         position: "top-right",
         autoClose: 3000,
@@ -547,7 +1088,9 @@ export default function VendorRequests() {
       
       loadRequests();
     } catch (invoiceError) {
-      toast.error(`Failed to send invoice: ${invoiceError.message}`, {
+      // Show the error message from backend (which includes invoice number validation error)
+      const errorMessage = invoiceError.message || 'Failed to send invoice';
+      toast.error(errorMessage, {
         position: "top-right",
         autoClose: 5000,
         hideProgressBar: false,
@@ -557,6 +1100,7 @@ export default function VendorRequests() {
       });
     } finally {
       setIsLoading(false);
+      setInvoiceModalOpen(false);
       setSelectedInvoiceRequest(null);
       setInvoiceFile(null);
       setDealerAcknowledgmentFile(null);
@@ -565,72 +1109,124 @@ export default function VendorRequests() {
       setExistingDealerAcknowledgmentFiles([]);
       setExistingSitePhotosPerItem({});
       setInvoiceLoading(false);
+      setInvoiceNumber('');
     }
-  }, [selectedInvoiceRequest, invoiceFile, dealerAcknowledgmentFile, sitePhotosPerItem, user.id, token, loadRequests]);
+  }, [selectedInvoiceRequest, invoiceFile, dealerAcknowledgmentFile, sitePhotosPerItem, invoiceNumber, user.id, token, loadRequests]);
 
   const handleInvoiceSubmit = React.useCallback(() => {
     if (!selectedInvoiceRequest) return;
     
     setInvoiceLoading(true);
-    setInvoiceModalOpen(false);
-    
-    // Call the confirm function to update status
+    // Keep modal open so user sees the loading state during upload
     confirmInvoiceUpload();
   }, [selectedInvoiceRequest, confirmInvoiceUpload]);
 
-  const handleEdit = React.useCallback((requestData) => {
+  const handleEdit = React.useCallback(async (requestData) => {
     if (!canUpdate) return;
-    
-    setEditingRequest(requestData);
-    
-    // Process request items to calculate price_per_sqft from existing data
-    const processedItems = (requestData.requestItems || []).map(item => {
-      const widthFt = parseFloat(item.width) || 0;
-      const heightFt = parseFloat(item.height) || 0;
-      const areaSqft = widthFt * heightFt;
-      const price = parseFloat(item.price) || 0;
-      
-      // Calculate price per sqft from existing data
-      const price_per_sqft = areaSqft > 0 ? (price / areaSqft).toFixed(2) : '';
-      
-      return {
-        id: item.id, // Include the item ID to preserve it
-        request_type_id: item.request_type_id,
-        width: item.width,
-        height: item.height,
-        price: item.price,
-        price_per_sqft: price_per_sqft,
-        use_suggested_pricing: false // Default to manual pricing
-      };
-    });
-    
-    // Store the dealer_id - it could be the dealer's code from SAP B1
-    // We'll use the dealer object's code if available, otherwise fall back to dealer_id
-    const dealerIdToStore = requestData.dealer?.code || requestData.dealer_id;
-    
-    setEditFormData({
-      dealer_id: dealerIdToStore,
-      request_items: processedItems,
-      warranty_status_id: requestData.warranty_status_id,
-      reason_for_replacement: requestData.reason_for_replacement || '',
-      last_installation_date: requestData.last_installation_date ? 
-        (() => {
-          const date = new Date(requestData.last_installation_date);
-          return isNaN(date.getTime()) ? '' : date.toISOString().split('T')[0];
-        })() : '',
-      total_cost: requestData.total_cost || '',
-    });
-    // Load existing files
-    setExistingSitePhotos(requestData.site_photo_attachement || []);
-    setExistingOldBoardPhotos(requestData.old_board_photo_attachment || []);
-    // Clear new file selections
-    setSitePhotos([]);
-    setOldBoardPhotos([]);
-    setEditModalOpen(true);
-  }, [canUpdate]);
+    setLoadingRequestDetails(true);
+    try {
+      // Edit modal: includeFiles=edit (site_photo, old_board_photo, vendor_quotation only; no survey_form)
+      const full = await fetchFullRequest(requestData.id, 'edit');
+      setEditingRequest(full);
+
+      const processedItems = (full.requestItems || []).map(item => {
+        const widthFt = parseFloat(item.width) || 0;
+        const heightFt = parseFloat(item.height) || 0;
+        const areaSqft = widthFt * heightFt;
+        const price = parseFloat(item.price) || 0;
+        const price_per_sqft = item.price_per_square_foot
+          ? parseFloat(item.price_per_square_foot).toFixed(2)
+          : (areaSqft > 0 ? (price / areaSqft).toFixed(2) : '');
+        return {
+          id: item.id,
+          temp_id: item.temp_id,
+          request_type_id: item.request_type_id,
+          width: item.width,
+          height: item.height,
+          price: item.price,
+          price_per_sqft: price_per_sqft,
+        };
+      });
+
+      const dealerIdToStore = full.dealer?.code || full.dealer_id;
+      setEditFormData({
+        dealer_id: dealerIdToStore,
+        request_items: processedItems,
+        warranty_status_id: full.warranty_status_id,
+        reason_for_replacement: full.reason_for_replacement || '',
+        last_installation_date: full.last_installation_date
+          ? (() => {
+              const date = new Date(full.last_installation_date);
+              return isNaN(date.getTime()) ? '' : date.toISOString().split('T')[0];
+            })()
+          : '',
+        total_cost: full.total_cost || '',
+      });
+      setExistingSitePhotos(full.site_photo_attachement || []);
+      setExistingOldBoardPhotos(full.old_board_photo_attachment || []);
+      setSitePhotos([]);
+      setOldBoardPhotos([]);
+      setEditModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load request details', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [canUpdate, fetchFullRequest]);
 
   const handleApprove = React.useCallback((requestData) => {
     if (!canApprove) return;
+
+    // Validation checks before opening the approve dialog
+    const validationErrors = [];
+
+    if (!requestData.warranty_status_id) {
+      validationErrors.push('Warranty Status is required');
+    }
+
+    if (!requestData.reason_for_replacement || !String(requestData.reason_for_replacement).trim()) {
+      validationErrors.push('Reason for Replacement is required');
+    }
+
+    if (!requestData.last_installation_date) {
+      validationErrors.push('Last Installation Date is required');
+    }
+
+    if (!requestData.requestItems || requestData.requestItems.length === 0) {
+      validationErrors.push('At least one request item is required');
+    }
+
+    if (validationErrors.length > 0) {
+      toast.error(
+        <div>
+          <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+            Please fill the following details first:
+          </Typography>
+          <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
+            {validationErrors.map((error, index) => (
+              <li key={index}>{error}</li>
+            ))}
+          </ul>
+        </div>,
+        {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        }
+      );
+      return;
+    }
+
     setRequestToAction(requestData);
     setApproveDialogOpen(true);
   }, [canApprove]);
@@ -655,6 +1251,11 @@ export default function VendorRequests() {
     setRequestToAction(requestData);
     setHistoryDialogOpen(true);
     fetchRequestHistory(requestData.id);
+  }, [canRead]);
+
+  const handlePrintWorkOrder = React.useCallback((requestData) => {
+    if (!canRead) return;
+    WorkOrderPDFGenerator.generate(requestData);
   }, [canRead]);
 
   // Fetch comments for a specific request
@@ -683,11 +1284,12 @@ export default function VendorRequests() {
     }
   }, [get]);
 
-  // Fetch history for a specific request
+  // Fetch history for a specific request (vendor-specific API - already filtered for item_changes)
   const fetchRequestHistory = React.useCallback(async (requestId) => {
     setLoadingHistory(true);
     try {
-      const response = await get(`/api/shopboard-logs/request/${requestId}`);
+      // Use vendor-specific API endpoint that filters item_changes on backend
+      const response = await get(`/api/shopboard-logs/vendor/request/${requestId}`);
       if (response.success && response.data) {
         const sorted = [...response.data].sort((a, b) => {
           // CURRENT records always come first
@@ -700,14 +1302,10 @@ export default function VendorRequests() {
           return db - da;
         });
         
-        // Filter logs to only show those with item_changes
-        const filteredLogs = sorted.filter(log => 
-          log.item_changes && Array.isArray(log.item_changes) && log.item_changes.length > 0
-        );
-        
+        // Backend already filters for item_changes, so no need to filter again
         // Fetch dealer names for logs that have dealer_id
         const logsWithDealerNames = await Promise.all(
-          filteredLogs.map(async (log) => {
+          sorted.map(async (log) => {
             if (log.main_changes?.dealer_id && !log.main_changes?.dealer_name) {
               try {
                 // Fetch dealer by code
@@ -759,11 +1357,11 @@ export default function VendorRequests() {
     
     try {
       const response = await patch(`/api/shopboard-requests/${requestToAction.id}`, {
-        status: 'quotation sent',
+        status: SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT,
         updated_by: user.id
       });
 
-      toast.success(`Request #${requestToAction.id} approved successfully!`, {
+      toast.success(`Request #${requestToAction.id} quotation sent successfully!`, {
         position: "top-right",
         autoClose: 3000,
         hideProgressBar: false,
@@ -797,7 +1395,7 @@ export default function VendorRequests() {
     
     try {
       const updateData = {
-        status: 'rfq not accepted',
+        status: SHOPBOARD_REQUEST_STATUS.RFQ_NOT_ACCEPTED,
         assigned_vm: 0,
         updated_by: user.id
       };
@@ -907,9 +1505,6 @@ export default function VendorRequests() {
     if (entries.length === 0) return null;
     return (
       <Box sx={{ mb: 2 }}>
-        <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-          Main Request Changes:
-        </Typography>
         {entries.map(([key, value], idx) => {
           if (key === 'assigned_vm') return null; // hidden
           if (value === null || value === undefined) return null;
@@ -923,13 +1518,13 @@ export default function VendorRequests() {
               <Box key={`${key}-${idx}`} sx={{ mb: 1 }}>
                 <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>{title}:</Typography>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {value.map((file, i) => (
-                    <Chip key={`${key}-${i}`} label={String(file).split('/').pop()} size="small" onClick={() => {
-                      const p = String(file);
-                      const url = p.startsWith('/') ? `${BASE_URL}${p}` : `${BASE_URL}/${p}`;
-                      window.open(url, '_blank');
-                    }} />
-                  ))}
+                  {value.map((file, i) => {
+                    const { url: u, fileName: fn } = getFileUrlAndName(file, i, `File ${i + 1}`);
+                    const openUrl = u.startsWith('data:') || u.startsWith('http') ? u : (u.startsWith('/') ? `${BASE_URL}${u}` : `${BASE_URL}/${u}`);
+                    return (
+                      <Chip key={`${key}-${i}`} label={fn} size="small" onClick={() => openFileInNewTab(openUrl)} sx={{ cursor: 'pointer' }} />
+                    );
+                  })}
                 </Box>
               </Box>
             );
@@ -982,7 +1577,7 @@ export default function VendorRequests() {
             if (!isNaN(num) && num > 0) {
               return (
                 <Typography key={`${key}-${idx}`} variant="body2" sx={{ color: '#333', mb: 0.5 }}>
-                  Total Cost: ${num.toFixed(2)}
+                  Total Cost: Rs {num.toFixed(2)}
                 </Typography>
               );
             }
@@ -1006,6 +1601,51 @@ export default function VendorRequests() {
             return (
               <Typography key={`${key}-${idx}`} variant="body2" sx={{ color: '#333', mb: 0.5 }}>
                 Reason: {String(value)}
+              </Typography>
+            );
+          }
+          // Display approvals array
+          if (key === 'approvals') {
+            if (!Array.isArray(value) || value.length === 0) return null;
+            return (
+              <Box key={`${key}-${idx}`} sx={{ mb: 1 }}>
+                {value.map((message, msgIndex) => (
+                  <Box key={`approval-${msgIndex}`} sx={{ mb: 1 }}>
+                    <Typography variant="body2" sx={{ 
+                      color: '#2e7d32', 
+                      fontWeight: 'bold',
+                      backgroundColor: '#e8f5e8',
+                      p: 1,
+                      borderRadius: 1,
+                      border: '1px solid #c8e6c9',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1
+                    }}>
+                      ✅ {message}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            );
+          }
+          // Display approval_date
+          if (key === 'approval_date') {
+            return (
+              <Typography key={`${key}-${idx}`} variant="body2" sx={{ 
+                color: '#2e7d32',
+                fontWeight: 'bold',
+                mb: 0.5
+              }}>
+                Approved on: {new Date(value).toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric'
+                }) + ' at ' + new Date(value).toLocaleTimeString('en-US', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true
+                })}
               </Typography>
             );
           }
@@ -1063,6 +1703,74 @@ export default function VendorRequests() {
 
   const handleEditSubmit = async () => {
     if (!editingRequest) return;
+
+    // Validation
+    const validationErrors = [];
+
+    // Validate Warranty Status
+    if (!editFormData.warranty_status_id) {
+      validationErrors.push('Warranty Status is required');
+    }
+
+    // Validate Reason for Replacement
+    if (!editFormData.reason_for_replacement || !String(editFormData.reason_for_replacement).trim()) {
+      validationErrors.push('Reason for Replacement is required');
+    }
+
+    // Validate Last Installation Date
+    if (!editFormData.last_installation_date) {
+      validationErrors.push('Last Installation Date is required');
+    }
+
+    // Validate Request Items
+    const items = editFormData.request_items || [];
+    if (items.length === 0) {
+      validationErrors.push('At least one request item must be added');
+    } else {
+      items.forEach((item, index) => {
+        if (!item.request_type_id) {
+          validationErrors.push(`Item ${index + 1}: Request Type is required`);
+        } else {
+          // Find request type to check rules
+          const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+          const isFees = selectedRequestType?.request_type === 'fees';
+          
+          if (isFees) {
+            if (!item.price || parseFloat(item.price) <= 0) {
+              validationErrors.push(`Item ${index + 1}: Price must be greater than 0`);
+            }
+          } else {
+            // For manual and fixed types, width and height are required
+            if (!item.width || parseFloat(item.width) <= 0) {
+              validationErrors.push(`Item ${index + 1}: Width must be greater than 0`);
+            }
+            if (!item.height || parseFloat(item.height) <= 0) {
+              validationErrors.push(`Item ${index + 1}: Height must be greater than 0`);
+            }
+            // For manual types, price_per_sqft is also required (though it might be set)
+            if (selectedRequestType?.request_type === 'manual') {
+              if (!item.price_per_sqft || parseFloat(item.price_per_sqft) <= 0) {
+                validationErrors.push(`Item ${index + 1}: Price per sqft must be greater than 0`);
+              }
+            }
+          }
+        }
+      });
+    }
+
+    if (validationErrors.length > 0) {
+      validationErrors.forEach(error => {
+        toast.error(error, {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      });
+      return;
+    }
     
     setIsLoading(true);
     setEditModalOpen(false);
@@ -1098,11 +1806,12 @@ export default function VendorRequests() {
         }
       }
 
-      // Send existing files that weren't deleted (so backend knows what to keep)
-      formData.append('existing_site_photos', JSON.stringify(existingSitePhotos));
-      formData.append('existing_old_board_photos', JSON.stringify(existingOldBoardPhotos));
+      // Send existing files that weren't deleted (compact: fileName + mimeType only to avoid huge payload)
+      const compactExisting = (arr) => arr.map(f => typeof f === 'object' && f && (f.url != null || f.fileName != null) ? { fileName: f.fileName || 'file', mimeType: f.mimeType } : f);
+      formData.append('existing_site_photos', JSON.stringify(compactExisting(existingSitePhotos)));
+      formData.append('existing_old_board_photos', JSON.stringify(compactExisting(existingOldBoardPhotos)));
 
-      // Add new uploaded files to FormData
+      // Add new uploaded files to FormData (multiple files: same field name per file)
       sitePhotos.forEach((file) => {
         formData.append('site_photo_attachement', file);
       });
@@ -1163,8 +1872,6 @@ export default function VendorRequests() {
     setOldBoardPhotos([]);
     setExistingSitePhotos([]);
     setExistingOldBoardPhotos([]);
-    setSuggestedPricing({});
-    setLoadingSuggestedPricing({});
   };
 
   const handleRefresh = React.useCallback(() => {
@@ -1172,6 +1879,32 @@ export default function VendorRequests() {
       loadRequests();
     }
   }, [isLoading, loadRequests, canRead]);
+
+  // Handle clear filters
+  const handleClearFilters = () => {
+    setSelectedSalesHead(null);
+    setSelectedDealer(null);
+    setSelectedStatus(null);
+    setStartDate(null);
+    setEndDate(null);
+  };
+  
+  // Date range handlers
+  const handleDateRangeClick = (event) => {
+    setDateRangeAnchor(event.currentTarget);
+  };
+
+  const handleDateRangeClose = () => {
+    setDateRangeAnchor(null);
+  };
+
+  const dateRangeOpen = Boolean(dateRangeAnchor);
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
 
   const handleRowClick = React.useCallback(
     ({ row }) => {
@@ -1198,6 +1931,101 @@ export default function VendorRequests() {
           return dealer ? dealer.name : 'N/A';
         },
       },
+      {
+        field: 'creator',
+        headerName: 'Created By',
+        width: 150,
+        align: 'left',
+        headerAlign: 'left',
+        renderCell: (params) => {
+          const creator = params.row.creator;
+          return (
+            <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+              <Typography variant="body2">
+                {creator?.username || 'N/A'}
+              </Typography>
+            </Box>
+          );
+        },
+      },
+      {
+        field: 'created_at',
+        headerName: 'Created At',
+        minWidth: 170,
+        align: 'left',
+        headerAlign: 'left',
+        renderCell: (params) => {
+          const createdAt = params.value;
+          if (!createdAt) return 'N/A';
+          
+          try {
+            const date = new Date(createdAt);
+            return (
+              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                <Typography variant="body2">
+                  {date.toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                  }) + ' ' + date.toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                  })}
+                </Typography>
+              </Box>
+            );
+          } catch (error) {
+            return 'N/A';
+          }
+        },
+      },
+      {
+        field: 'approval_date',
+        headerName: 'Approval Date',
+        minWidth: 170,
+        align: 'left',
+        headerAlign: 'left',
+        renderCell: (params) => {
+          const approvalDate = params.value;
+          if (!approvalDate) {
+            return (
+              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                <Typography variant="body2" sx={{ color: '#999', fontStyle: 'italic' }}>
+                  N/A
+                </Typography>
+              </Box>
+            );
+          }
+          
+          try {
+            const date = new Date(approvalDate);
+            return (
+              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                <Typography variant="body2">
+                  {date.toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                  }) + ' ' + date.toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                  })}
+                </Typography>
+              </Box>
+            );
+          } catch (error) {
+            return (
+              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                <Typography variant="body2" sx={{ color: '#999', fontStyle: 'italic' }}>
+                  N/A
+                </Typography>
+              </Box>
+            );
+          }
+        },
+      },
       // {
       //   field: 'requestItems',
       //   headerName: 'Request Types',
@@ -1218,32 +2046,16 @@ export default function VendorRequests() {
         width: 120,
         renderCell: (params) => {
           const status = params.value;
-          // Map backend statuses to display as 'quotation sent' on vendor page
-          const mappedStatus = (status === 'under_review' || status === 'ceo_pending') ? 'quotation sent' : status;
-          const displayStatus = mappedStatus || 'Not Decided';
-          const getStatusColor = (status) => {
-            switch (status) {
-              case 'processing': return 'success';
-              case 'review requested': return 'error';
-              case 'rfq not accepted': return 'error';
-              case 'Rfq': return 'info';
-              case 'quotation sent': return 'secondary';
-              case 'invoice_sent': return 'primary';
-              case 'invoice rejected': return 'error';
-              case 'payment_released': return 'success';
-              case 'not decided': return 'warning';
-              case null:
-              case undefined:
-              case '': return 'warning';
-              default: return 'default';
-            }
-          };
+          // Use vendor-specific display name and color
+          const displayStatus = getVendorStatusDisplayName(status);
+          const statusColor = getVendorStatusColor(status);
+          
           return (
             <Chip 
               label={displayStatus} 
               variant="filled" 
               size="small"
-              color={getStatusColor(mappedStatus)}
+              color={statusColor}
             />
           );
         },
@@ -1255,17 +2067,23 @@ export default function VendorRequests() {
         width: 200,
         getActions: (params) => {
           const row = params.row;
-          const isRfqStatus = row.status === 'Rfq';
+          const isRfqStatus = row.status === SHOPBOARD_REQUEST_STATUS.RFQ;
           
           const actions = [];
           
           // Show view action if user has read permission
+          // For approval status (which includes both ceo_approval and manual_approval after backend mapping),
+          // show "Work Order" instead of "View Details"
           if (canRead) {
+            // Backend maps both ceo_approval and manual_approval to approval
+            const isWorkOrder = row.status === VENDOR_APPROVAL_STATUS;
             actions.push(
               <GridActionsCellItem
                 key="view"
-                icon={<Tooltip title="View Details"><ViewIcon /></Tooltip>}
-                label="View Details"
+                icon={<Tooltip title={isWorkOrder ? "Work Order" : "View Details"}>
+                  {isWorkOrder ? <WorkOrderIcon /> : <ViewIcon />}
+                </Tooltip>}
+                label={isWorkOrder ? "Work Order" : "View Details"}
                 onClick={() => handleViewDetails(row)}
                 color="primary"
               />
@@ -1326,8 +2144,9 @@ export default function VendorRequests() {
             }
           }
           
-          // Show share invoice button for ceo_approval status
-          if (row.status === 'ceo_approval' && canRead) {
+          // Show share invoice button for approval status
+          // Note: Backend maps both ceo_approval and manual_approval to approval
+          if (row.status === VENDOR_APPROVAL_STATUS && canRead) {
             actions.push(
               <GridActionsCellItem
                 key="shareInvoice"
@@ -1337,10 +2156,20 @@ export default function VendorRequests() {
                 color="primary"
               />
             );
+            // Show print work order button for approval status
+            actions.push(
+              <GridActionsCellItem
+                key="printWorkOrder"
+                icon={<Tooltip title="Print Work Order"><PrintIcon /></Tooltip>}
+                label="Print Work Order"
+                onClick={() => handlePrintWorkOrder(row)}
+                color="secondary"
+              />
+            );
           }
           
           // Show rejection comments and edit invoice button for invoice rejected status
-          if (row.status === 'invoice rejected' && canRead) {
+          if (row.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED && canRead) {
             actions.push(
               <GridActionsCellItem
                 key="viewRejectionComments"
@@ -1361,11 +2190,37 @@ export default function VendorRequests() {
             );
           }
           
+          // Show view rejection comments for rejected status
+          if (row.status === SHOPBOARD_REQUEST_STATUS.REJECTED && canRead) {
+            actions.push(
+              <GridActionsCellItem
+                key="viewRequestRejectionComments"
+                icon={<Tooltip title="View Rejection Comments"><CommentIcon sx={{ color: '#d32f2f' }} /></Tooltip>}
+                label="View Rejection Comments"
+                onClick={() => handleViewRequestRejectionComments(row)}
+                color="error"
+              />
+            );
+          }
+
+          // Show invoice viewer if invoice files exist (invoice_sent, Submitted for Payment, or payment successful)
+          if (canRead && (row.status === SHOPBOARD_REQUEST_STATUS.INVOICE_SENT || row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT || row.status === SHOPBOARD_REQUEST_STATUS.PAYMENT_SUCCESSFUL) && row.has_invoice_files) {
+            actions.push(
+              <GridActionsCellItem
+                key="viewInvoice"
+                icon={<Tooltip title="View Invoice Documents"><InvoiceIcon /></Tooltip>}
+                label="View Invoice"
+                onClick={() => handleViewInvoice(row)}
+                color="info"
+              />
+            );
+          }
+          
           return actions;
         },
       },
     ],
-    [canApprove, canUpdate, canRead, handleViewDetails, handleEdit, handleApprove, handleViewComments, handleViewHistory, handleShareInvoice, handleViewRejectionComments, handleEditInvoiceAfterRejection],
+    [canApprove, canUpdate, canRead, handleViewDetails, handleEdit, handleApprove, handleViewComments, handleViewHistory, handleShareInvoice, handleViewRejectionComments, handleEditInvoiceAfterRejection, handleViewInvoice, handlePrintWorkOrder, handleViewRequestRejectionComments],
   );
 
   const pageTitle = 'Vendor Requests';
@@ -1409,6 +2264,478 @@ export default function VendorRequests() {
         </Alert>
       )}
 
+      <Backdrop open={loadingRequestDetails} sx={{ color: '#fff', zIndex: (theme) => theme.zIndex.modal + 1 }}>
+        <CircularProgress color="inherit" />
+      </Backdrop>
+
+      {/* Vendor Request Filters - Show for everyone */}
+      <Box sx={{ 
+          mb: 3, 
+          p: 3, 
+          backgroundColor: '#ffffff', 
+          borderRadius: 3, 
+          border: '1px solid #e0e7ff',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+        }}>
+          {/* Filter Header */}
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            mb: 2.5,
+            pb: 2,
+            borderBottom: '2px solid #f0f4ff'
+          }}>
+            <Typography variant="h6" sx={{ 
+              fontWeight: 600, 
+              color: '#1a237e',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              fontSize: '1.1rem'
+            }}>
+              <FilterListIcon sx={{ fontSize: '1.3rem' }} />
+              Filters
+            </Typography>
+            {(selectedSalesHead || selectedDealer || selectedStatus || startDate || endDate) && (
+              <Button
+                size="small"
+                onClick={handleClearFilters}
+                startIcon={<ClearIcon />}
+                sx={{ 
+                  textTransform: 'none',
+                  color: '#666',
+                  '&:hover': {
+                    backgroundColor: '#f5f5f5'
+                  }
+                }}
+              >
+                Clear All
+              </Button>
+            )}
+          </Box>
+
+          {/* Filter Grid */}
+          <Grid container spacing={2.5}>
+            {/* Sales Head Filter */}
+            <Grid item xs={12} sm={6} md={4}>
+              <Autocomplete
+                size="small"
+                options={salesHeads}
+                getOptionLabel={(option) => {
+                  if (!option) return '';
+                  const name = option.name || option.username || '';
+                  const username = option.username || '';
+                  return username && name !== username ? `${name} (${username})` : name || username || 'Unknown';
+                }}
+                filterOptions={(options, { inputValue }) => {
+                  const searchValue = inputValue.toLowerCase().trim();
+                  if (!searchValue) return options;
+                  
+                  return options.filter(option => {
+                    const name = (option.name || '').toLowerCase();
+                    const username = (option.username || '').toLowerCase();
+                    const email = (option.email || '').toLowerCase();
+                    return name.includes(searchValue) || username.includes(searchValue) || email.includes(searchValue);
+                  });
+                }}
+                value={selectedSalesHead}
+                onChange={(event, newValue) => {
+                  setSelectedSalesHead(newValue);
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Sales Head"
+                    placeholder="Select sales head..."
+                    variant="outlined"
+                    fullWidth
+                    disabled={isLoading}
+                    InputProps={{
+                      ...params.InputProps,
+                      startAdornment: (
+                        <>
+                          <SalesHeadIcon sx={{ mr: 1, color: 'action.active', fontSize: '1.2rem' }} />
+                          {params.InputProps.startAdornment}
+                        </>
+                      ),
+                    }}
+                    sx={{
+                      minWidth: '280px',
+                      '& .MuiOutlinedInput-root': {
+                        backgroundColor: '#fafbff',
+                        '&:hover': {
+                          backgroundColor: '#f5f7ff',
+                        },
+                        '&.Mui-focused': {
+                          backgroundColor: '#ffffff',
+                        }
+                      }
+                    }}
+                  />
+                )}
+                isOptionEqualToValue={(option, value) => option.id === value?.id}
+                noOptionsText="No sales heads found"
+                componentsProps={{
+                  popper: {
+                    style: { zIndex: 1300 },
+                    placement: 'bottom-start'
+                  }
+                }}
+              />
+            </Grid>
+
+            {/* Dealer Filter */}
+            <Grid item xs={12} sm={6} md={4}>
+              <Autocomplete
+                size="small"
+                options={filterDealers}
+                getOptionLabel={(option) => {
+                  if (!option) return '';
+                  const name = option.name || '';
+                  const code = option.code || '';
+                  return code && name !== code ? `${name} (${code})` : name || code || 'Unknown';
+                }}
+                filterOptions={(options, { inputValue }) => {
+                  const searchValue = inputValue.toLowerCase().trim();
+                  if (!searchValue) return options;
+                  
+                  return options.filter(option => {
+                    const name = (option.name || '').toLowerCase();
+                    const code = (option.code || '').toLowerCase();
+                    const city = (option.city || '').toLowerCase();
+                    return name.includes(searchValue) || code.includes(searchValue) || city.includes(searchValue);
+                  });
+                }}
+                value={selectedDealer}
+                onChange={(event, newValue) => {
+                  setSelectedDealer(newValue);
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Dealer"
+                    placeholder={filterDealers.length === 0 ? "No dealers available" : "Select dealer..."}
+                    variant="outlined"
+                    fullWidth
+                    disabled={loadingDealers || filterDealers.length === 0}
+                    InputProps={{
+                      ...params.InputProps,
+                      startAdornment: (
+                        <>
+                          <DealerIcon sx={{ mr: 1, color: 'action.active', fontSize: '1.2rem' }} />
+                          {params.InputProps.startAdornment}
+                        </>
+                      ),
+                    }}
+                    sx={{
+                      minWidth: '280px',
+                      '& .MuiOutlinedInput-root': {
+                        backgroundColor: '#fafbff',
+                        '&:hover': {
+                          backgroundColor: '#f5f7ff',
+                        },
+                        '&.Mui-focused': {
+                          backgroundColor: '#ffffff',
+                        }
+                      }
+                    }}
+                  />
+                )}
+                isOptionEqualToValue={(option, value) => option.id === value?.id}
+                noOptionsText={filterDealers.length === 0 ? "No dealers have requests assigned to you" : "No dealers found"}
+                loading={loadingDealers}
+                componentsProps={{
+                  popper: {
+                    style: { zIndex: 1300 },
+                    placement: 'bottom-start'
+                  }
+                }}
+              />
+            </Grid>
+
+            {/* Status Filter */}
+            <Grid item xs={12} sm={6} md={4}>
+              <Autocomplete
+                size="small"
+                options={statusOptions}
+                getOptionLabel={(option) => {
+                  if (!option) return '';
+                  return option.displayName || option.value || 'Unknown';
+                }}
+                filterOptions={(options, { inputValue }) => {
+                  const searchValue = inputValue.toLowerCase().trim();
+                  if (!searchValue) return options;
+                  
+                  return options.filter(option => {
+                    const displayName = (option.displayName || '').toLowerCase();
+                    const value = (option.value || '').toLowerCase();
+                    return displayName.includes(searchValue) || value.includes(searchValue);
+                  });
+                }}
+                value={selectedStatus}
+                onChange={(event, newValue) => {
+                  setSelectedStatus(newValue);
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Status"
+                    placeholder={statusOptions.length === 0 ? "No statuses available" : "Select status..."}
+                    variant="outlined"
+                    fullWidth
+                    disabled={loadingStatusOptions || statusOptions.length === 0}
+                    InputProps={{
+                      ...params.InputProps,
+                      startAdornment: (
+                        <>
+                          <StatusIcon sx={{ mr: 1, color: 'action.active', fontSize: '1.2rem' }} />
+                          {params.InputProps.startAdornment}
+                        </>
+                      ),
+                    }}
+                    sx={{
+                      minWidth: '280px',
+                      '& .MuiOutlinedInput-root': {
+                        backgroundColor: '#fafbff',
+                        '&:hover': {
+                          backgroundColor: '#f5f7ff',
+                        },
+                        '&.Mui-focused': {
+                          backgroundColor: '#ffffff',
+                        }
+                      }
+                    }}
+                  />
+                )}
+                isOptionEqualToValue={(option, value) => option.value === value?.value}
+                noOptionsText={statusOptions.length === 0 ? "No statuses available" : "No statuses found"}
+                loading={loadingStatusOptions}
+                componentsProps={{
+                  popper: {
+                    style: { zIndex: 1300 },
+                    placement: 'bottom-start'
+                  }
+                }}
+              />
+            </Grid>
+
+            {/* Date Range Filter */}
+            <Grid item xs={12} sm={6} md={4}>
+              <TextField
+                size="small"
+                label="Date Range (Created At)"
+                placeholder="Select date range"
+                value={startDate && endDate ? `${formatDate(startDate)} - ${formatDate(endDate)}` : startDate ? `${formatDate(startDate)} - ...` : endDate ? `... - ${formatDate(endDate)}` : ''}
+                onClick={handleDateRangeClick}
+                variant="outlined"
+                fullWidth
+                disabled={isLoading}
+                InputProps={{
+                  startAdornment: <DateIcon sx={{ mr: 1, color: 'action.active', fontSize: '1.2rem' }} />,
+                  readOnly: true,
+                  endAdornment: (startDate || endDate) && (
+                    <IconButton
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setStartDate(null);
+                        setEndDate(null);
+                      }}
+                      sx={{ mr: 0.5 }}
+                    >
+                      <CloseIcon fontSize="small" />
+                    </IconButton>
+                  ),
+                }}
+                sx={{
+                  cursor: 'pointer',
+                  minWidth: '280px',
+                  '& .MuiOutlinedInput-root': {
+                    backgroundColor: '#fafbff',
+                    '&:hover': {
+                      backgroundColor: '#f5f7ff',
+                    },
+                    '&.Mui-focused': {
+                      backgroundColor: '#ffffff',
+                    }
+                  }
+                }}
+                helperText={startDate && endDate ? 'Both dates selected - filter will be applied' : (startDate || endDate) ? 'Select both dates to apply filter' : 'Select start and end date'}
+              />
+              <Popover
+                open={dateRangeOpen}
+                anchorEl={dateRangeAnchor}
+                onClose={handleDateRangeClose}
+                anchorOrigin={{
+                  vertical: 'bottom',
+                  horizontal: 'left',
+                }}
+                transformOrigin={{
+                  vertical: 'top',
+                  horizontal: 'left',
+                }}
+              >
+                <Paper sx={{ p: 2, minWidth: 300 }}>
+                  <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                      Select Date Range
+                    </Typography>
+                    <IconButton size="small" onClick={handleDateRangeClose}>
+                      <CloseIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <TextField
+                      size="small"
+                      label="Start Date"
+                      type="date"
+                      value={startDate || ''}
+                      onChange={(e) => setStartDate(e.target.value || null)}
+                      variant="outlined"
+                      fullWidth
+                      InputLabelProps={{
+                        shrink: true,
+                      }}
+                    />
+                    <TextField
+                      size="small"
+                      label="End Date"
+                      type="date"
+                      value={endDate || ''}
+                      onChange={(e) => setEndDate(e.target.value || null)}
+                      variant="outlined"
+                      fullWidth
+                      InputLabelProps={{
+                        shrink: true,
+                      }}
+                      inputProps={{
+                        min: startDate || undefined
+                      }}
+                    />
+                    <Button
+                      variant="contained"
+                      onClick={handleDateRangeClose}
+                      fullWidth
+                      sx={{ mt: 1 }}
+                    >
+                      Apply
+                    </Button>
+                  </Box>
+                </Paper>
+              </Popover>
+            </Grid>
+
+            {/* Filtered Results Count */}
+            {(selectedSalesHead || selectedDealer || selectedStatus || (startDate && endDate)) && (
+              <Grid item xs={12} sm={6} md={4}>
+                <Box 
+                  sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    height: '100%',
+                    minHeight: '40px',
+                    px: 2,
+                    py: 1,
+                    backgroundColor: '#e3f2fd',
+                    borderRadius: 1,
+                    border: '1px solid #90caf9'
+                  }}
+                >
+                  <Typography variant="body2" sx={{ fontWeight: 600, color: '#1976d2' }}>
+                    {rowsState.rowCount} result{rowsState.rowCount !== 1 ? 's' : ''} found
+                  </Typography>
+                </Box>
+              </Grid>
+            )}
+          </Grid>
+
+          {/* Active Filters Display */}
+          {(selectedSalesHead || selectedDealer || selectedStatus || startDate || endDate) && (
+            <Box sx={{ 
+              mt: 3, 
+              pt: 2.5, 
+              borderTop: '1px solid #e0e7ff',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 1.5,
+              alignItems: 'center'
+            }}>
+              <Typography variant="caption" sx={{ 
+                color: '#666', 
+                fontWeight: 500,
+                mr: 1,
+                fontSize: '0.85rem'
+              }}>
+                Active Filters:
+              </Typography>
+              {selectedSalesHead && (
+                <Chip
+                  label={`Sales Head: ${selectedSalesHead.name || selectedSalesHead.username || 'Unknown'}`}
+                  onDelete={() => setSelectedSalesHead(null)}
+                  color="error"
+                  variant="filled"
+                  size="small"
+                  sx={{
+                    fontWeight: 500,
+                    '& .MuiChip-deleteIcon': {
+                      fontSize: '1rem'
+                    }
+                  }}
+                />
+              )}
+              {selectedDealer && (
+                <Chip
+                  label={`Dealer: ${selectedDealer.name || selectedDealer.code || 'Unknown'}`}
+                  onDelete={() => setSelectedDealer(null)}
+                  color="error"
+                  variant="filled"
+                  size="small"
+                  sx={{
+                    fontWeight: 500,
+                    '& .MuiChip-deleteIcon': {
+                      fontSize: '1rem'
+                    }
+                  }}
+                />
+              )}
+              {selectedStatus && (
+                <Chip
+                  label={`Status: ${selectedStatus.displayName || selectedStatus.value || 'Unknown'}`}
+                  onDelete={() => setSelectedStatus(null)}
+                  color="error"
+                  variant="filled"
+                  size="small"
+                  sx={{
+                    fontWeight: 500,
+                    '& .MuiChip-deleteIcon': {
+                      fontSize: '1rem'
+                    }
+                  }}
+                />
+              )}
+              {(startDate || endDate) && (
+                <Chip
+                  label={`Date: ${startDate ? formatDate(startDate) : '...'} - ${endDate ? formatDate(endDate) : '...'}`}
+                  onDelete={() => {
+                    setStartDate(null);
+                    setEndDate(null);
+                  }}
+                  color="info"
+                  variant="filled"
+                  size="small"
+                  sx={{
+                    fontWeight: 500,
+                    '& .MuiChip-deleteIcon': {
+                      fontSize: '1rem'
+                    }
+                  }}
+                />
+              )}
+          </Box>
+        )}
+      </Box>
+
       <ReusableDataTable
         data={rowsState.rows}
         columns={columns}
@@ -1439,11 +2766,43 @@ export default function VendorRequests() {
         
         // Row interaction
         onRowClick={canRead ? handleRowClick : null}
+      getRowClassName={(params) => {
+        const status = params.row?.status;
+        if (status && String(status).toLowerCase().trim() === 'rfq') {
+          return 'not-decided-row';
+        }
+        return '';
+      }}
         
         // Configuration
         pageSizeOptions={[5, 10, 25, 50]}
         showToolbar={true}
         hideCreateButton={true} // Hide create button for this view
+        disableColumnFilter={true}
+        disableColumnMenu={true}
+        slots={{
+          toolbar: CustomToolbar
+        }}
+      sx={{
+        // Reuse the "not decided" highlight style for RFQ rows
+        '& .not-decided-row': {
+          backgroundColor: '#f0f4ff !important',
+          borderLeft: '4px solid #1a237e',
+          boxShadow: '0 1px 3px rgba(26, 35, 126, 0.08)',
+          fontWeight: 'bold !important', // Make all text bold in the row
+          '&:hover': {
+            backgroundColor: '#e3f2fd !important',
+            boxShadow: '0 2px 6px rgba(26, 35, 126, 0.12)',
+          },
+          '& .MuiDataGrid-cell': {
+            borderBottom: '1px solid rgba(224, 231, 255, 0.5)',
+            fontWeight: 'bold !important', // Make all text bold in cells
+            '& *': {
+              fontWeight: 'bold !important', // Make all nested elements bold
+            },
+          },
+        },
+      }}
       />
 
       {/* View Request Details Modal - Detailed View */}
@@ -1468,117 +2827,155 @@ export default function VendorRequests() {
             fontWeight: 'bold',
           }}
         >
-          Request Details #{selectedRequest?.id}
+          {selectedRequest?.status === VENDOR_APPROVAL_STATUS 
+            ? `Work Order #${selectedRequest?.id}`
+            : `Request Details #${selectedRequest?.id}`}
         </DialogTitle>
         <DialogContent>
-          {selectedRequest && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
-              {/* Dealer Information */}
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                  Dealer Information
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 2 }}>
-                  <TextField
-                    label="Dealer Name"
-                    value={selectedRequest.dealer?.name || 'N/A'}
-                    variant="outlined"
-                    fullWidth
-                    disabled
-                    helperText="Read-only"
-                  />
-                  <TextField
-                    label="Dealer Code"
-                    value={selectedRequest.dealer?.code || 'N/A'}
-                    variant="outlined"
-                    fullWidth
-                    disabled
-                    helperText="Read-only"
-                  />
+          {selectedRequest && (() => {
+            // Check if there's a parent dealer (dealer.id !== dealer_relation.parent.id)
+            const hasParent = selectedRequest?.dealer_relation?.parent && 
+                              selectedRequest?.dealer?.id && 
+                              selectedRequest.dealer.id !== selectedRequest.dealer_relation.parent.id;
+            const parent = hasParent ? selectedRequest.dealer_relation.parent : null;
+            
+            return (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
+                {/* Parent Dealer Information - Only show if parent exists */}
+                {hasParent && parent && (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                      Parent Dealer Information
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 2 }}>
+                      <TextField
+                        label="Parent Dealer Code"
+                        value={parent.code || 'N/A'}
+                        variant="outlined"
+                        fullWidth
+                        disabled
+                        helperText="Read-only"
+                      />
+                      <TextField
+                        label="Parent Dealer Name"
+                        value={parent.name || 'N/A'}
+                        variant="outlined"
+                        fullWidth
+                        disabled
+                        helperText="Read-only"
+                      />
+                      <TextField
+                        label="Parent Dealer Phone"
+                        value={parent.phone || 'N/A'}
+                        variant="outlined"
+                        fullWidth
+                        disabled
+                        helperText="Read-only"
+                      />
+                    </Box>
+                  </Box>
+                )}
+                
+                {/* Current Dealer Information */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                    Dealer Information
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 2 }}>
                     <TextField
-                      label="Phone"
-                      value={selectedRequest.dealer?.phone || 'N/A'}
+                      label="Dealer Name"
+                      value={selectedRequest.dealer?.name || 'N/A'}
                       variant="outlined"
                       fullWidth
                       disabled
                       helperText="Read-only"
                     />
-                </Box>
+                    <TextField
+                      label="Dealer Code"
+                      value={selectedRequest.dealer?.code || 'N/A'}
+                      variant="outlined"
+                      fullWidth
+                      disabled
+                      helperText="Read-only"
+                    />
+                      <TextField
+                        label="Phone"
+                        value={selectedRequest.dealer?.phone || 'N/A'}
+                        variant="outlined"
+                        fullWidth
+                        disabled
+                        helperText="Read-only"
+                      />
+                  </Box>
+                  <TextField
+                    label="Address"
+                    value={selectedRequest.dealer?.city || 'N/A'}
+                    variant="outlined"
+                    fullWidth
+                    disabled
+                    helperText="Read-only"
+                  />
                 <TextField
-                  label="Address"
-                  value={selectedRequest.dealer?.city || 'N/A'}
+                  label="Dealer Type"
+                  value={(() => {
+                    const type = selectedRequest.dealer_type;
+                    if (!type) return 'Old';
+                    return type === 'new' ? 'New' : 'Old';
+                  })()}
                   variant="outlined"
                   fullWidth
                   disabled
                   helperText="Read-only"
                 />
-              <TextField
-                label="Dealer Type"
-                value={(() => {
-                  const type = selectedRequest.dealer_type;
-                  if (!type) return 'Old';
-                  return type === 'new' ? 'New' : 'Old';
-                })()}
-                variant="outlined"
-                fullWidth
-                disabled
-                helperText="Read-only"
-              />
-              </Box>
+                </Box>
 
-              {/* Survey Date */}
-              <TextField
-                label="Survey Date"
-                value={(() => {
-                  const today = new Date();
-                  return today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-                })()}
-                variant="outlined"
-                fullWidth
-                disabled
-                helperText="Read-only"
-              />
+                {/* Survey Date */}
+                <TextField
+                  label="Survey Date"
+                  value={(() => {
+                    const today = new Date();
+                    return today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+                  })()}
+                  variant="outlined"
+                  fullWidth
+                  disabled
+                  helperText="Read-only"
+                />
 
-              {/* Files (match Area Head view modal): Survey Form Attachments */}
-
-              {/* Survey Form Attachments */}
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                  Survey Form Attachments
-                </Typography>
-                {selectedRequest.survey_form_attachments && 
-                 Array.isArray(selectedRequest.survey_form_attachments) && 
-                 selectedRequest.survey_form_attachments.length > 0 ? (
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                    {selectedRequest.survey_form_attachments.map((file, index) => (
-                      <Chip
-                        key={`survey-${index}`}
-                        label={file.split('/').pop()}
-                        size="small"
-                        color="success"
-                        variant="outlined"
-                        onClick={() => {
-                          const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/survey_forms/${file}`;
-                          window.open(fileUrl, '_blank');
-                        }}
-                        sx={{ 
-                          cursor: 'pointer',
-                          '&:hover': {
-                            backgroundColor: '#e3f2fd',
-                            transform: 'scale(1.05)'
-                          }
-                        }}
-                      />
-                    ))}
-                  </Box>
-                ) : (
-                  <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
-                    No survey form attachments available
+                {/* Survey Form Attachments */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                    Survey Form Attachments
                   </Typography>
-                )}
+                  {selectedRequest.survey_form_attachments && 
+                   Array.isArray(selectedRequest.survey_form_attachments) && 
+                   selectedRequest.survey_form_attachments.length > 0 ? (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {selectedRequest.survey_form_attachments.map((file, index) => {
+                        const { url, fileName } = getFileUrlAndName(file, index, `Survey Form ${index + 1}`);
+                        const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/survey_forms/${url}`);
+                        return (
+                          <Chip
+                            key={`survey-${index}`}
+                            label={fileName}
+                            size="small"
+                            color="success"
+                            variant="outlined"
+                            onClick={() => openFileInNewTab(fileUrl)}
+                            sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#e3f2fd', transform: 'scale(1.05)' } }}
+                          />
+                        );
+                      })}
+                    </Box>
+                  ) : (
+                    <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
+                      No survey form attachments available
+                    </Typography>
+                  )}
+                </Box>
               </Box>
-            </Box>
-          )}
+            );
+          })()}
         </DialogContent>
         <DialogActions sx={{ p: 2, gap: 1 }}>
           <Button 
@@ -1794,21 +3191,74 @@ export default function VendorRequests() {
                 <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
                   Request Types & Dimensions
                 </Typography>
-                {editFormData.request_items?.map((item, index) => (
+                {requestTypes.length === 0 ? (
+                  <Alert severity="info" sx={{ mt: 2 }}>
+                    No allowed request types found for this vendor. Please contact administrator to add request types for this vendor.
+                  </Alert>
+                ) : null}
+                {editFormData.request_items?.map((item, index) => {
+                  // Filter options: show only is_allowed=true OR the currently selected item (even if is_allowed=false)
+                  const filteredOptions = requestTypes.filter(rt => 
+                    rt.is_allowed === true || rt.id === item.request_type_id
+                  );
+                  
+                  return (
                   <Paper key={index} variant="outlined" sx={{ p: 2, mb: 1.5, borderRadius: 2, backgroundColor: '#fafafa' }}>
                     <Autocomplete
-                      options={requestTypes}
+                      options={filteredOptions}
                       getOptionLabel={(option) => option.name || ''}
                       value={requestTypes.find(rt => rt.id === item.request_type_id) || null}
                       onChange={(event, newValue) => {
                         const newItems = [...editFormData.request_items];
-                        newItems[index] = { ...newItems[index], request_type_id: newValue?.id || '' };
-                        handleEditFormChange('request_items', newItems);
+                        const selectedRequestType = requestTypes.find(rt => rt.id === newValue?.id);
+                        const isManual = selectedRequestType?.request_type === 'manual';
+                        const isFees = selectedRequestType?.request_type === 'fees';
                         
-                        // Fetch suggested pricing when request type is selected
-                        if (newValue?.id && editingRequest?.vendor_code) {
-                          fetchSuggestedPricing(editingRequest.vendor_code, newValue.id, index);
+                        if (isManual) {
+                          // For manual type: set price_per_sqft from API, keep existing width/height, calculate price
+                          const pricePerSqft = selectedRequestType?.price || '';
+                          const widthFt = parseFloat(newItems[index].width) || 0;
+                          const heightFt = parseFloat(newItems[index].height) || 0;
+                          const areaSqft = widthFt * heightFt;
+                          const pricePerSqftNum = parseFloat(pricePerSqft) || 0;
+                          const total = areaSqft * pricePerSqftNum;
+                          
+                          newItems[index] = { 
+                            ...newItems[index], 
+                            request_type_id: newValue?.id || '',
+                            price_per_sqft: pricePerSqft,
+                            price: isNaN(total) ? '' : Number(total.toFixed(2))
+                          };
+                        } else if (isFees) {
+                          // For fees type: set width/height to 0, price_per_sqft from API, keep existing price (editable)
+                          const pricePerSqft = selectedRequestType?.price || '';
+                          newItems[index] = { 
+                            ...newItems[index], 
+                            request_type_id: newValue?.id || '',
+                            width: '0',
+                            height: '0',
+                            price_per_sqft: pricePerSqft,
+                            price: newItems[index].price || '' // Keep existing price, allow editing
+                          };
+                        } else {
+                          // For fixed type: use existing behavior
+                          const pricePerSqft = selectedRequestType?.price || '';
+                          newItems[index] = { 
+                            ...newItems[index], 
+                            request_type_id: newValue?.id || '',
+                            price_per_sqft: pricePerSqft,
+                            // Recalculate price if width and height are already set
+                            price: (() => {
+                              const widthFt = parseFloat(newItems[index].width) || 0;
+                              const heightFt = parseFloat(newItems[index].height) || 0;
+                              const areaSqft = widthFt * heightFt;
+                              const pricePerSqftNum = parseFloat(pricePerSqft) || 0;
+                              const total = areaSqft * pricePerSqftNum;
+                              return isNaN(total) ? '' : Number(total.toFixed(2));
+                            })()
+                          };
                         }
+                        handleEditFormChange('request_items', newItems);
                       }}
                       renderInput={(params) => (
                         <TextField
@@ -1819,212 +3269,185 @@ export default function VendorRequests() {
                           required
                         />
                       )}
-                      disabled={isLoading}
+                      disabled={isLoading || filteredOptions.length === 0}
                       sx={{ mb: 1.5 }}
                     />
                     
-                    {/* Suggested Price Checkbox */}
-                    {item.request_type_id && (
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            checked={item.use_suggested_pricing || false}
-                            onChange={(e) => {
-                              const newItems = [...editFormData.request_items];
-                              newItems[index] = { ...newItems[index], use_suggested_pricing: e.target.checked };
-                              
-                              // If switching to suggested pricing, set width/height to 0 and use suggested price
-                              if (e.target.checked) {
-                                newItems[index].width = '0';
-                                newItems[index].height = '0';
-                                newItems[index].price_per_sqft = '';
-                                newItems[index].price = suggestedPricing[index] || 0;
-                              }
-                              
-                              handleEditFormChange('request_items', newItems);
-                            }}
-                            disabled={isLoading}
-                          />
-                        }
-                        label={
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography variant="body2">Suggested Price</Typography>
-                            {loadingSuggestedPricing[index] && (
-                              <Typography variant="caption" sx={{ color: '#666' }}>
-                                (Loading...)
-                              </Typography>
-                            )}
-                            {!loadingSuggestedPricing[index] && suggestedPricing[index] !== undefined && (
-                              <Typography variant="caption" sx={{ color: suggestedPricing[index] > 0 ? 'success.main' : 'error.main' }}>
-                                ({suggestedPricing[index] > 0 ? `₨${suggestedPricing[index]}` : 'No price available'})
-                              </Typography>
-                            )}
-                          </Box>
-                        }
-                        sx={{ mb: 1.5 }}
-                      />
-                    )}
-                    
-                    {/* Manual Pricing Fields - Only show when not using suggested pricing */}
-                    {!item.use_suggested_pricing && (
-                      <>
-                        <TextField
-                          label="Width (ft)"
-                          type="number"
-                          value={item.width || ''}
-                          onChange={(e) => {
-                            const newItems = [...editFormData.request_items];
-                            newItems[index] = { ...newItems[index], width: e.target.value };
-                            const widthFt = parseFloat(newItems[index].width) || 0;
-                            const heightFt = parseFloat(newItems[index].height) || 0;
-                            const areaSqft = widthFt * heightFt;
-                            const pricePerSqft = parseFloat(newItems[index].price_per_sqft) || 0;
-                            const total = areaSqft * pricePerSqft;
-                            newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
-                            handleEditFormChange('request_items', newItems);
-                          }}
-                          variant="outlined"
-                          disabled={isLoading}
-                          sx={{ mr: 1.5, minWidth: 140 }}
-                          inputProps={{ step: '0.01', min: '0' }}
-                        />
-                        <TextField
-                          label="Height (ft)"
-                          type="number"
-                          value={item.height || ''}
-                          onChange={(e) => {
-                            const newItems = [...editFormData.request_items];
-                            newItems[index] = { ...newItems[index], height: e.target.value };
-                            const widthFt = parseFloat(newItems[index].width) || 0;
-                            const heightFt = parseFloat(newItems[index].height) || 0;
-                            const areaSqft = widthFt * heightFt;
-                            const pricePerSqft = parseFloat(newItems[index].price_per_sqft) || 0;
-                            const total = areaSqft * pricePerSqft;
-                            newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
-                            handleEditFormChange('request_items', newItems);
-                          }}
-                          variant="outlined"
-                          disabled={isLoading}
-                          sx={{ mr: 1.5, minWidth: 140 }}
-                          inputProps={{ step: '0.01', min: '0' }}
-                        />
-                        <TextField
-                          label="Area (ft²)"
-                          type="number"
-                          value={(() => {
-                            const widthFt = parseFloat(item.width) || 0;
-                            const heightFt = parseFloat(item.height) || 0;
-                            const areaSqft = widthFt * heightFt;
-                            return areaSqft > 0 ? areaSqft.toFixed(2) : '';
-                          })()}
-                          variant="outlined"
-                          disabled
-                          sx={{ mr: 1.5, minWidth: 160 }}
-                          helperText="Auto"
-                        />
-                        <TextField
-                          label="Price per ft² *"
-                          type="number"
-                          value={item.price_per_sqft || ''}
-                          onChange={(e) => {
-                            const newItems = [...editFormData.request_items];
-                            newItems[index] = { ...newItems[index], price_per_sqft: e.target.value };
-                            const widthFt = parseFloat(newItems[index].width) || 0;
-                            const heightFt = parseFloat(newItems[index].height) || 0;
-                            const areaSqft = widthFt * heightFt;
-                            const pricePerSqft = parseFloat(e.target.value) || 0;
-                            const total = areaSqft * pricePerSqft;
-                            newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
-                            handleEditFormChange('request_items', newItems);
-                          }}
-                          variant="outlined"
-                          disabled={isLoading}
-                          sx={{ mr: 1.5, minWidth: 180 }}
-                          inputProps={{
-                            step: "0.01",
-                            min: "0"
-                          }}
-                          InputProps={{ startAdornment: <InputAdornment position="start">₨</InputAdornment> }}
-                          helperText="per square foot"
-                        />
-                      </>
-                    )}
-                    
-                    {/* Suggested Pricing Fields - Only show when using suggested pricing */}
-                    {item.use_suggested_pricing && (
-                      <>
-                        <TextField
-                          label="Width (ft)"
-                          type="number"
-                          value="0"
-                          variant="outlined"
-                          disabled
-                          sx={{ mr: 1.5, minWidth: 140 }}
-                          helperText="Auto (Suggested)"
-                        />
-                        <TextField
-                          label="Height (ft)"
-                          type="number"
-                          value="0"
-                          variant="outlined"
-                          disabled
-                          sx={{ mr: 1.5, minWidth: 140 }}
-                          helperText="Auto (Suggested)"
-                        />
-                        <TextField
-                          label="Area (ft²)"
-                          type="number"
-                          value="0"
-                          variant="outlined"
-                          disabled
-                          sx={{ mr: 1.5, minWidth: 160 }}
-                          helperText="Auto (Suggested)"
-                        />
-                        <TextField
-                          label="Price per ft²"
-                          type="text"
-                          value="N/A"
-                          variant="outlined"
-                          disabled
-                          sx={{ mr: 1.5, minWidth: 180 }}
-                          helperText="Suggested pricing"
-                        />
-                      </>
-                    )}
-                    
-                    {/* Total Cost Field - Always shown, editable when using suggested pricing */}
                     <TextField
-                      label="Total Cost"
+                      label="Width (ft)"
                       type="number"
                       value={(() => {
-                        if (item.use_suggested_pricing) {
-                          return item.price || suggestedPricing[index] || 0;
-                        } else {
-                          const widthFt = parseFloat(item.width) || 0;
-                          const heightFt = parseFloat(item.height) || 0;
-                          const areaSqft = widthFt * heightFt;
-                          const pricePerSqft = parseFloat(item.price_per_sqft) || 0;
-                          const total = areaSqft * pricePerSqft;
-                          return total > 0 ? total.toFixed(2) : '';
-                        }
+                        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                        const isFees = selectedRequestType?.request_type === 'fees';
+                        if (isFees) return '0';
+                        return item.width !== undefined && item.width !== null && item.width !== '' ? String(item.width) : '';
                       })()}
                       onChange={(e) => {
-                        if (item.use_suggested_pricing) {
-                          const newItems = [...editFormData.request_items];
+                        const newItems = [...editFormData.request_items];
+                        const selectedRequestType = requestTypes.find(rt => rt.id === newItems[index].request_type_id);
+                        const isFees = selectedRequestType?.request_type === 'fees';
+                        
+                        // Don't allow editing for fees type
+                        if (isFees) return;
+                        
+                        newItems[index] = { ...newItems[index], width: e.target.value };
+                        const widthFt = parseFloat(newItems[index].width) || 0;
+                        const heightFt = parseFloat(newItems[index].height) || 0;
+                        const areaSqft = widthFt * heightFt;
+                        const pricePerSqft = parseFloat(newItems[index].price_per_sqft) || 0;
+                        const total = areaSqft * pricePerSqft;
+                        newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
+                        handleEditFormChange('request_items', newItems);
+                      }}
+                      variant="outlined"
+                      disabled={isLoading || (() => {
+                        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                        return selectedRequestType?.request_type === 'fees';
+                      })()}
+                      sx={{ mr: 1.5, minWidth: 140 }}
+                      inputProps={{ step: '0.01', min: '0' }}
+                    />
+                    <TextField
+                      label="Height (ft)"
+                      type="number"
+                      value={(() => {
+                        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                        const isFees = selectedRequestType?.request_type === 'fees';
+                        if (isFees) return '0';
+                        return item.height !== undefined && item.height !== null && item.height !== '' ? String(item.height) : '';
+                      })()}
+                      onChange={(e) => {
+                        const newItems = [...editFormData.request_items];
+                        const selectedRequestType = requestTypes.find(rt => rt.id === newItems[index].request_type_id);
+                        const isFees = selectedRequestType?.request_type === 'fees';
+                        
+                        // Don't allow editing for fees type
+                        if (isFees) return;
+                        
+                        newItems[index] = { ...newItems[index], height: e.target.value };
+                        const widthFt = parseFloat(newItems[index].width) || 0;
+                        const heightFt = parseFloat(newItems[index].height) || 0;
+                        const areaSqft = widthFt * heightFt;
+                        const pricePerSqft = parseFloat(newItems[index].price_per_sqft) || 0;
+                        const total = areaSqft * pricePerSqft;
+                        newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
+                        handleEditFormChange('request_items', newItems);
+                      }}
+                      variant="outlined"
+                      disabled={isLoading || (() => {
+                        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                        return selectedRequestType?.request_type === 'fees';
+                      })()}
+                      sx={{ mr: 1.5, minWidth: 140 }}
+                      inputProps={{ step: '0.01', min: '0' }}
+                    />
+                    <TextField
+                      label="Total Area (sqft)"
+                      type="number"
+                      value={(() => {
+                        const widthFt = parseFloat(item.width) || 0;
+                        const heightFt = parseFloat(item.height) || 0;
+                        const areaSqft = widthFt * heightFt;
+                        return areaSqft.toFixed(2);
+                      })()}
+                      variant="outlined"
+                      disabled
+                      sx={{ mr: 1.5, minWidth: 160 }}
+                      helperText="Auto"
+                    />
+                    <TextField
+                      label="Price Per (sqft)"
+                      type="number"
+                      value={item.price_per_sqft !== undefined && item.price_per_sqft !== null && item.price_per_sqft !== '' ? String(item.price_per_sqft) : ''}
+                      onChange={(e) => {
+                        const newItems = [...editFormData.request_items];
+                        const selectedRequestType = requestTypes.find(rt => rt.id === newItems[index].request_type_id);
+                        const isManual = selectedRequestType?.request_type === 'manual';
+                        const isFees = selectedRequestType?.request_type === 'fees';
+                        
+                        // Only allow editing for manual types (not fees or fixed)
+                        if (isManual && !isFees) {
+                          newItems[index] = { ...newItems[index], price_per_sqft: e.target.value };
+                          const widthFt = parseFloat(newItems[index].width) || 0;
+                          const heightFt = parseFloat(newItems[index].height) || 0;
+                          const areaSqft = widthFt * heightFt;
+                          const pricePerSqft = parseFloat(e.target.value) || 0;
+                          const total = areaSqft * pricePerSqft;
+                          newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
+                          handleEditFormChange('request_items', newItems);
+                        }
+                      }}
+                      variant="outlined"
+                      disabled={isLoading || (() => {
+                        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                        return selectedRequestType?.request_type === 'fixed' || selectedRequestType?.request_type === 'fees';
+                      })()}
+                      sx={{ mr: 1.5, minWidth: 180 }}
+                      InputProps={{ startAdornment: <InputAdornment position="start">₨</InputAdornment> }}
+                      helperText={(() => {
+                        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                        if (selectedRequestType?.request_type === 'manual') return 'Editable for manual type';
+                        if (selectedRequestType?.request_type === 'fees') return 'Read-only for fees type';
+                        return 'From vendor pricing (read-only)';
+                      })()}
+                      inputProps={{ step: '0.01', min: '0' }}
+                    />
+                    
+                    {/* Total Cost Field - Calculated for manual and fixed, editable for fees */}
+                    <TextField
+                      label="Total Cost Per Item"
+                      type="number"
+                      value={(() => {
+                        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                        const isFees = selectedRequestType?.request_type === 'fees';
+                        
+                        // For fees type: use the price directly (editable)
+                        if (isFees) {
+                          return item.price !== undefined && item.price !== null && item.price !== '' ? String(item.price) : '';
+                        }
+                        
+                        // For manual and fixed: calculate from area × price per sqft
+                        const widthFt = parseFloat(item.width) || 0;
+                        const heightFt = parseFloat(item.height) || 0;
+                        const areaSqft = widthFt * heightFt;
+                        const pricePerSqft = parseFloat(item.price_per_sqft) || 0;
+                        const total = areaSqft * pricePerSqft;
+                        return isNaN(total) ? '0.00' : total.toFixed(2);
+                      })()}
+                      onChange={(e) => {
+                        const newItems = [...editFormData.request_items];
+                        const selectedRequestType = requestTypes.find(rt => rt.id === newItems[index].request_type_id);
+                        const isFees = selectedRequestType?.request_type === 'fees';
+                        
+                        // Only allow editing for fees type
+                        if (isFees) {
                           newItems[index] = { ...newItems[index], price: e.target.value };
                           handleEditFormChange('request_items', newItems);
                         }
                       }}
                       variant="outlined"
-                      disabled={isLoading || !item.use_suggested_pricing}
+                      disabled={isLoading || (() => {
+                        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                        return selectedRequestType?.request_type !== 'fees';
+                      })()}
                       sx={{ minWidth: 180 }}
                       InputProps={{ startAdornment: <InputAdornment position="start">₨</InputAdornment> }}
-                      helperText={item.use_suggested_pricing ? "Editable (Suggested)" : "Area × price"}
+                      helperText={(() => {
+                        const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
+                        if (selectedRequestType?.request_type === 'fees') return 'Editable for fees type';
+                        return 'Area × price per ft²';
+                      })()}
+                      inputProps={{ step: '0.01', min: '0' }}
                     />
                     
                     <IconButton
                       onClick={() => {
-                        const newItems = editFormData.request_items.filter((_, i) => i !== index);
+                        // Remove item by ID or temp_id, not by index
+                        const itemToRemove = editFormData.request_items[index];
+                        const itemIdentifier = itemToRemove.id || itemToRemove.temp_id;
+                        const newItems = editFormData.request_items.filter(item => 
+                          (item.id || item.temp_id) !== itemIdentifier
+                        );
                         handleEditFormChange('request_items', newItems);
                       }}
                       color="error"
@@ -2033,18 +3456,31 @@ export default function VendorRequests() {
                       <DeleteIcon />
                     </IconButton>
                   </Paper>
-                ))}
+                  );
+                })}
                 <Button
                   variant="outlined"
                   onClick={() => {
-                    const newItems = [...(editFormData.request_items || []), { request_type_id: '', width: '', height: '', price: '', price_per_sqft: '', use_suggested_pricing: false }];
+                    const newItems = [...(editFormData.request_items || []), { 
+                      temp_id: `temp_${Date.now()}_${Math.random()}`, // Unique temporary ID for new items
+                      request_type_id: '', 
+                      width: '', 
+                      height: '', 
+                      price: '', 
+                      price_per_sqft: '' 
+                    }];
                     handleEditFormChange('request_items', newItems);
                   }}
-                  disabled={isLoading}
+                  disabled={isLoading || requestTypes.length === 0}
                   startIcon={<AddIcon />}
                 >
                   Add Request Type
                 </Button>
+                {requestTypes.length === 0 && (
+                  <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic', mt: 1 }}>
+                    Cannot add request types - no allowed request types available for this vendor
+                  </Typography>
+                )}
                 {/* Overall Total Cost (below items) */}
                 <Box sx={{ mt: 1.5, p: 2, borderRadius: 2, backgroundColor: '#f0f7ff', border: '1px solid #d0e6ff' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
@@ -2056,18 +3492,22 @@ export default function VendorRequests() {
                       value={(() => {
                         if (!editFormData.request_items || !Array.isArray(editFormData.request_items)) return '0.00';
                         const total = editFormData.request_items.reduce((sum, it) => {
-                          if (it.use_suggested_pricing) {
-                            // For suggested pricing, use the price field directly
-                            return sum + (parseFloat(it.price) || 0);
-                          } else {
-                            // For manual pricing, calculate area × price_per_sqft
-                            const widthFt = parseFloat(it.width) || 0;
-                            const heightFt = parseFloat(it.height) || 0;
-                            const areaSqft = widthFt * heightFt;
-                            const pricePerSqft = parseFloat(it.price_per_sqft) || 0;
-                            const itemTotal = areaSqft * pricePerSqft;
-                            return sum + (isNaN(itemTotal) ? 0 : itemTotal);
+                          const selectedRequestType = requestTypes.find(rt => rt.id === it.request_type_id);
+                          const isFees = selectedRequestType?.request_type === 'fees';
+                          
+                          // For fees type: use price directly
+                          if (isFees) {
+                            const price = parseFloat(it.price) || 0;
+                            return sum + (isNaN(price) ? 0 : price);
                           }
+                          
+                          // For manual and fixed: calculate area × price_per_sqft
+                          const widthFt = parseFloat(it.width) || 0;
+                          const heightFt = parseFloat(it.height) || 0;
+                          const areaSqft = widthFt * heightFt;
+                          const pricePerSqft = parseFloat(it.price_per_sqft) || 0;
+                          const itemTotal = areaSqft * pricePerSqft;
+                          return sum + (isNaN(itemTotal) ? 0 : itemTotal);
                         }, 0);
                         return total.toFixed(2);
                       })()}
@@ -2122,7 +3562,10 @@ export default function VendorRequests() {
                 InputLabelProps={{
                   shrink: true,
                 }}
-                disabled={isLoading}
+                disabled={isLoading || (editingRequest?.last_installation_date && String(editingRequest.last_installation_date).trim() !== '')}
+                helperText={editingRequest?.last_installation_date && String(editingRequest.last_installation_date).trim() !== '' 
+                  ? 'Last installation date cannot be changed once set' 
+                  : ''}
               />
 
               
@@ -2138,7 +3581,11 @@ export default function VendorRequests() {
                   name="site_photo_attachement"
                   multiple
                   accept="image/*,application/pdf"
-                  onChange={(e) => setSitePhotos(Array.from(e.target.files))}
+                  onChange={(e) => {
+                    const newFiles = e.target.files ? Array.from(e.target.files) : [];
+                    setSitePhotos(prev => [...prev, ...newFiles]);
+                    e.target.value = '';
+                  }}
                   style={{ display: 'none' }}
                 />
                 <label htmlFor="site_photo_attachement">
@@ -2165,32 +3612,33 @@ export default function VendorRequests() {
                     <Typography variant="body2" sx={{ color: '#666', mb: 1, fontWeight: 'bold' }}>
                       Existing files: {existingSitePhotos.length}
                     </Typography>
-                    {existingSitePhotos.map((file, index) => (
-                      <Chip
-                        key={`existing-${index}`}
-                        label={file.split('/').pop()}
-                        size="small"
-                        color="primary"
-                        variant="outlined"
-                        onClick={() => {
-                          const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/site_photos/${file}`;
-                          window.open(fileUrl, '_blank');
-                        }}
-                        onDelete={() => {
-                          const newFiles = existingSitePhotos.filter((_, i) => i !== index);
-                          setExistingSitePhotos(newFiles);
-                        }}
-                        sx={{ 
-                          mr: 1, 
-                          mb: 1,
-                          cursor: 'pointer',
-                          '&:hover': {
-                            backgroundColor: '#e3f2fd',
-                            transform: 'scale(1.05)'
-                          }
-                        }}
-                      />
-                    ))}
+                    {existingSitePhotos.map((file, index) => {
+                      const { url, fileName } = getFileUrlAndName(file, index, `Site Photo ${index + 1}`);
+                      const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/site_photos/${url}`);
+                      return (
+                        <Chip
+                          key={`existing-${index}`}
+                          label={fileName}
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                          onClick={() => openFileInNewTab(fileUrl)}
+                          onDelete={() => {
+                            const newFiles = existingSitePhotos.filter((_, i) => i !== index);
+                            setExistingSitePhotos(newFiles);
+                          }}
+                          sx={{ 
+                            mr: 1, 
+                            mb: 1,
+                            cursor: 'pointer',
+                            '&:hover': {
+                              backgroundColor: '#e3f2fd',
+                              transform: 'scale(1.05)'
+                            }
+                          }}
+                        />
+                      );
+                    })}
                   </Box>
                 )}
                 
@@ -2227,7 +3675,11 @@ export default function VendorRequests() {
                   name="old_board_photo_attachment"
                   multiple
                   accept="image/*,application/pdf"
-                  onChange={(e) => setOldBoardPhotos(Array.from(e.target.files))}
+                  onChange={(e) => {
+                    const newFiles = e.target.files ? Array.from(e.target.files) : [];
+                    setOldBoardPhotos(prev => [...prev, ...newFiles]);
+                    e.target.value = '';
+                  }}
                   style={{ display: 'none' }}
                 />
                 <label htmlFor="old_board_photo_attachment">
@@ -2254,32 +3706,33 @@ export default function VendorRequests() {
                     <Typography variant="body2" sx={{ color: '#666', mb: 1, fontWeight: 'bold' }}>
                       Existing files: {existingOldBoardPhotos.length}
                     </Typography>
-                    {existingOldBoardPhotos.map((file, index) => (
-                      <Chip
-                        key={`existing-old-${index}`}
-                        label={file.split('/').pop()}
-                        size="small"
-                        color="primary"
-                        variant="outlined"
-                        onClick={() => {
-                          const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/old_board_photos/${file}`;
-                          window.open(fileUrl, '_blank');
-                        }}
-                        onDelete={() => {
-                          const newFiles = existingOldBoardPhotos.filter((_, i) => i !== index);
-                          setExistingOldBoardPhotos(newFiles);
-                        }}
-                        sx={{ 
-                          mr: 1, 
-                          mb: 1,
-                          cursor: 'pointer',
-                          '&:hover': {
-                            backgroundColor: '#e3f2fd',
-                            transform: 'scale(1.05)'
-                          }
-                        }}
-                      />
-                    ))}
+                    {existingOldBoardPhotos.map((file, index) => {
+                      const { url, fileName } = getFileUrlAndName(file, index, `Old Board Photo ${index + 1}`);
+                      const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/old_board_photos/${url}`);
+                      return (
+                        <Chip
+                          key={`existing-old-${index}`}
+                          label={fileName}
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                          onClick={() => openFileInNewTab(fileUrl)}
+                          onDelete={() => {
+                            const newFiles = existingOldBoardPhotos.filter((_, i) => i !== index);
+                            setExistingOldBoardPhotos(newFiles);
+                          }}
+                          sx={{ 
+                            mr: 1, 
+                            mb: 1,
+                            cursor: 'pointer',
+                            '&:hover': {
+                              backgroundColor: '#e3f2fd',
+                              transform: 'scale(1.05)'
+                            }
+                          }}
+                        />
+                      );
+                    })}
                   </Box>
                 )}
                 
@@ -2332,7 +3785,7 @@ export default function VendorRequests() {
               minWidth: '120px'
             }}
           >
-            {isLoading ? 'Updating...' : 'Update Pricing'}
+            {isLoading ? 'Updating...' : 'Update Request'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -2473,7 +3926,11 @@ export default function VendorRequests() {
                 >
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                     <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                      {log.changed_by ? log.changed_by.username : 'Unknown User'}
+                      {log.changed_by 
+                        ? (log.changed_by.card_name && log.changed_by.user_type === 'vendor'
+                          ? `${log.changed_by.card_name} (${log.changed_by.username})`
+                          : log.changed_by.username)
+                        : 'Unknown User'}
                     </Typography>
                     <Typography variant="caption" sx={{ color: '#666' }}>
                       {log.changed_at ? new Date(log.changed_at).toLocaleString() : 'Unknown Date'}
@@ -2496,26 +3953,35 @@ export default function VendorRequests() {
                     {log.item_changes && log.item_changes.length > 0 && (
                       <Box sx={{ mt: 1, p: 1, backgroundColor: '#f0f0f0', borderRadius: 1 }}>
                         <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-                          Request Item Changes:
+                          Request items:
                         </Typography>
                         {log.item_changes.map((item, index) => (
                           <Box key={index} sx={{ mb: 1, p: 1, backgroundColor: '#ffffff', borderRadius: 0.5 }}>
                             <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
                               {item.action}: {item.request_type}
                             </Typography>
-                            {item.width && (
+                            {/* Only show width if it exists and is not 0 */}
+                            {item.width !== null && item.width !== undefined && parseFloat(item.width) > 0 && (
                               <Typography variant="body2" sx={{ color: '#333', mb: 0.5 }}>
                                 Width: {item.width} ft
                               </Typography>
                             )}
-                            {item.height && (
+                            {/* Only show height if it exists and is not 0 */}
+                            {item.height !== null && item.height !== undefined && parseFloat(item.height) > 0 && (
                               <Typography variant="body2" sx={{ color: '#333', mb: 0.5 }}>
                                 Height: {item.height} ft
                               </Typography>
                             )}
+                            {/* Show price per sqft if available and greater than 0 */}
+                            {item.price_per_sqft !== null && item.price_per_sqft !== undefined && parseFloat(item.price_per_sqft) > 0 && (
+                              <Typography variant="body2" sx={{ color: '#333', mb: 0.5 }}>
+                                Price per sqft: Rs {parseFloat(item.price_per_sqft).toFixed(2)}
+                              </Typography>
+                            )}
+                            {/* Always show total price if available */}
                             {item.price && (
                               <Typography variant="body2" sx={{ color: '#333', mb: 0.5 }}>
-                                Price: ${parseFloat(item.price).toFixed(2)}
+                                Total Price: Rs {parseFloat(item.price).toFixed(2)}
                               </Typography>
                             )}
                           </Box>
@@ -2572,62 +4038,106 @@ export default function VendorRequests() {
             mb: 1,
           }}
         >
-          Request Details - #{selectedDetailedRequest?.id}
+          {selectedDetailedRequest?.status === VENDOR_APPROVAL_STATUS 
+            ? `Work Order - #${selectedDetailedRequest?.id}`
+            : `Request Details - #${selectedDetailedRequest?.id}`}
         </DialogTitle>
         <DialogContent>
-          {selectedDetailedRequest && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 2 }}>
-              {/* Dealer Information */}
-              <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
-                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
-                  🏢 Dealer Information
-                </Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
-                      Dealer Name
+          {selectedDetailedRequest && (() => {
+            // Check if there's a parent dealer (dealer.id !== dealer_relation.parent.id)
+            const hasParent = selectedDetailedRequest?.dealer_relation?.parent && 
+                              selectedDetailedRequest?.dealer?.id && 
+                              selectedDetailedRequest.dealer.id !== selectedDetailedRequest.dealer_relation.parent.id;
+            const parent = hasParent ? selectedDetailedRequest.dealer_relation.parent : null;
+            
+            return (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 2 }}>
+                {/* Parent Dealer Information - Only show if parent exists */}
+                {hasParent && parent && (
+                  <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#e3f2fd', border: '2px solid #bbdefb' }}>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                      👤 Parent Dealer Information
                     </Typography>
-                    <Typography variant="body1">
-                      {selectedDetailedRequest.dealer?.name || 'N/A'}
-                    </Typography>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 2 }}>
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                          Parent Dealer Code
+                        </Typography>
+                        <Typography variant="body1">
+                          {parent.code || 'N/A'}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                          Parent Dealer Name
+                        </Typography>
+                        <Typography variant="body1">
+                          {parent.name || 'N/A'}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                          Parent Dealer Phone
+                        </Typography>
+                        <Typography variant="body1">
+                          {parent.phone || 'N/A'}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Paper>
+                )}
+                
+                {/* Current Dealer Information */}
+                <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
+                  <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                    🏢 Dealer Information
+                  </Typography>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                        Dealer Name
+                      </Typography>
+                      <Typography variant="body1">
+                        {selectedDetailedRequest.dealer?.name || 'N/A'}
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                        Dealer Code
+                      </Typography>
+                      <Typography variant="body1">
+                        {selectedDetailedRequest.dealer?.code || 'N/A'}
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                        Phone
+                      </Typography>
+                      <Typography variant="body1">
+                        {selectedDetailedRequest.dealer?.phone || 'N/A'}
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                        Address
+                      </Typography>
+                      <Typography variant="body1">
+                        {selectedDetailedRequest.dealer?.city || 'N/A'}
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                        Dealer Type
+                      </Typography>
+                      <Typography variant="body1">
+                        {selectedDetailedRequest.dealer_type === 'new' ? 'New' : 'Old'}
+                      </Typography>
+                    </Box>
                   </Box>
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
-                      Dealer Code
-                    </Typography>
-                    <Typography variant="body1">
-                      {selectedDetailedRequest.dealer?.code || 'N/A'}
-                    </Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
-                      Phone
-                    </Typography>
-                    <Typography variant="body1">
-                      {selectedDetailedRequest.dealer?.phone || 'N/A'}
-                    </Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
-                      Address
-                    </Typography>
-                    <Typography variant="body1">
-                      {selectedDetailedRequest.dealer?.city || 'N/A'}
-                    </Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
-                      Dealer Type
-                    </Typography>
-                    <Typography variant="body1">
-                      {selectedDetailedRequest.dealer_type === 'new' ? 'New' : 'Old'}
-                    </Typography>
-                  </Box>
-                </Box>
-              </Paper>
+                </Paper>
 
-              {/* Request Items */}
-              <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
+                {/* Request Items */}
+                <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
                 <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
                   📋 Request Items & Dimensions
                 </Typography>
@@ -2764,26 +4274,21 @@ export default function VendorRequests() {
                   </Typography>
                   {selectedDetailedRequest.site_photo_attachement && selectedDetailedRequest.site_photo_attachement.length > 0 ? (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {selectedDetailedRequest.site_photo_attachement.map((file, index) => (
-                        <Chip
-                          key={`site-${index}`}
-                          label={file.split('/').pop()}
-                          size="small"
-                          color="primary"
-                          variant="outlined"
-                          onClick={() => {
-                            const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/site_photos/${file}`;
-                            window.open(fileUrl, '_blank');
-                          }}
-                          sx={{ 
-                            cursor: 'pointer',
-                            '&:hover': {
-                              backgroundColor: '#e3f2fd',
-                              transform: 'scale(1.05)'
-                            }
-                          }}
-                        />
-                      ))}
+                      {selectedDetailedRequest.site_photo_attachement.map((file, index) => {
+                        const { url, fileName } = getFileUrlAndName(file, index, `Site Photo ${index + 1}`);
+                        const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/site_photos/${url}`);
+                        return (
+                          <Chip
+                            key={`site-${index}`}
+                            label={fileName}
+                            size="small"
+                            color="primary"
+                            variant="outlined"
+                            onClick={() => openFileInNewTab(fileUrl)}
+                            sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#e3f2fd', transform: 'scale(1.05)' } }}
+                          />
+                        );
+                      })}
                     </Box>
                   ) : (
                     <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
@@ -2799,26 +4304,21 @@ export default function VendorRequests() {
                   </Typography>
                   {selectedDetailedRequest.old_board_photo_attachment && selectedDetailedRequest.old_board_photo_attachment.length > 0 ? (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {selectedDetailedRequest.old_board_photo_attachment.map((file, index) => (
-                        <Chip
-                          key={`old-${index}`}
-                          label={file.split('/').pop()}
-                          size="small"
-                          color="secondary"
-                          variant="outlined"
-                          onClick={() => {
-                            const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/old_board_photos/${file}`;
-                            window.open(fileUrl, '_blank');
-                          }}
-                          sx={{ 
-                            cursor: 'pointer',
-                            '&:hover': {
-                              backgroundColor: '#f3e5f5',
-                              transform: 'scale(1.05)'
-                            }
-                          }}
-                        />
-                      ))}
+                      {selectedDetailedRequest.old_board_photo_attachment.map((file, index) => {
+                        const { url, fileName } = getFileUrlAndName(file, index, `Old Board Photo ${index + 1}`);
+                        const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/old_board_photos/${url}`);
+                        return (
+                          <Chip
+                            key={`old-${index}`}
+                            label={fileName}
+                            size="small"
+                            color="secondary"
+                            variant="outlined"
+                            onClick={() => openFileInNewTab(fileUrl)}
+                            sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#f3e5f5', transform: 'scale(1.05)' } }}
+                          />
+                        );
+                      })}
                     </Box>
                   ) : (
                     <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
@@ -2834,26 +4334,24 @@ export default function VendorRequests() {
                   </Typography>
                   {selectedDetailedRequest.survey_form_attachments && selectedDetailedRequest.survey_form_attachments.length > 0 ? (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {selectedDetailedRequest.survey_form_attachments.map((file, index) => (
-                        <Chip
-                          key={`survey-${index}`}
-                          label={file.split('/').pop()}
-                          size="small"
-                          color="success"
-                          variant="outlined"
-                          onClick={() => {
-                            const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/uploads/survey_forms/${file}`;
-                            window.open(fileUrl, '_blank');
-                          }}
-                          sx={{ 
-                            cursor: 'pointer',
-                            '&:hover': {
-                              backgroundColor: '#e8f5e8',
-                              transform: 'scale(1.05)'
-                            }
-                          }}
-                        />
-                      ))}
+                      {selectedDetailedRequest.survey_form_attachments.map((file, index) => {
+                        const { url, fileName } = getFileUrlAndName(file, index, `Survey Form ${index + 1}`);
+                        const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/survey_forms/${url}`);
+                        return (
+                          <Chip
+                            key={`survey-${index}`}
+                            label={fileName}
+                            size="small"
+                            color="success"
+                            variant="outlined"
+                            onClick={() => openFileInNewTab(fileUrl)}
+                            sx={{ 
+                              cursor: 'pointer',
+                              '&:hover': { backgroundColor: '#e8f5e8', transform: 'scale(1.05)' }
+                            }}
+                          />
+                        );
+                      })}
                     </Box>
                   ) : (
                     <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
@@ -2874,21 +4372,10 @@ export default function VendorRequests() {
                       Current Status
                     </Typography>
                     <Chip 
-                      label={selectedDetailedRequest.status || 'Not Decided'} 
+                      label={getVendorStatusDisplayName(selectedDetailedRequest.status)} 
                       variant="filled" 
                       size="small"
-                      color={
-                        selectedDetailedRequest.status === 'processing' ? 'success' :
-                        selectedDetailedRequest.status === 'review requested' ? 'error' :
-                        selectedDetailedRequest.status === 'rfq not accepted' ? 'error' :
-                        selectedDetailedRequest.status === 'Rfq' ? 'info' :
-                        selectedDetailedRequest.status === 'quotation sent' ? 'secondary' :
-                        selectedDetailedRequest.status === 'invoice_sent' ? 'primary' :
-                        selectedDetailedRequest.status === 'payment_released' ? 'success' :
-                        selectedDetailedRequest.status === 'ceo_pending' ? 'warning' :
-                        selectedDetailedRequest.status === 'under_review' ? 'info' :
-                        'default'
-                      }
+                      color={getVendorStatusColor(selectedDetailedRequest.status)}
                     />
                   </Box>
                   <Box>
@@ -2917,10 +4404,35 @@ export default function VendorRequests() {
                         new Date().toLocaleDateString()}
                     </Typography>
                   </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                      Approval Date
+                    </Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.approval_date ? 
+                        (() => {
+                          try {
+                            const date = new Date(selectedDetailedRequest.approval_date);
+                            return date.toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric'
+                            }) + ' ' + date.toLocaleTimeString('en-US', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true
+                            });
+                          } catch (error) {
+                            return 'N/A';
+                          }
+                        })() : 'N/A'}
+                    </Typography>
+                  </Box>
                 </Box>
               </Paper>
-            </Box>
-          )}
+              </Box>
+            );
+          })()}
         </DialogContent>
         <DialogActions sx={{ p: 3, gap: 2, backgroundColor: '#f8f9fa', borderTop: '1px solid #e0e0e0' }}>
           <Button 
@@ -2957,16 +4469,16 @@ export default function VendorRequests() {
         <DialogTitle 
           id="invoice-dialog-title"
           sx={{ 
-            color: selectedInvoiceRequest?.status === 'invoice rejected' ? 'error.main' : 'primary.main',
+            color: selectedInvoiceRequest?.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED ? 'error.main' : 'primary.main',
             fontWeight: 'bold',
           }}
         >
-          {selectedInvoiceRequest?.status === 'invoice rejected' 
+          {selectedInvoiceRequest?.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED 
             ? `Edit Invoice - Request #${selectedInvoiceRequest?.id}` 
             : `Share Invoice - Request #${selectedInvoiceRequest?.id}`}
         </DialogTitle>
         <DialogContent>
-          {selectedInvoiceRequest?.status === 'invoice rejected' && (
+          {selectedInvoiceRequest?.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED && (
             <Alert severity="warning" sx={{ mb: 2 }}>
               This invoice was rejected. Please review the rejection comments and update the invoice accordingly.
             </Alert>
@@ -2977,6 +4489,24 @@ export default function VendorRequests() {
           <Typography sx={{ color: '#333', mb: 2 }}>
             Total Cost: <strong>{selectedInvoiceRequest?.total_cost ? `₨${parseFloat(selectedInvoiceRequest.total_cost).toFixed(2)}` : 'N/A'}</strong>
           </Typography>
+          
+          {/* Invoice Number */}
+          <TextField
+            label="Invoice Number"
+            value={invoiceNumber}
+            onChange={(e) => setInvoiceNumber(e.target.value)}
+            variant="outlined"
+            fullWidth
+            required
+            sx={{ mb: 2 }}
+            disabled={invoiceLoading}
+            placeholder="Enter invoice number"
+            helperText={(!invoiceNumber || invoiceNumber.trim() === '') ? (
+              <Typography variant="caption" sx={{ color: 'error.main' }}>
+                Invoice number is required
+              </Typography>
+            ) : ''}
+          />
           
           <input
             type="file"
@@ -2994,11 +4524,20 @@ export default function VendorRequests() {
               startIcon={<InvoiceIcon />}
               disabled={invoiceLoading}
               fullWidth
-              sx={{ mt: 2 }}
+              sx={{ 
+                mt: 2
+              }}
             >
-              Select Invoice File
+              Select Invoice File *
             </Button>
           </label>
+          
+          {/* Show required message if no file selected */}
+          {!invoiceFile && existingInvoiceFiles.length === 0 && (
+            <Typography variant="caption" sx={{ color: 'error.main', mt: 0.5, display: 'block' }}>
+              Invoice file is required
+            </Typography>
+          )}
           
           {/* Existing Invoice Files */}
           {existingInvoiceFiles.length > 0 && (
@@ -3016,7 +4555,11 @@ export default function VendorRequests() {
                     variant="outlined"
                     onClick={() => {
                       const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/${file}`;
-                      window.open(fileUrl, '_blank');
+                      openFileInNewTab(fileUrl);
+                    }}
+                    onDelete={() => {
+                      const newFiles = existingInvoiceFiles.filter((_, i) => i !== index);
+                      setExistingInvoiceFiles(newFiles);
                     }}
                     sx={{ 
                       cursor: 'pointer',
@@ -3048,7 +4591,7 @@ export default function VendorRequests() {
           {/* Dealer Acknowledgment Form */}
           <Box sx={{ mt: 3 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
-              Dealer Acknowledgment Form
+              Dealer Acknowledgment Form *
             </Typography>
             <input
               type="file"
@@ -3074,9 +4617,16 @@ export default function VendorRequests() {
                   }
                 }}
               >
-                Select Dealer Acknowledgment Form (PDF, Images)
+                Select Dealer Acknowledgment Form (PDF, Images) *
               </Button>
             </label>
+            
+            {/* Show required message if no file selected */}
+            {!dealerAcknowledgmentFile && existingDealerAcknowledgmentFiles.length === 0 && (
+              <Typography variant="caption" sx={{ color: 'error.main', mt: 0.5, display: 'block' }}>
+                Dealer acknowledgment form is required
+              </Typography>
+            )}
             
             {/* Existing Dealer Acknowledgment Files */}
             {existingDealerAcknowledgmentFiles.length > 0 && (
@@ -3094,7 +4644,11 @@ export default function VendorRequests() {
                       variant="outlined"
                       onClick={() => {
                         const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/${file}`;
-                        window.open(fileUrl, '_blank');
+                        openFileInNewTab(fileUrl);
+                      }}
+                      onDelete={() => {
+                        const newFiles = existingDealerAcknowledgmentFiles.filter((_, i) => i !== index);
+                        setExistingDealerAcknowledgmentFiles(newFiles);
                       }}
                       sx={{ 
                         cursor: 'pointer',
@@ -3127,12 +4681,24 @@ export default function VendorRequests() {
           {/* Per-Item Site Photos */}
           <Box sx={{ mt: 3 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
-              Site Photos per Request Item
+              Site Photos per Request Item *
             </Typography>
             {selectedInvoiceRequest?.requestItems && selectedInvoiceRequest.requestItems.length > 0 ? (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {selectedInvoiceRequest.requestItems.map((item, idx) => (
-                  <Paper key={item.id || idx} variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                {selectedInvoiceRequest.requestItems.map((item, idx) => {
+                  const hasSitePhotos = (
+                    (sitePhotosPerItem[item.id] && sitePhotosPerItem[item.id].length > 0) ||
+                    (existingSitePhotosPerItem[item.id] && existingSitePhotosPerItem[item.id].length > 0)
+                  );
+                  return (
+                  <Paper 
+                    key={item.id || idx} 
+                    variant="outlined" 
+                    sx={{ 
+                      p: 2, 
+                      borderRadius: 2
+                    }}
+                  >
                     <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 2, alignItems: 'center', mb: 2 }}>
                       <Box>
                         <Typography variant="caption" sx={{ color: '#666' }}>Request Type</Typography>
@@ -3191,9 +4757,14 @@ export default function VendorRequests() {
                           }
                         }}
                       >
-                        Select Site Photos for this item
+                        Select Site Photos for this item *
                       </Button>
                     </label>
+                    {!hasSitePhotos && (
+                      <Typography variant="caption" sx={{ color: 'error.main', mt: 0.5, display: 'block' }}>
+                        Site photos are required for this item
+                      </Typography>
+                    )}
 
                     {/* Existing Site Photos for this item */}
                     {(existingSitePhotosPerItem[item.id] || []).length > 0 && (
@@ -3211,7 +4782,14 @@ export default function VendorRequests() {
                               variant="outlined"
                               onClick={() => {
                                 const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/${file}`;
-                                window.open(fileUrl, '_blank');
+                                openFileInNewTab(fileUrl);
+                              }}
+                              onDelete={() => {
+                                setExistingSitePhotosPerItem(prev => {
+                                  const itemPhotos = [...(prev[item.id] || [])];
+                                  itemPhotos.splice(index, 1);
+                                  return { ...prev, [item.id]: itemPhotos };
+                                });
                               }}
                               sx={{ 
                                 cursor: 'pointer',
@@ -3249,7 +4827,8 @@ export default function VendorRequests() {
                       </Box>
                     )}
                   </Paper>
-                ))}
+                  );
+                })}
               </Box>
             ) : (
               <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
@@ -3286,19 +4865,28 @@ export default function VendorRequests() {
           <Button 
             onClick={handleInvoiceSubmit}
             variant="contained"
-            color={selectedInvoiceRequest?.status === 'invoice rejected' ? 'error' : 'primary'}
+            color={selectedInvoiceRequest?.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED ? 'error' : 'primary'}
             disabled={invoiceLoading || (
-              !invoiceFile && 
-              !dealerAcknowledgmentFile && 
-              Object.values(sitePhotosPerItem).reduce((n, arr) => n + (arr ? arr.length : 0), 0) === 0 &&
-              existingInvoiceFiles.length === 0 &&
-              existingDealerAcknowledgmentFiles.length === 0 &&
-              Object.values(existingSitePhotosPerItem).reduce((n, arr) => n + (arr ? arr.length : 0), 0) === 0
+              // Invoice number is required
+              !invoiceNumber || invoiceNumber.trim() === '' ||
+              // Invoice file is required (new file or existing files)
+              (!invoiceFile && (existingInvoiceFiles.length === 0)) ||
+              // Dealer acknowledgment is required (new file or existing files)
+              (!dealerAcknowledgmentFile && (existingDealerAcknowledgmentFiles.length === 0)) ||
+              // Site photos are required for all request items
+              (selectedInvoiceRequest?.requestItems && selectedInvoiceRequest.requestItems.length > 0 && 
+                selectedInvoiceRequest.requestItems.some(item => {
+                  const hasSitePhotos = (
+                    (sitePhotosPerItem[item.id] && sitePhotosPerItem[item.id].length > 0) ||
+                    (existingSitePhotosPerItem[item.id] && existingSitePhotosPerItem[item.id].length > 0)
+                  );
+                  return !hasSitePhotos;
+                }))
             )}
           >
             {invoiceLoading 
               ? 'Uploading...' 
-              : selectedInvoiceRequest?.status === 'invoice rejected' 
+              : selectedInvoiceRequest?.status === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED 
                 ? 'Resubmit Invoice' 
                 : 'Upload Invoice'}
           </Button>
@@ -3414,6 +5002,103 @@ export default function VendorRequests() {
           )}
         </DialogActions>
       </Dialog>
+
+      {/* Request Rejection Comments Dialog */}
+      <Dialog
+        open={requestRejectionCommentsModalOpen}
+        onClose={() => {
+          setRequestRejectionCommentsModalOpen(false);
+          setSelectedRequestRejection(null);
+          setRequestRejectionCommentsList([]);
+        }}
+        aria-labelledby="request-rejection-comments-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '500px',
+            maxWidth: '700px',
+            maxHeight: '80vh',
+            overflow: 'auto',
+          }
+        }}
+      >
+        <DialogTitle
+          id="request-rejection-comments-dialog-title"
+          sx={{ color: 'error.main', fontWeight: 'bold' }}
+        >
+          Rejection Comments — Request #{selectedRequestRejection?.id}
+        </DialogTitle>
+        <DialogContent>
+          {loadingRequestRejectionComments ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+              <Typography>Loading rejection comments...</Typography>
+            </Box>
+          ) : requestRejectionCommentsList.length === 0 ? (
+            <Box sx={{ textAlign: 'center', p: 4 }}>
+              <Typography variant="body1" sx={{ color: '#666' }}>
+                No rejection comments found for this request.
+              </Typography>
+            </Box>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {requestRejectionCommentsList.map((comment, index) => (
+                <Box
+                  key={index}
+                  sx={{
+                    p: 2,
+                    border: '1px solid #ffcdd2',
+                    borderRadius: 1,
+                    backgroundColor: '#fff8f8'
+                  }}
+                >
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#b71c1c' }}>
+                      {comment.user ? comment.user.username : 'Unknown User'}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#666' }}>
+                      {comment.created_at ? new Date(comment.created_at).toLocaleString() : 'Unknown Date'}
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" sx={{ color: '#333' }}>
+                    {comment.comment}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={() => {
+              setRequestRejectionCommentsModalOpen(false);
+              setSelectedRequestRejection(null);
+              setRequestRejectionCommentsList([]);
+            }}
+            variant="outlined"
+            sx={{
+              color: '#666',
+              borderColor: '#ddd',
+              '&:hover': { borderColor: '#999', backgroundColor: '#f5f5f5' }
+            }}
+          >
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Invoice Viewer Modal */}
+      <InvoiceViewer
+        open={invoiceViewerModalOpen}
+        onClose={() => setInvoiceViewerModalOpen(false)}
+        invoiceData={selectedInvoiceViewerRequest?.invoice}
+        requestId={selectedInvoiceViewerRequest?.id}
+        requestItems={selectedInvoiceViewerRequest?.requestItems}
+        invoiceNumber={selectedInvoiceViewerRequest?.invoice_number}
+        invoiceDate={selectedInvoiceViewerRequest?.invoice_date}
+        invoice_files_data={selectedInvoiceViewerRequest?.invoice_files_data}
+        dealer_acknowledgment_files_data={selectedInvoiceViewerRequest?.dealer_acknowledgment_files_data}
+        invoice_site_photos_by_item_data={selectedInvoiceViewerRequest?.invoice_site_photos_by_item_data}
+      />
 
       {/* React Toastify Container */}
       <ToastContainer

@@ -246,7 +246,7 @@ export default function SignIn(props) {
           justifyContent="center" 
           alignItems="center"
         >
-          <Typography variant="h6" sx={{ color: '#333' }}>Checking authentication...</Typography>
+          <Typography variant="h6" sx={{ color: 'text.primary' }}>Checking authentication...</Typography>
         </SignInContainer>
       </AppTheme>
     );
@@ -265,7 +265,7 @@ export default function SignIn(props) {
             sx={{ 
               width: '100%', 
               fontSize: 'clamp(2rem, 10vw, 2.15rem)',
-              color: '#333' // Dark text for contrast on white background
+              color: 'text.primary'
             }}
           >
             Sign in
@@ -282,7 +282,7 @@ export default function SignIn(props) {
             }}
           >
             <FormControl>
-              <FormLabel htmlFor="email" sx={{ color: '#333' }}>Email or Username</FormLabel>
+              <FormLabel htmlFor="email" sx={{ color: 'text.primary' }}>Email or Username</FormLabel>
               <TextField
                 error={emailError}
                 helperText={emailErrorMessage}
@@ -297,15 +297,33 @@ export default function SignIn(props) {
                 variant="outlined"
                 color={emailError ? 'error' : 'primary'}
                 disabled={isLoading}
-                sx={{
+                sx={(theme) => ({
                   '& .MuiOutlinedInput-root': {
-                    backgroundColor: '#ffffff',
-                  }
-                }}
+                    backgroundColor: theme.palette.mode === 'dark' 
+                      ? theme.palette.background.default 
+                      : '#ffffff',
+                    '& fieldset': {
+                      borderColor: theme.palette.mode === 'dark' 
+                        ? 'rgba(255, 255, 255, 0.23)' 
+                        : 'rgba(0, 0, 0, 0.23)',
+                    },
+                    '&:hover fieldset': {
+                      borderColor: theme.palette.mode === 'dark' 
+                        ? 'rgba(255, 255, 255, 0.5)' 
+                        : 'rgba(0, 0, 0, 0.5)',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: theme.palette.primary.main,
+                    },
+                    '& input': {
+                      color: theme.palette.text.primary,
+                    },
+                  },
+                })}
               />
             </FormControl>
             <FormControl>
-              <FormLabel htmlFor="password" sx={{ color: '#333' }}>Password</FormLabel>
+              <FormLabel htmlFor="password" sx={{ color: 'text.primary' }}>Password</FormLabel>
               <TextField
                 error={passwordError}
                 helperText={passwordErrorMessage}
@@ -319,11 +337,29 @@ export default function SignIn(props) {
                 variant="outlined"
                 color={passwordError ? 'error' : 'primary'}
                 disabled={isLoading}
-                sx={{
+                sx={(theme) => ({
                   '& .MuiOutlinedInput-root': {
-                    backgroundColor: '#ffffff',
-                  }
-                }}
+                    backgroundColor: theme.palette.mode === 'dark' 
+                      ? theme.palette.background.default 
+                      : '#ffffff',
+                    '& fieldset': {
+                      borderColor: theme.palette.mode === 'dark' 
+                        ? 'rgba(255, 255, 255, 0.23)' 
+                        : 'rgba(0, 0, 0, 0.23)',
+                    },
+                    '&:hover fieldset': {
+                      borderColor: theme.palette.mode === 'dark' 
+                        ? 'rgba(255, 255, 255, 0.5)' 
+                        : 'rgba(0, 0, 0, 0.5)',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: theme.palette.primary.main,
+                    },
+                    '& input': {
+                      color: theme.palette.text.primary,
+                    },
+                  },
+                })}
               />
             </FormControl>
             <ForgotPassword open={open} handleClose={handleClose} />
@@ -335,7 +371,7 @@ export default function SignIn(props) {
             >
               {isLoading ? 'Signing in...' : 'Sign in'}
             </BlueButton>
-            <Link
+            {/* <Link
               component="button"
               type="button"
               onClick={handleClickOpen}
@@ -350,9 +386,9 @@ export default function SignIn(props) {
               disabled={isLoading}
             >
               Forgot your password?
-            </Link>
+            </Link> */}
           </Box>
-          <Divider sx={{ color: '#666' }}>Diamond Paints</Divider>
+          <Divider sx={{ color: 'text.secondary', '&::before, &::after': { borderColor: 'divider' } }}>Paint Solutions</Divider>
         </Card>
         
         {/* React Toastify Container */}

@@ -8,7 +8,6 @@ import {
   Typography,
   Box,
   Chip,
-  Alert,
 } from '@mui/material';
 import {
   Receipt as InvoiceIcon,
@@ -17,20 +16,42 @@ import {
 } from '@mui/icons-material';
 import { BASE_URL } from '../constants/Constants';
 
-const InvoiceViewer = ({ open, onClose, invoiceData, requestId, requestItems }) => {
-  // Parse the invoice JSON data
+// Open file in new tab; for data URLs use blob URL so image/PDF loads reliably
+async function openFileInNewTab(url) {
+  if (!url) return;
+  if (url.startsWith('data:')) {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch {
+      window.open(url, '_blank');
+    }
+  } else {
+    window.open(url, '_blank');
+  }
+}
+
+const InvoiceViewer = ({
+  open,
+  onClose,
+  invoiceData,
+  requestId,
+  requestItems,
+  invoiceNumber,
+  invoiceDate,
+  invoice_files_data,
+  dealer_acknowledgment_files_data,
+  invoice_site_photos_by_item_data,
+}) => {
+  // Parse the invoice JSON data (legacy paths)
   const parseInvoiceData = (data) => {
     if (!data) return null;
-    
     try {
-      // If it's already an object, return it
-      if (typeof data === 'object') {
-        return data;
-      }
-      // If it's a string, parse it
-      if (typeof data === 'string') {
-        return JSON.parse(data);
-      }
+      if (typeof data === 'object') return data;
+      if (typeof data === 'string') return JSON.parse(data);
       return null;
     } catch (error) {
       console.error('Error parsing invoice data:', error);
@@ -40,17 +61,39 @@ const InvoiceViewer = ({ open, onClose, invoiceData, requestId, requestItems }) 
 
   const invoice = parseInvoiceData(invoiceData);
 
-  // Check if there's any invoice data to display
-  const hasInvoiceData = invoice && (
-    (invoice.invoice_files && invoice.invoice_files.length > 0) ||
-    (invoice.dealer_acknowledgment_files && invoice.dealer_acknowledgment_files.length > 0) ||
-    (invoice.site_photos && invoice.site_photos.length > 0) ||
-    (invoice.site_photos_by_item && Object.keys(invoice.site_photos_by_item).length > 0)
-  );
+  const hasDataFiles = (arr) => Array.isArray(arr) && arr.length > 0;
+  const hasDataMap = (obj) => obj && typeof obj === 'object' && Object.keys(obj).length > 0;
+
+  // Prefer DB-backed _data; fall back to legacy invoice JSON
+  const hasInvoiceData =
+    hasDataFiles(invoice_files_data) ||
+    hasDataFiles(dealer_acknowledgment_files_data) ||
+    hasDataMap(invoice_site_photos_by_item_data) ||
+    (invoice &&
+      ((invoice.invoice_files && invoice.invoice_files.length > 0) ||
+        (invoice.dealer_acknowledgment_files && invoice.dealer_acknowledgment_files.length > 0) ||
+        (invoice.site_photos && invoice.site_photos.length > 0) ||
+        (invoice.site_photos_by_item && Object.keys(invoice.site_photos_by_item).length > 0)));
 
   const handleFileClick = (filePath) => {
     const fullUrl = filePath.startsWith('/') ? `${BASE_URL}${filePath}` : `${BASE_URL}/${filePath}`;
     window.open(fullUrl, '_blank');
+  };
+
+  // Normalize file item: either { url, fileName } or legacy path string
+  const getFileLabelAndOpen = (item) => {
+    if (item == null) return { label: 'file', open: () => {} };
+    if (typeof item === 'object' && item.url != null) {
+      return {
+        label: item.fileName || 'file',
+        open: () => openFileInNewTab(item.url),
+      };
+    }
+    const pathStr = String(item);
+    return {
+      label: pathStr.startsWith('data:') ? 'file' : pathStr.split('/').pop() || 'file',
+      open: () => (pathStr.startsWith('data:') ? openFileInNewTab(pathStr) : handleFileClick(pathStr)),
+    };
   };
 
   const renderFileSection = (title, files, icon, color = 'primary') => {
@@ -62,37 +105,37 @@ const InvoiceViewer = ({ open, onClose, invoiceData, requestId, requestItems }) 
           {title} ({files.length})
         </Typography>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-          {files.map((file, index) => (
-            <Chip
-              key={`${title}-${index}`}
-              label={file.split('/').pop()}
-              size="small"
-              color={color}
-              variant="outlined"
-              onClick={() => handleFileClick(file)}
-              sx={{ 
-                cursor: 'pointer',
-                '&:hover': {
-                  backgroundColor: color === 'primary' ? '#e3f2fd' : 
-                                 color === 'secondary' ? '#f3e5f5' : '#e8f5e8',
-                }
-              }}
-            />
-          ))}
+          {files.map((file, index) => {
+            const { label, open } = getFileLabelAndOpen(file);
+            return (
+              <Chip
+                key={`${title}-${index}`}
+                label={label}
+                size="small"
+                color={color}
+                variant="outlined"
+                onClick={open}
+                sx={{
+                  cursor: 'pointer',
+                  '&:hover': {
+                    backgroundColor:
+                      color === 'primary' ? '#e3f2fd' : color === 'secondary' ? '#f3e5f5' : '#e8f5e8',
+                  },
+                }}
+              />
+            );
+          })}
         </Box>
       </Box>
     );
   };
 
   const renderPerItemSitePhotos = () => {
-    if (!invoice?.site_photos_by_item || !requestItems || requestItems.length === 0) return null;
-    const map = invoice.site_photos_by_item;
+    const map = invoice_site_photos_by_item_data ?? invoice?.site_photos_by_item;
+    if (!map || !requestItems || requestItems.length === 0) return null;
 
-    // Build a quick lookup of items by id for labels
     const byId = new Map();
-    requestItems.forEach((it) => {
-      byId.set(String(it.id), it);
-    });
+    requestItems.forEach((it) => byId.set(String(it.id), it));
 
     const itemIds = Object.keys(map);
     if (itemIds.length === 0) return null;
@@ -120,22 +163,23 @@ const InvoiceViewer = ({ open, onClose, invoiceData, requestId, requestItems }) 
                   Item #{idKey}: {typeName} — {width}×{height} ft {ppsf ? `(₨${ppsf.toFixed(2)}/ft²)` : ''} {price ? `— Total ₨${price.toFixed(2)}` : ''}
                 </Typography>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {files.map((file, index) => (
-                    <Chip
-                      key={`item-${idKey}-photo-${index}`}
-                      label={String(file).split('/').pop()}
-                      size="small"
-                      color="success"
-                      variant="outlined"
-                      onClick={() => handleFileClick(String(file))}
-                      sx={{ 
-                        cursor: 'pointer',
-                        '&:hover': {
-                          backgroundColor: '#e8f5e8',
-                        }
-                      }}
-                    />
-                  ))}
+                  {files.map((file, index) => {
+                    const { label, open } = getFileLabelAndOpen(file);
+                    return (
+                      <Chip
+                        key={`item-${idKey}-photo-${index}`}
+                        label={label}
+                        size="small"
+                        color="success"
+                        variant="outlined"
+                        onClick={open}
+                        sx={{
+                          cursor: 'pointer',
+                          '&:hover': { backgroundColor: '#e8f5e8' },
+                        }}
+                      />
+                    );
+                  })}
                 </Box>
               </Box>
             );
@@ -150,13 +194,13 @@ const InvoiceViewer = ({ open, onClose, invoiceData, requestId, requestItems }) 
       open={open}
       onClose={onClose}
       aria-labelledby="invoice-viewer-dialog-title"
+      fullWidth
+      maxWidth="md"
       PaperProps={{
         sx: {
           backgroundColor: '#ffffff',
-          minWidth: '500px',
-          maxWidth: '700px',
-          maxHeight: '80vh',
-          overflow: 'auto',
+          borderRadius: 2,
+          maxHeight: '85vh',
         }
       }}
     >
@@ -171,6 +215,36 @@ const InvoiceViewer = ({ open, onClose, invoiceData, requestId, requestItems }) 
       </DialogTitle>
       
       <DialogContent>
+        {/* Invoice Number and Date Display */}
+        {(invoiceNumber || invoiceDate) && (
+          <Box sx={{ mb: 2, p: 1.5, backgroundColor: '#f5f5f5', borderRadius: 1 }}>
+            {invoiceNumber && (
+              <Box sx={{ mb: invoiceDate ? 1 : 0 }}>
+                <Typography variant="body2" sx={{ color: '#666', mb: 0.5 }}>
+                  Invoice Number
+                </Typography>
+                <Typography variant="body1" sx={{ fontWeight: 'bold', color: '#333' }}>
+                  {invoiceNumber}
+                </Typography>
+              </Box>
+            )}
+            {invoiceDate && (
+              <Box>
+                <Typography variant="body2" sx={{ color: '#666', mb: 0.5 }}>
+                  Invoice Date
+                </Typography>
+                <Typography variant="body1" sx={{ fontWeight: 'bold', color: '#333' }}>
+                  {new Date(invoiceDate).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })}
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        )}
+
         {!hasInvoiceData ? (
           <Box sx={{ textAlign: 'center', p: 4 }}>
             <Typography variant="body1" sx={{ color: '#666' }}>
@@ -179,10 +253,10 @@ const InvoiceViewer = ({ open, onClose, invoiceData, requestId, requestItems }) 
           </Box>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {/* Invoice Files */}
+            {/* Invoice Files: prefer DB data, fallback to legacy invoice JSON */}
             {renderFileSection(
               'Invoice Files',
-              invoice.invoice_files,
+              hasDataFiles(invoice_files_data) ? invoice_files_data : (invoice?.invoice_files || []),
               <InvoiceIcon />,
               'primary'
             )}
@@ -190,15 +264,15 @@ const InvoiceViewer = ({ open, onClose, invoiceData, requestId, requestItems }) 
             {/* Dealer Acknowledgment Files */}
             {renderFileSection(
               'Dealer Acknowledgment Forms',
-              invoice.dealer_acknowledgment_files,
+              hasDataFiles(dealer_acknowledgment_files_data) ? dealer_acknowledgment_files_data : (invoice?.dealer_acknowledgment_files || []),
               <DocumentIcon />,
               'secondary'
             )}
 
-            {/* Site Photos */}
+            {/* Site Photos (legacy only; per-item has DB support) */}
             {renderFileSection(
               'Site Photos',
-              invoice.site_photos,
+              invoice?.site_photos || [],
               <PhotoIcon />,
               'success'
             )}

@@ -8,26 +8,45 @@ import {
   DialogContent,
   DialogActions,
   Button,
-  Tooltip,
+  Box,
 } from '@mui/material';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { GridToolbarContainer, GridToolbarColumnsButton } from '@mui/x-data-grid';
 import { useAuth } from '../auth/AuthContext';
 import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
+import RegionPicker from '../components/RegionPicker';
 import { BASE_URL } from "../constants/Constants";
 import { useApi } from '../hooks/useApi';
 
 const INITIAL_PAGE_SIZE = 10;
+
+// Custom toolbar with only columns button
+function CustomToolbar() {
+  return (
+    <GridToolbarContainer>
+      <GridToolbarColumnsButton 
+        sx={{
+          color: '#757575', // Light grey color to match default
+          '&:hover': {
+            color: '#424242', // Slightly darker on hover
+            backgroundColor: 'rgba(0, 0, 0, 0.04)',
+          },
+        }}
+      />
+    </GridToolbarContainer>
+  );
+}
 
 export default function UserManagement() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   
-  const { user, hasPermission, token } = useAuth();
+  const { user, token } = useAuth();
   
   // Check user permissions
   const canRead = user?.permissions?.user?.includes('read') || false;
@@ -35,7 +54,7 @@ export default function UserManagement() {
   const canUpdate = user?.permissions?.user?.includes('update') || false;
   const canDelete = user?.permissions?.user?.includes('delete') || false;
 
-  const { get, post, put, del } = useApi(); // Use the useApi hook
+  const { get, post, put } = useApi(); // Use the useApi hook
 
   const [rowsState, setRowsState] = React.useState({
     rows: [],
@@ -112,7 +131,8 @@ export default function UserManagement() {
   };
 
   const validateEmail = (email) => {
-    if (!email) return 'Email is required';
+    // Email is optional, only validate format if provided
+    if (!email || email.trim() === '') return '';
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) return 'Please enter a valid email address';
     return '';
@@ -135,24 +155,35 @@ export default function UserManagement() {
   };
 
   // Update your getUserFields function to use a different field name for view mode
-  const getUserFields = (isCreate = false, includePassword = false, isViewMode = false) => [
+  const getUserFields = React.useCallback((isCreate = false, includePassword = false, isViewMode = false) => {
+    // Check if editing a vendor user
+    const isVendor = selectedUser?.user_type === 'vendor';
+    const isEditingVendor = modalMode === 'edit' && isVendor;
+    
+    return [
     {
       name: 'username',
       label: 'Username',
       type: 'text',
       required: true,
-      readOnly: isViewMode,
+      readOnly: isViewMode || isEditingVendor,
+      disabled: isEditingVendor,
       validate: validateUsername,
-      tooltip: 'Must be at least 5 characters and start with a letter',
+      tooltip: isEditingVendor 
+        ? 'SAP users cannot have their username edited' 
+        : 'Must be at least 5 characters and start with a letter',
+      helperText: isEditingVendor 
+        ? '⚠️ This is a SAP user, you cannot edit username' 
+        : undefined,
     },
     {
       name: 'email',
       label: 'Email',
       type: 'email',
-      required: true,
+      required: false,
       readOnly: isViewMode,
       validate: validateEmail,
-      tooltip: 'Must be a valid email address'
+      tooltip: 'Must be a valid email address (optional)'
     },
     ...(isCreate ? [{
       name: 'password',
@@ -192,41 +223,55 @@ export default function UserManagement() {
       type: 'text',
       readOnly: true,
     } : {
-      name: 'roleId',
+      name: isEditingVendor ? 'roleName' : 'roleId',
       label: 'Role',
-      type: 'select',
+      type: isEditingVendor ? 'text' : 'select',
       required: true,
-      validate: validateRole,
-      tooltip: 'Please select a role',
-      options: roles.map(role => ({
-        value: role.id,
-        label: role.name
-      })),
-      loading: loadingRoles,
-      error: rolesError,
+      readOnly: isEditingVendor,
+      disabled: isEditingVendor,
+      validate: isEditingVendor ? undefined : validateRole,
+      tooltip: isEditingVendor ? 'SAP users cannot have their role edited' : 'Please select a role',
+      helperText: isEditingVendor ? '⚠️ This is a SAP user, you cannot edit role' : undefined,
+      ...(isEditingVendor ? {} : {
+        options: roles.map(role => ({
+          value: role.id,
+          label: role.name
+        })),
+        loading: loadingRoles,
+        error: rolesError,
+      }),
     },
-    // For view mode, use a different field name to display regionName
+    // Regions: compact label (2 names + N more), click opens dialog with search + checkboxes
     isViewMode ? {
-      name: 'regionName', // Use regionName field instead of regionId
-      label: 'Region',
-      type: 'text',
+      name: 'regionsDisplay',
+      label: 'Regions',
+      type: 'custom',
       readOnly: true,
+      render: (value, onChange, isView, formData) => (
+        <RegionPicker
+          regions={formData.regions || []}
+          value={(formData.regions || []).map((r) => r.id)}
+          readOnly
+          label="Regions"
+        />
+      ),
     } : {
-      name: 'regionId',
-      label: 'Region',
-      type: 'select',
+      name: 'regionIds',
+      label: 'Regions',
+      type: 'custom',
       required: false,
       validate: validateRegion,
-      tooltip: 'Please select a region (optional)',
-      options: [
-        { value: '', label: 'No Region' },
-        ...regions.map(region => ({
-          value: region.id,
-          label: `${region.name} (${region.code})`
-        }))
-      ],
-      loading: loadingRegions,
-      error: regionsError,
+      tooltip: 'Click to select regions. Search and use checkboxes in the dialog.',
+      render: (value, onChange) => (
+        <RegionPicker
+          regions={regions}
+          value={value || []}
+          onChange={onChange}
+          loading={loadingRegions}
+          helperText={regionsError}
+          label="Regions"
+        />
+      ),
     },
     {
       name: 'isActive',
@@ -236,6 +281,7 @@ export default function UserManagement() {
       readOnly: isViewMode,
     },
   ];
+  }, [roles, loadingRoles, regionsError, regions, loadingRegions, selectedUser, modalMode]);
 
   // API call to fetch roles
   const fetchRoles = React.useCallback(async () => {
@@ -294,6 +340,15 @@ export default function UserManagement() {
       setLoadingRegions(false);
     }
   }, [get]);
+
+  // Memoize fields array to ensure it updates when showPasswordChange changes
+  const modalFields = React.useMemo(() => {
+    return getUserFields(
+      modalMode === 'create', 
+      showPasswordChange, 
+      modalMode === 'view'
+    );
+  }, [getUserFields, modalMode, showPasswordChange]);
 
   // Load roles and regions when modal opens for create/edit/view modes
   React.useEffect(() => {
@@ -420,9 +475,17 @@ export default function UserManagement() {
     if (!canRead) return;
     
     // Transform user data for view mode
+    const regionsDisplay = userData.regions && userData.regions.length > 0
+      ? userData.regions.map(r => r.name).join(', ')
+      : 'No Regions';
+    
     const transformedUserData = {
       ...userData,
-      regionName: userData.region ? `${userData.region.name} (${userData.region.code})` : 'No Region'
+      regionsDisplay: regionsDisplay,
+      // Format username for vendors: show card_name (username)
+      username: userData.user_type === 'vendor' && userData.card_name 
+        ? `${userData.card_name} (${userData.username})`
+        : userData.username
     };
     
     setSelectedUser(transformedUserData);
@@ -434,11 +497,23 @@ export default function UserManagement() {
   const handleEdit = React.useCallback((userData) => {
     if (!canUpdate) return;
     
+    console.log('Opening edit modal for user:', userData);
+    console.log('User type:', userData.user_type);
+    
     // Transform user data for edit mode
     const transformedUserData = {
       ...userData,
-      regionId: userData.region ? userData.region.id : ''
+      regionIds: userData.regions && userData.regions.length > 0
+        ? userData.regions.map(r => r.id)
+        : [],
+      // Ensure user_type is preserved
+      user_type: userData.user_type,
+      // Ensure roleName is preserved for vendors
+      roleName: userData.roleName
     };
+    
+    console.log('Transformed user data:', transformedUserData);
+    console.log('Is vendor?', userData.user_type === 'vendor');
     
     setSelectedUser(transformedUserData);
     setModalMode('edit');
@@ -569,7 +644,9 @@ export default function UserManagement() {
         username: formData.username,
         email: formData.email,
         role_id: parseInt(formData.roleId),
-        region_id: formData.regionId ? parseInt(formData.regionId) : null,
+        region_ids: formData.regionIds && Array.isArray(formData.regionIds) && formData.regionIds.length > 0
+          ? formData.regionIds.map(id => parseInt(id))
+          : [],
         is_active: formData.isActive !== undefined ? formData.isActive : true,
       };
 
@@ -578,12 +655,10 @@ export default function UserManagement() {
         submitData.password = formData.password;
       }
 
-      let response;
-      
       if (modalMode === 'create') {
-        response = await post('/api/users', submitData);
+        await post('/api/users', submitData);
       } else {
-        response = await put(`/api/users/${selectedUser.id}`, submitData);
+        await put(`/api/users/${selectedUser.id}`, submitData);
       }
 
       const successMessage = modalMode === 'create' 
@@ -658,6 +733,13 @@ export default function UserManagement() {
         field: 'username',
         headerName: 'Username',
         width: 150,
+        renderCell: (params) => {
+          const row = params.row;
+          if (row.user_type === 'vendor' && row.card_name) {
+            return `${row.card_name} (${row.username})`;
+          }
+          return row.username;
+        },
       },
       {
         field: 'email',
@@ -677,32 +759,41 @@ export default function UserManagement() {
           />
         ),
       },
-      {
-        field: 'region',
-        headerName: 'Region',
-        width: 150,
-        renderCell: (params) => {
-          const region = params.value;
-          if (!region) {
-            return (
-              <Chip 
-                label="No Region" 
-                variant="outlined" 
-                size="small"
-                color="default"
-              />
-            );
-          }
-          return (
-            <Chip 
-              label={`${region.name} (${region.code})`} 
-              variant="outlined" 
-              size="small"
-              color="secondary"
-            />
-          );
-        },
-      },
+      // {
+      //   field: 'regions',
+      //   headerName: 'Regions',
+      //   width: 250,
+      //   align: 'left',
+      //   headerAlign: 'left',
+      //   renderCell: (params) => {
+      //     const regions = params.value;
+      //     if (!regions || regions.length === 0) {
+      //       return (
+      //         <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+      //           <Chip 
+      //             label="No Regions" 
+      //             variant="outlined" 
+      //             size="small"
+      //             color="default"
+      //           />
+      //         </Box>
+      //       );
+      //     }
+      //     return (
+      //       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center', py: 0.5 }}>
+      //         {regions.map((region) => (
+      //           <Chip 
+      //             key={region.id}
+      //             label={`${region.name} (${region.code})`} 
+      //             variant="outlined" 
+      //             size="small"
+      //             color="secondary"
+      //           />
+      //         ))}
+      //       </Box>
+      //     );
+      //   },
+      // },
       {
         field: 'isActive',
         headerName: 'Status',
@@ -826,6 +917,11 @@ export default function UserManagement() {
         // Configuration
         pageSizeOptions={[5, 10, 25, 50]}
         showToolbar={true}
+        disableColumnFilter={true}
+        disableColumnMenu={true}
+        slots={{
+          toolbar: CustomToolbar
+        }}
       />
 
       {/* Dynamic Modal for User CRUD */}
@@ -838,11 +934,7 @@ export default function UserManagement() {
         mode={modalMode}
         title={`${modalMode === 'create' ? 'Create' : modalMode === 'edit' ? 'Edit' : 'View'} User`}
         initialData={selectedUser || {}}
-        fields={getUserFields(
-          modalMode === 'create', 
-          showPasswordChange, 
-          modalMode === 'view'
-        )}
+        fields={modalFields}
         onSubmit={handleModalSubmit}
         loading={isLoading}
         showPasswordChange={showPasswordChange}

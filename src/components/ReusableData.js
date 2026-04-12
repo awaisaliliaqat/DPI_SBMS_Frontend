@@ -64,6 +64,7 @@ const ReusableDataTable = ({
   
   // Additional props
   sx = {},
+  getRowClassName = null, // Function to get row class name based on row data
   ...otherProps
 }) => {
   // Memoize columns with actions
@@ -269,6 +270,7 @@ const ReusableDataTable = ({
               // Row interaction
               disableRowSelectionOnClick={disableRowSelectionOnClick}
               onRowClick={handleRowClick}
+              getRowClassName={getRowClassName}
 
 
             
@@ -277,7 +279,7 @@ const ReusableDataTable = ({
             
               // Configuration
               initialState={initialState}
-              showToolbar={ true}
+              showToolbar={showToolbar}
               sx={defaultSx}
             
 
