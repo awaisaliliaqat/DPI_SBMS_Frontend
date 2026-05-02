@@ -19,6 +19,7 @@ import BudgetManagement from '../pages/BudgetManagement';
 import Payments from '../pages/Payments';
 import SmtpSettings from '../pages/SmtpSettings';
 import PaymentBatch from '../pages/PaymentBatch';
+import SalesHeadManagement from '../pages/SalesHeadManagement';
 // import Reports from '../pages/Reports';
 // import Settings from '../pages/Settings';
 
@@ -81,6 +82,7 @@ const AppRoutesContent = () => {
         <Route path="payments" element={<Payments />} />
         <Route path="smtp-settings" element={<SmtpSettings />} />
         <Route path="payment-batch" element={<PaymentBatch />} />
+        <Route path="sales-head-management" element={<SalesHeadManagement />} />
         {/* <Route path="users" element={<FeatureManagement />} /> */}
         <Route index element={<RedirectToSignin />} />
       </Route>

@@ -72,6 +72,12 @@ export const NAVIGATION_CONFIG = {
     icon: '💸',
     requiredPermission: 'read'
   },
+  salesHeadManagement: {
+    displayName: 'Sales Head Management',
+    routerLink: '/sales-head-management',
+    icon: '🧭',
+    requiredPermission: 'read'
+  },
   // dashboard: {
   //   displayName: 'Dashboard',
   //   routerLink: '/dashboard',
