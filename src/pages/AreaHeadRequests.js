@@ -34,6 +34,7 @@ import {
   Add as AddIcon,
   Comment as CommentIcon,
   Send as SendToCEOIcon,
+  SupervisorAccount as SendToDirectorsIcon,
   History as HistoryIcon,
   Visibility as VisibilityIcon,
   Print as PrintIcon,
@@ -96,6 +97,25 @@ async function openFileInNewTab(url) {
   } else {
     window.open(url, '_blank');
   }
+}
+
+/** Matches Created By column: username, then card name if username empty */
+function getShopboardCreatedByDisplay(row) {
+  const c = row?.creator;
+  if (!c) return 'N/A';
+  const u = c.username != null && String(c.username).trim() !== '' ? String(c.username).trim() : '';
+  if (u) return u;
+  const card = c.card_name != null && String(c.card_name).trim() !== '' ? String(c.card_name).trim() : '';
+  return card || 'N/A';
+}
+
+/** Sales head must have a real director user id (avoids Number(null) === 0) */
+function shopboardRowHasAssignedDirector(row) {
+  const c = row?.creator;
+  if (!c) return false;
+  if (c.director_id == null || c.director_id === '') return false;
+  const n = Number(c.director_id);
+  return Number.isFinite(n) && n > 0;
 }
 
 // Custom toolbar with only columns button
@@ -1376,6 +1396,202 @@ export default function AreaHeadRequests() {
       setIsLoading(false);
     }
   }, [selectedRequests, filteredRows, post, loadRequests, get]);
+
+  // Bulk notify directors (same tab permission as Send to CEO for Approval: manual_approval)
+  const handleBulkSendToDirectors = React.useCallback(async () => {
+    if (!canManualApproval) return;
+    if (!selectedRequests || selectedRequests.length === 0) return;
+
+    const selectedRequestObjects = filteredRows.filter((row) => selectedRequests.includes(row.id));
+    const ceoPendingOnly = selectedRequestObjects.filter((req) => req.status === 'ceo_pending');
+
+    if (ceoPendingOnly.length === 0) {
+      toast.warning('Please select one or more requests with "CEO Pending" status.', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+
+    if (ceoPendingOnly.length !== selectedRequestObjects.length) {
+      toast.warning('Send to Directors only applies to CEO Pending requests. Deselect other statuses.', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+
+    const missingDirector = ceoPendingOnly.filter((req) => !shopboardRowHasAssignedDirector(req));
+    if (missingDirector.length > 0) {
+      const lines = missingDirector.map(
+        (r) => `Request #${r.id} — Created by: ${getShopboardCreatedByDisplay(r)} (no director assigned)`
+      );
+      const maxLines = 25;
+      const shown = lines.slice(0, maxLines);
+      const overflow = lines.length > maxLines ? `\n… and ${lines.length - maxLines} more` : '';
+      toast.warning(
+        `Assign a director in Sales Head Management for these sales heads first.\n\n${shown.join('\n')}${overflow}`,
+        {
+          position: 'top-right',
+          autoClose: 10000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+          style: { whiteSpace: 'pre-line' },
+        }
+      );
+      return;
+    }
+
+    const baseUrlWithPath = (window.location.origin || 'http://localhost:3000') + BASENAME;
+
+    setIsLoading(true);
+    try {
+      const byDirectorId = new Map();
+      for (const req of ceoPendingOnly) {
+        const did = Number(req.creator.director_id);
+        if (!byDirectorId.has(did)) byDirectorId.set(did, []);
+        byDirectorId.get(did).push(req);
+      }
+
+      const groups = await Promise.all(
+        [...byDirectorId.entries()].map(async ([directorId, reqs]) => {
+          const requestsWithTokens = await Promise.all(
+            reqs.map(async (request) => {
+              try {
+                const [viewTokenResponse, rejectTokenResponse] = await Promise.all([
+                  get(`/api/shopboard-requests/${request.id}/generate-view-token`),
+                  get(`/api/shopboard-requests/${request.id}/generate-reject-token`),
+                ]);
+                return {
+                  ...request,
+                  viewToken: viewTokenResponse.success ? viewTokenResponse.data.token : null,
+                  rejectToken: rejectTokenResponse.success ? rejectTokenResponse.data.token : null,
+                };
+              } catch (err) {
+                console.error(`Error generating tokens for request ${request.id}:`, err);
+                return { ...request, viewToken: null, rejectToken: null };
+              }
+            })
+          );
+
+          const emailRequests = requestsWithTokens.map((request) => ({
+            id: request.id,
+            dealerName: request.dealer?.name || 'N/A',
+            dealerRegion: request.dealer?.district || 'N/A',
+            vendorName: request.vendor?.card_name || request.vendor_name || 'N/A',
+            totalCost: request.total_cost || 0,
+            viewToken: request.viewToken,
+            rejectToken: request.rejectToken,
+            requestItems: (request.requestItems || []).map((item) => ({
+              requestType: {
+                name: `${item.requestType?.name || 'N/A'}(${item.width || 'N/A'} x ${item.height || 'N/A'})`,
+              },
+              width: item.width,
+              height: item.height,
+            })),
+          }));
+
+          return {
+            directorId,
+            baseUrl: baseUrlWithPath,
+            backendUrl: BASE_URL,
+            requests: emailRequests,
+          };
+        })
+      );
+
+      const response = await post('/api/shopboard-requests/send-to-directors', { groups });
+
+      if (response.success) {
+        toast.success(
+          response.message ||
+            `Director notification queued for ${ceoPendingOnly.length} request(s).`,
+          {
+            position: 'top-right',
+            autoClose: 4000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          }
+        );
+        setSelectedRequests([]);
+        loadRequests();
+      } else {
+        throw new Error(response.message || 'Failed to notify directors');
+      }
+    } catch (error) {
+      let displayMessage = error.message || 'Failed to notify directors';
+      try {
+        const parsed = JSON.parse(error.message);
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.message) displayMessage = parsed.message;
+          if (Array.isArray(parsed.issues) && parsed.issues.length > 0) {
+            const rowById = new Map(ceoPendingOnly.map((r) => [r.id, r]));
+            const createdBySuffix = (requestId) => {
+              const row = requestId != null ? rowById.get(requestId) : null;
+              const label = row ? getShopboardCreatedByDisplay(row) : null;
+              return label && label !== 'N/A' ? ` — Created by: ${label}` : '';
+            };
+            const lines = parsed.issues.map((i) => {
+              const reqPart = i.requestId != null ? `Request #${i.requestId}: ` : '';
+              const cb = createdBySuffix(i.requestId);
+              const createdByLabel =
+                i.requestId != null && rowById.has(i.requestId)
+                  ? getShopboardCreatedByDisplay(rowById.get(i.requestId))
+                  : i.salesHeadName || (i.salesHeadId != null ? `Sales head #${i.salesHeadId}` : null);
+              if (i.issue === 'no_creator') {
+                return `${reqPart}No sales head (created_by) on this request`;
+              }
+              if (i.issue === 'director_mismatch') {
+                return `${reqPart}${i.detail || 'Director grouping does not match server data'}${cb}`;
+              }
+              if (i.issue === 'director_not_found') {
+                return `${reqPart}${i.detail || 'Director not found'}${cb}`;
+              }
+              if (i.issue === 'no_director_email') {
+                const who = createdByLabel && createdByLabel !== 'N/A' ? `Created by: ${createdByLabel}` : 'Sales head';
+                return `${reqPart}${who} — we do not find any email against the assigned director (${i.directorName || 'director'}). Assign an email in Sales Head Management.`;
+              }
+              if (i.issue === 'no_director_assigned') {
+                const who = createdByLabel && createdByLabel !== 'N/A' ? `Created by: ${createdByLabel}` : 'Sales head';
+                return `${reqPart}${who} — no director assigned. Assign a director on the Sales Head Management page.`;
+              }
+              const name = i.salesHeadName || (i.salesHeadId != null ? `Sales head #${i.salesHeadId}` : 'Request');
+              return `${reqPart}${name}${i.detail ? ` — ${i.detail}` : ''}${cb}`;
+            });
+            const unique = [...new Set(lines)];
+            if (unique.length) {
+              displayMessage = `${displayMessage}\n\n${unique.join('\n')}`;
+            }
+          }
+        }
+      } catch {
+        /* keep displayMessage */
+      }
+      toast.error(displayMessage, {
+        position: 'top-right',
+        autoClose: 12000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        style: { whiteSpace: 'pre-line' },
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [canManualApproval, selectedRequests, filteredRows, post, loadRequests, get]);
 
   // Bulk release payment handler (for invoice_sent -> Submitted for Payment)
   const handleBulkReleasePayment = React.useCallback(async () => {
@@ -3821,11 +4037,10 @@ export default function AreaHeadRequests() {
         align: 'left',
         headerAlign: 'left',
         renderCell: (params) => {
-          const creator = params.row.creator;
           return (
             <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
               <Typography variant="body2">
-                {creator?.username || 'N/A'}
+                {getShopboardCreatedByDisplay(params.row)}
               </Typography>
             </Box>
           );
@@ -4474,6 +4689,24 @@ export default function AreaHeadRequests() {
                     sx={{ fontWeight: 'bold', textTransform: 'none' }}
                   >
                     Send to CEO for Approval
+                  </Button>
+                )}
+                {canManualApproval && (
+                  <Button
+                    variant="contained"
+                    color="secondary"
+                    onClick={handleBulkSendToDirectors}
+                    disabled={
+                      hasMixedSelection ||
+                      hasInvoiceSent ||
+                      hasSubmittedForPayment ||
+                      selectedRequestObjects.length === 0 ||
+                      selectedRequestObjects.some((req) => req.status !== 'ceo_pending')
+                    }
+                    startIcon={<SendToDirectorsIcon />}
+                    sx={{ fontWeight: 'bold', textTransform: 'none' }}
+                  >
+                    Send to Directors
                   </Button>
                 )}
                 {canManualApproval && (

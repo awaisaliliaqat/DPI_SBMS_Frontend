@@ -30,7 +30,7 @@ export default function SalesHeadManagement() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { get } = useApi();
+  const { get, post } = useApi();
 
   const canRead = user?.permissions?.salesHeadManagement?.includes('read') || false;
 
@@ -45,6 +45,7 @@ export default function SalesHeadManagement() {
   const [assignDialogOpen, setAssignDialogOpen] = React.useState(false);
   const [selectedAssignRow, setSelectedAssignRow] = React.useState(null);
   const [selectedDirectorInDialog, setSelectedDirectorInDialog] = React.useState('');
+  const [assignSaving, setAssignSaving] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState(null);
 
@@ -145,7 +146,7 @@ export default function SalesHeadManagement() {
       if (response?.success && Array.isArray(response.data)) {
         const mapped = response.data.map((d) => ({
           id: String(d.id),
-          name: d.username || d.email || `Director ${d.id}`,
+          name: (d.card_name && String(d.card_name).trim()) || d.username || d.email || `Director ${d.id}`,
         }));
         setDirectors(mapped);
       } else {
@@ -196,7 +197,7 @@ export default function SalesHeadManagement() {
     setSelectedDirectorInDialog('');
   }, []);
 
-  const applyDirectorAssignment = React.useCallback(() => {
+  const applyDirectorAssignment = React.useCallback(async () => {
     if (!selectedAssignRow) return;
     if (!selectedDirectorInDialog) {
       toast.error('Please select a director first');
@@ -204,45 +205,54 @@ export default function SalesHeadManagement() {
     }
 
     const row = selectedAssignRow;
-    const assignmentKey = row.assignmentKey;
-    const directorId = String(selectedDirectorInDialog);
+    const directorId = Number(selectedDirectorInDialog);
+    if (!Number.isFinite(directorId) || directorId < 1) {
+      toast.error('Invalid director selection');
+      return;
+    }
 
-    setDirectorAssignments((prev) => ({
-      ...prev,
-      [assignmentKey]: directorId,
-    }));
+    const targetType = row.rowType === 'head' ? 'sales_head' : 'sales_manager';
+    const salesHeadName =
+      row.rowType === 'head'
+        ? String(row.username || '').trim()
+        : String(row.parentSalesHeadUsername || '').trim();
+    if (!salesHeadName) {
+      toast.error('Could not resolve sales head name for this row');
+      return;
+    }
 
-    // UI-only local update on modal "Update"
-    setRowsState((prev) => {
-      const updatedRows = prev.rows.map((head) => {
-        if (row.rowType === 'head' && head.id === row.id) {
-          return { ...head, assignedDirectorId: directorId };
-        }
+    const body = {
+      director_user_id: directorId,
+      target_type: targetType,
+      sales_head_name: salesHeadName,
+    };
+    if (targetType === 'sales_manager') {
+      body.sales_manager_name = String(row.username || '').trim();
+    }
 
-        if (row.rowType === 'manager' && head.id === row.parentHeadId) {
-          const managers = Array.isArray(head.managers) ? head.managers : [];
-          return {
-            ...head,
-            managers: managers.map((manager) =>
-              manager.username === row.username
-                ? { ...manager, assignedDirectorId: directorId }
-                : manager,
-            ),
-          };
-        }
-
-        return head;
-      });
-
-      return {
-        ...prev,
-        rows: updatedRows,
-      };
-    });
-
-    toast.success('Director updated');
-    closeAssignDialog();
-  }, [selectedAssignRow, selectedDirectorInDialog, closeAssignDialog]);
+    setAssignSaving(true);
+    try {
+      const response = await post('/api/sap-users/assign-director', body);
+      if (response?.success) {
+        await loadSalesHeads();
+        toast.success(response.message || 'Director assigned successfully');
+        closeAssignDialog();
+      } else {
+        throw new Error(response?.message || 'Failed to assign director');
+      }
+    } catch (e) {
+      let msg = e.message || 'Failed to assign director';
+      try {
+        const parsed = JSON.parse(msg);
+        if (parsed?.message) msg = parsed.message;
+      } catch {
+        /* keep msg */
+      }
+      toast.error(msg);
+    } finally {
+      setAssignSaving(false);
+    }
+  }, [selectedAssignRow, selectedDirectorInDialog, closeAssignDialog, post, loadSalesHeads]);
 
   const normalizedValue = React.useCallback((value) => {
     if (Array.isArray(value)) return value.join(' ').toLowerCase();
@@ -332,6 +342,7 @@ export default function SalesHeadManagement() {
             username: manager.username,
             assignmentKey: managerKey,
             parentHeadId: head.id,
+            parentSalesHeadUsername: head.username,
           });
         });
       }
@@ -523,8 +534,12 @@ export default function SalesHeadManagement() {
           </FormControl>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={closeAssignDialog} variant="text">Cancel</Button>
-          <Button onClick={applyDirectorAssignment} variant="contained">Update</Button>
+          <Button onClick={closeAssignDialog} variant="text" disabled={assignSaving}>
+            Cancel
+          </Button>
+          <Button onClick={applyDirectorAssignment} variant="contained" disabled={assignSaving}>
+            {assignSaving ? 'Saving…' : 'Update'}
+          </Button>
         </DialogActions>
       </Dialog>
 
