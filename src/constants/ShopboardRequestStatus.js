@@ -25,6 +25,8 @@ export const SHOPBOARD_REQUEST_STATUS = {
   PAYMENT_SUCCESSFUL: 'payment successful',
   REJECTED: 'rejected',
   MANUAL_APPROVAL: 'manual_approval',
+  DIRECTOR_APPROVAL: 'director_approval',
+  ADDITIONAL_DIRECTOR_APPROVAL: 'additional_director_approval',
 };
 
 // Display names mapping for each status
@@ -46,6 +48,8 @@ export const SHOPBOARD_REQUEST_STATUS_DISPLAY = {
   [SHOPBOARD_REQUEST_STATUS.PAYMENT_SUCCESSFUL]: 'Payment Successful',
   [SHOPBOARD_REQUEST_STATUS.REJECTED]: 'Rejected',
   [SHOPBOARD_REQUEST_STATUS.MANUAL_APPROVAL]: 'Manual Approval',
+  [SHOPBOARD_REQUEST_STATUS.DIRECTOR_APPROVAL]: 'Director Approval',
+  [SHOPBOARD_REQUEST_STATUS.ADDITIONAL_DIRECTOR_APPROVAL]: 'Additional Director Approval',
 };
 
 // Helper function to get display name for a status
@@ -83,6 +87,8 @@ export const getStatusColor = (status) => {
     case SHOPBOARD_REQUEST_STATUS.MANUAL_APPROVAL:
       return 'warning';
     case SHOPBOARD_REQUEST_STATUS.CEO_PENDING:
+    case SHOPBOARD_REQUEST_STATUS.DIRECTOR_APPROVAL:
+    case SHOPBOARD_REQUEST_STATUS.ADDITIONAL_DIRECTOR_APPROVAL:
       return 'warning';
     case SHOPBOARD_REQUEST_STATUS.CEO_APPROVAL:
       return 'success'; // Will be styled as light green in the component

@@ -35,6 +35,7 @@ import {
   Comment as CommentIcon,
   Send as SendToCEOIcon,
   SupervisorAccount as SendToDirectorsIcon,
+  GroupAdd as SendToAdditionalDirectorsIcon,
   History as HistoryIcon,
   Visibility as VisibilityIcon,
   Print as PrintIcon,
@@ -1582,6 +1583,120 @@ export default function AreaHeadRequests() {
       toast.error(displayMessage, {
         position: 'top-right',
         autoClose: 12000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        style: { whiteSpace: 'pre-line' },
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [canManualApproval, selectedRequests, filteredRows, post, loadRequests, get]);
+
+  // Notify all users with user_type "additional_director" (same selection rules as Send to Directors: CEO Pending only)
+  const handleBulkSendToAdditionalDirectors = React.useCallback(async () => {
+    if (!canManualApproval) return;
+    if (!selectedRequests || selectedRequests.length === 0) return;
+
+    const selectedRequestObjects = filteredRows.filter((row) => selectedRequests.includes(row.id));
+    const ceoPendingOnly = selectedRequestObjects.filter((req) => req.status === 'ceo_pending');
+
+    if (ceoPendingOnly.length === 0) {
+      toast.warning('Please select one or more requests with "CEO Pending" status.', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+
+    if (ceoPendingOnly.length !== selectedRequestObjects.length) {
+      toast.warning(
+        'Send to Additional Director only applies to CEO Pending requests. Deselect other statuses.',
+        {
+          position: 'top-right',
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        }
+      );
+      return;
+    }
+
+    const baseUrlWithPath = (window.location.origin || 'http://localhost:3000') + BASENAME;
+
+    setIsLoading(true);
+    try {
+      const requestsWithTokens = await Promise.all(
+        ceoPendingOnly.map(async (request) => {
+          try {
+            const [viewTokenResponse, rejectTokenResponse] = await Promise.all([
+              get(`/api/shopboard-requests/${request.id}/generate-view-token`),
+              get(`/api/shopboard-requests/${request.id}/generate-reject-token`),
+            ]);
+            return {
+              ...request,
+              viewToken: viewTokenResponse.success ? viewTokenResponse.data.token : null,
+              rejectToken: rejectTokenResponse.success ? rejectTokenResponse.data.token : null,
+            };
+          } catch (err) {
+            console.error(`Error generating tokens for request ${request.id}:`, err);
+            return { ...request, viewToken: null, rejectToken: null };
+          }
+        })
+      );
+
+      const emailRequests = requestsWithTokens.map((request) => ({
+        id: request.id,
+        dealerName: request.dealer?.name || 'N/A',
+        dealerRegion: request.dealer?.district || 'N/A',
+        vendorName: request.vendor?.card_name || request.vendor_name || 'N/A',
+        totalCost: request.total_cost || 0,
+        viewToken: request.viewToken,
+        rejectToken: request.rejectToken,
+        requestItems: (request.requestItems || []).map((item) => ({
+          requestType: {
+            name: `${item.requestType?.name || 'N/A'}(${item.width || 'N/A'} x ${item.height || 'N/A'})`,
+          },
+          width: item.width,
+          height: item.height,
+        })),
+      }));
+
+      const response = await post('/api/shopboard-requests/send-to-additional-directors', {
+        baseUrl: baseUrlWithPath,
+        backendUrl: BASE_URL,
+        requests: emailRequests,
+      });
+
+      if (response.success) {
+        toast.success(
+          response.message ||
+            `Additional director notification queued for ${ceoPendingOnly.length} request(s).`,
+          {
+            position: 'top-right',
+            autoClose: 4000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          }
+        );
+        setSelectedRequests([]);
+        loadRequests();
+      } else {
+        throw new Error(response.message || 'Failed to notify additional directors');
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to notify additional directors', {
+        position: 'top-right',
+        autoClose: 8000,
         hideProgressBar: false,
         closeOnClick: true,
         pauseOnHover: true,
@@ -4707,6 +4822,24 @@ export default function AreaHeadRequests() {
                     sx={{ fontWeight: 'bold', textTransform: 'none' }}
                   >
                     Send to Directors
+                  </Button>
+                )}
+                {canManualApproval && (
+                  <Button
+                    variant="contained"
+                    color="info"
+                    onClick={handleBulkSendToAdditionalDirectors}
+                    disabled={
+                      hasMixedSelection ||
+                      hasInvoiceSent ||
+                      hasSubmittedForPayment ||
+                      selectedRequestObjects.length === 0 ||
+                      selectedRequestObjects.some((req) => req.status !== 'ceo_pending')
+                    }
+                    startIcon={<SendToAdditionalDirectorsIcon />}
+                    sx={{ fontWeight: 'bold', textTransform: 'none' }}
+                  >
+                    Send to Additional Director
                   </Button>
                 )}
                 {canManualApproval && (

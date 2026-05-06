@@ -967,13 +967,14 @@ export default function VendorRequests() {
     }
     
     // Validate status before proceeding
-    // Check both mapped status (approval) and actual database statuses (ceo_approval, manual_approval)
+    // Check mapped status (approval) or raw DB statuses (CEO/manual/director approvals)
     const currentStatus = selectedInvoiceRequest.status;
     const isResubmission = currentStatus === SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED;
-    // Check for approval status - can be 'approval' (mapped) or 'ceo_approval'/'manual_approval' (actual DB status)
-    const isInitialUpload = currentStatus === VENDOR_APPROVAL_STATUS || 
-                           currentStatus === 'ceo_approval' || 
-                           currentStatus === 'manual_approval';
+    const isInitialUpload = currentStatus === VENDOR_APPROVAL_STATUS ||
+                           currentStatus === 'ceo_approval' ||
+                           currentStatus === 'manual_approval' ||
+                           currentStatus === SHOPBOARD_REQUEST_STATUS.DIRECTOR_APPROVAL ||
+                           currentStatus === SHOPBOARD_REQUEST_STATUS.ADDITIONAL_DIRECTOR_APPROVAL;
     
     // Only allow upload if status is either invoice_rejected (resubmission) or approval (initial upload)
     if (!isResubmission && !isInitialUpload) {
@@ -1181,55 +1182,82 @@ export default function VendorRequests() {
     }
   }, [canUpdate, fetchFullRequest]);
 
-  const handleApprove = React.useCallback((requestData) => {
-    if (!canApprove) return;
+  const handleApprove = React.useCallback(
+    async (requestData) => {
+      if (!canApprove) return;
 
-    // Validation checks before opening the approve dialog
-    const validationErrors = [];
-
-    if (!requestData.warranty_status_id) {
-      validationErrors.push('Warranty Status is required');
-    }
-
-    if (!requestData.reason_for_replacement || !String(requestData.reason_for_replacement).trim()) {
-      validationErrors.push('Reason for Replacement is required');
-    }
-
-    if (!requestData.last_installation_date) {
-      validationErrors.push('Last Installation Date is required');
-    }
-
-    if (!requestData.requestItems || requestData.requestItems.length === 0) {
-      validationErrors.push('At least one request item is required');
-    }
-
-    if (validationErrors.length > 0) {
-      toast.error(
-        <div>
-          <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-            Please fill the following details first:
-          </Typography>
-          <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
-            {validationErrors.map((error, index) => (
-              <li key={index}>{error}</li>
-            ))}
-          </ul>
-        </div>,
-        {
-          position: "top-right",
+      let full;
+      try {
+        // Vendor list rows omit file attachments; load persisted files from API before validating
+        full = await fetchFullRequest(requestData.id, 'edit');
+      } catch {
+        toast.error('Failed to load request for validation. Please try again.', {
+          position: 'top-right',
           autoClose: 5000,
           hideProgressBar: false,
           closeOnClick: true,
           pauseOnHover: true,
           draggable: true,
-        }
-      );
-      return;
-    }
+        });
+        return;
+      }
 
-    setRequestToAction(requestData);
-    setApproveDialogOpen(true);
-  }, [canApprove]);
+      const validationErrors = [];
+
+      if (!full.warranty_status_id) {
+        validationErrors.push('Warranty Status is required');
+      }
+
+      if (!full.reason_for_replacement || !String(full.reason_for_replacement).trim()) {
+        validationErrors.push('Reason for Replacement is required');
+      }
+
+      if (!full.last_installation_date) {
+        validationErrors.push('Last Installation Date is required');
+      }
+
+      if (!full.requestItems || full.requestItems.length === 0) {
+        validationErrors.push('At least one request item is required');
+      }
+
+      const sitePhotos = full.site_photo_attachement;
+      const oldBoardPhotos = full.old_board_photo_attachment;
+      if (!Array.isArray(sitePhotos) || sitePhotos.length === 0) {
+        validationErrors.push('At least one site photo is required (upload in Add Pricing before submitting quotation)');
+      }
+      if (!Array.isArray(oldBoardPhotos) || oldBoardPhotos.length === 0) {
+        validationErrors.push('At least one old board photo is required (upload in Add Pricing before submitting quotation)');
+      }
+
+      if (validationErrors.length > 0) {
+        toast.error(
+          <div>
+            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+              Please complete the following before submitting quotation:
+            </Typography>
+            <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
+              {validationErrors.map((error, index) => (
+                <li key={index}>{error}</li>
+              ))}
+            </ul>
+          </div>,
+          {
+            position: 'top-right',
+            autoClose: 8000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          }
+        );
+        return;
+      }
+
+      setRequestToAction(requestData);
+      setApproveDialogOpen(true);
+    },
+    [canApprove, fetchFullRequest]
+  );
 
   const handleReject = React.useCallback((requestData) => {
     if (!canReject) return;
@@ -2072,10 +2100,8 @@ export default function VendorRequests() {
           const actions = [];
           
           // Show view action if user has read permission
-          // For approval status (which includes both ceo_approval and manual_approval after backend mapping),
-          // show "Work Order" instead of "View Details"
+          // For approval status (CEO/manual/director approvals map to 'approval' for vendors)
           if (canRead) {
-            // Backend maps both ceo_approval and manual_approval to approval
             const isWorkOrder = row.status === VENDOR_APPROVAL_STATUS;
             actions.push(
               <GridActionsCellItem
@@ -2144,8 +2170,7 @@ export default function VendorRequests() {
             }
           }
           
-          // Show share invoice button for approval status
-          // Note: Backend maps both ceo_approval and manual_approval to approval
+          // Share invoice / work order when status is mapped 'approval' (approved for work)
           if (row.status === VENDOR_APPROVAL_STATUS && canRead) {
             actions.push(
               <GridActionsCellItem
