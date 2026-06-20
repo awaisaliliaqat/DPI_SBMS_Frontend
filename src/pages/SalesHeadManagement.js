@@ -94,7 +94,7 @@ export default function SalesHeadManagement() {
   const [selectedValueInDialog, setSelectedValueInDialog] = React.useState('');
   const [assignSaving, setAssignSaving] = React.useState(false);
 
-  // ── Toggle active ─────────────────────────────────────────────────────────
+  // ── Toggle active (FUTURE USE: wired to Active column — uncomment column in grid when ready) ──
   const [togglingActive, setTogglingActive] = React.useState({});
 
   // ── URL pagination / filter / sort ────────────────────────────────────────
@@ -336,7 +336,7 @@ export default function SalesHeadManagement() {
     } finally { setAssignSaving(false); }
   }, [selectedAssignRow, selectedValueInDialog, assignDialogMode, closeAssignDialog, post, loadSalesHeads]);
 
-  // ── Toggle active ─────────────────────────────────────────────────────────
+  // ── Toggle active (FUTURE USE: used by Active column when uncommented) ───────
   const handleToggleActive = React.useCallback(async (row, newValue) => {
     const username = String(row.username || '').trim();
     if (!username) { toast.error('Cannot toggle: username is missing'); return; }
@@ -459,22 +459,24 @@ export default function SalesHeadManagement() {
         return <Typography variant="body2" sx={{ color: name ? '#0f172a' : '#94a3b8', fontSize: '0.78rem', fontWeight: 500 }}>{name || 'Not Assigned'}</Typography>;
       },
     },
-    {
-      field: 'isActive', headerName: 'Active', width: 90, sortable: false, filterable: false,
-      renderCell: (params) => {
-        const key = params.row.assignmentKey;
-        const isNull = params.row.isActive === null || params.row.isActive === undefined;
-        const checked = isNull ? false : Boolean(params.row.isActive);
-        return (
-          <Tooltip title={isNull ? 'Not synced yet' : (checked ? 'Active — click to deactivate' : 'Inactive — click to activate')}>
-            <span>
-              <Switch size="small" checked={checked} disabled={Boolean(togglingActive[key]) || isNull}
-                onChange={(e) => handleToggleActive(params.row, e.target.checked)} color="success" />
-            </span>
-          </Tooltip>
-        );
-      },
-    },
+    // FUTURE USE: Active/Inactive toggle column — uncomment when ready to show on Sales Head page.
+    // handleToggleActive and togglingActive state are kept below; do not remove.
+    // {
+    //   field: 'isActive', headerName: 'Active', width: 90, sortable: false, filterable: false,
+    //   renderCell: (params) => {
+    //     const key = params.row.assignmentKey;
+    //     const isNull = params.row.isActive === null || params.row.isActive === undefined;
+    //     const checked = isNull ? false : Boolean(params.row.isActive);
+    //     return (
+    //       <Tooltip title={isNull ? 'Not synced yet' : (checked ? 'Active — click to deactivate' : 'Inactive — click to activate')}>
+    //         <span>
+    //           <Switch size="small" checked={checked} disabled={Boolean(togglingActive[key]) || isNull}
+    //             onChange={(e) => handleToggleActive(params.row, e.target.checked)} color="success" />
+    //         </span>
+    //       </Tooltip>
+    //     );
+    //   },
+    // },
     {
       field: 'actions', headerName: 'Actions', width: 270, sortable: false, filterable: false,
       renderCell: (params) => (
@@ -494,7 +496,7 @@ export default function SalesHeadManagement() {
         </Stack>
       ),
     },
-  ], [expandedHeads, directorsMap, additionalDirectorsMap, directorAssignments, additionalDirectorAssignments, openAssignDialog, togglingActive, handleToggleActive, canAssignDirector, canAssignAdditionalDirector]);
+  ], [expandedHeads, directorsMap, additionalDirectorsMap, directorAssignments, additionalDirectorAssignments, openAssignDialog, canAssignDirector, canAssignAdditionalDirector]);
 
   // ── Render ────────────────────────────────────────────────────────────────
   const pageTitle = 'Sales Head Management';
