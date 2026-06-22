@@ -18,6 +18,8 @@ export const PERMISSIONS = [
   { id: 'print', name: 'Print' },
   { id: 'manual_approval', name: 'Manual Approval' },
   { id: 'payment_release', name: 'Payment Release' },
+  { id: 'assign_director', name: 'Assign Director' },
+  { id: 'assign_additional_director', name: 'Assign Additional Director' },
 ];
 
 // Feature-specific permissions mapping
@@ -38,6 +40,14 @@ export const FEATURE_PERMISSIONS = {
     { id: 'print', name: 'Print' },
     { id: 'manual_approval', name: 'Manual Approval' },
     { id: 'payment_release', name: 'Payment Release' },
+  ],
+  salesHeadManagement: [
+    { id: 'create', name: 'Create' },
+    { id: 'read', name: 'Read' },
+    { id: 'update', name: 'Update' },
+    { id: 'delete', name: 'Delete' },
+    { id: 'assign_director', name: 'Assign Director' },
+    { id: 'assign_additional_director', name: 'Assign Additional Director' },
   ],
   // Default permissions for all other features (CRUD only)
   default: [
