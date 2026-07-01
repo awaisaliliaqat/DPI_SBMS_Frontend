@@ -68,9 +68,60 @@ const INITIAL_PAGE_SIZE = 10;
 
 function getFileUrlAndName(item, index, fallbackLabel) {
   if (item == null) return { url: '', fileName: fallbackLabel };
-  if (typeof item === 'object' && item.url != null) return { url: item.url, fileName: item.fileName || fallbackLabel };
+  if (typeof item === 'object') {
+    if (typeof item.url === 'string' && item.url.length > 0) {
+      return {
+        url: item.url,
+        fileName: item.fileName || item.file_name || fallbackLabel,
+      };
+    }
+    // Raw DB record leaked without url — do not surface binary content in the UI
+    if (item.content != null) {
+      console.warn('File item missing url field; expected normalized API response', item);
+      return { url: '', fileName: item.file_name || item.fileName || fallbackLabel };
+    }
+  }
   const str = typeof item === 'string' ? item : '';
   return { url: str, fileName: str.startsWith('data:') ? fallbackLabel : str.split('/').pop() || fallbackLabel };
+}
+
+function resolveAttachmentUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  if (url.startsWith('data:') || url.startsWith('http')) return url;
+  return url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/${url}`;
+}
+
+function normalizeDbFileList(items, labelPrefix) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item, index) => {
+      const normalized = getFileUrlAndName(item, index, `${labelPrefix} ${index + 1}`);
+      return normalized.url ? normalized : null;
+    })
+    .filter(Boolean);
+}
+
+function normalizeSitePhotosPerItem(map) {
+  if (!map || typeof map !== 'object') return {};
+  const result = {};
+  Object.entries(map).forEach(([itemId, files]) => {
+    const normalized = normalizeDbFileList(files, 'Site Photo');
+    if (normalized.length > 0) result[itemId] = normalized;
+  });
+  return result;
+}
+
+function loadInvoiceExistingFilesFromRequest(full) {
+  return {
+    invoiceFiles: normalizeDbFileList(full?.invoice_files_data, 'Invoice'),
+    dealerAckFiles: normalizeDbFileList(full?.dealer_acknowledgment_files_data, 'Acknowledgment'),
+    sitePhotosPerItem: normalizeSitePhotosPerItem(full?.invoice_site_photos_by_item_data),
+  };
+}
+
+function getExistingSitePhotosForItem(map, itemId) {
+  if (!map) return [];
+  return map[itemId] || map[String(itemId)] || [];
 }
 
 // Open file in new tab; for data URLs use blob URL so image/PDF loads reliably
@@ -791,20 +842,12 @@ export default function VendorRequests() {
     setLoadingRequestDetails(true);
     try {
       const full = await fetchFullRequest(requestData.id, 'invoice');
+      const { invoiceFiles, dealerAckFiles, sitePhotosPerItem } = loadInvoiceExistingFilesFromRequest(full);
       setSelectedInvoiceRequest(full);
       setInvoiceNumber(full.invoice_number || '');
-      let invoiceData = {};
-      if (full.invoice) {
-        try {
-          invoiceData = typeof full.invoice === 'string' ? JSON.parse(full.invoice) : full.invoice;
-        } catch (error) {
-          console.error('Error parsing invoice data:', error);
-          invoiceData = {};
-        }
-      }
-      setExistingInvoiceFiles(full.invoice_files_data?.length ? full.invoice_files_data : (invoiceData.invoice_files || []));
-      setExistingDealerAcknowledgmentFiles(full.dealer_acknowledgment_files_data?.length ? full.dealer_acknowledgment_files_data : (invoiceData.dealer_acknowledgment_files || []));
-      setExistingSitePhotosPerItem(full.invoice_site_photos_by_item_data && Object.keys(full.invoice_site_photos_by_item_data).length > 0 ? full.invoice_site_photos_by_item_data : (invoiceData.site_photos_by_item || {}));
+      setExistingInvoiceFiles(invoiceFiles);
+      setExistingDealerAcknowledgmentFiles(dealerAckFiles);
+      setExistingSitePhotosPerItem(sitePhotosPerItem);
       setInvoiceFile(null);
       setDealerAcknowledgmentFile(null);
       setSitePhotosPerItem({});
@@ -827,20 +870,12 @@ export default function VendorRequests() {
     setLoadingRequestDetails(true);
     try {
       const full = await fetchFullRequest(requestData.id, 'invoice');
+      const { invoiceFiles, dealerAckFiles, sitePhotosPerItem } = loadInvoiceExistingFilesFromRequest(full);
       setSelectedInvoiceRequest(full);
       setInvoiceNumber(full.invoice_number || '');
-      let invoiceData = {};
-      if (full.invoice) {
-        try {
-          invoiceData = typeof full.invoice === 'string' ? JSON.parse(full.invoice) : full.invoice;
-        } catch (error) {
-          console.error('Error parsing invoice data:', error);
-          invoiceData = {};
-        }
-      }
-      setExistingInvoiceFiles(full.invoice_files_data?.length ? full.invoice_files_data : (invoiceData.invoice_files || []));
-      setExistingDealerAcknowledgmentFiles(full.dealer_acknowledgment_files_data?.length ? full.dealer_acknowledgment_files_data : (invoiceData.dealer_acknowledgment_files || []));
-      setExistingSitePhotosPerItem(full.invoice_site_photos_by_item_data && Object.keys(full.invoice_site_photos_by_item_data).length > 0 ? full.invoice_site_photos_by_item_data : (invoiceData.site_photos_by_item || {}));
+      setExistingInvoiceFiles(invoiceFiles);
+      setExistingDealerAcknowledgmentFiles(dealerAckFiles);
+      setExistingSitePhotosPerItem(sitePhotosPerItem);
       setInvoiceFile(null);
       setDealerAcknowledgmentFile(null);
       setSitePhotosPerItem({});
@@ -4571,29 +4606,30 @@ export default function VendorRequests() {
                 Existing invoice files:
               </Typography>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {existingInvoiceFiles.map((file, index) => (
-                  <Chip
-                    key={`existing-invoice-${index}`}
-                    label={file.split('/').pop()}
-                    size="small"
-                    color="primary"
-                    variant="outlined"
-                    onClick={() => {
-                      const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/${file}`;
-                      openFileInNewTab(fileUrl);
-                    }}
-                    onDelete={() => {
-                      const newFiles = existingInvoiceFiles.filter((_, i) => i !== index);
-                      setExistingInvoiceFiles(newFiles);
-                    }}
-                    sx={{ 
-                      cursor: 'pointer',
-                      '&:hover': {
-                        backgroundColor: '#e3f2fd',
-                      }
-                    }}
-                  />
-                ))}
+                {existingInvoiceFiles.map((file, index) => {
+                  const { url, fileName } = getFileUrlAndName(file, index, `Invoice ${index + 1}`);
+                  const fileUrl = resolveAttachmentUrl(url);
+                  return (
+                    <Chip
+                      key={`existing-invoice-${index}`}
+                      label={fileName}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                      onClick={() => openFileInNewTab(fileUrl)}
+                      onDelete={() => {
+                        const newFiles = existingInvoiceFiles.filter((_, i) => i !== index);
+                        setExistingInvoiceFiles(newFiles);
+                      }}
+                      sx={{ 
+                        cursor: 'pointer',
+                        '&:hover': {
+                          backgroundColor: '#e3f2fd',
+                        }
+                      }}
+                    />
+                  );
+                })}
               </Box>
             </Box>
           )}
@@ -4660,29 +4696,30 @@ export default function VendorRequests() {
                   Existing acknowledgment files:
                 </Typography>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {existingDealerAcknowledgmentFiles.map((file, index) => (
-                    <Chip
-                      key={`existing-ack-${index}`}
-                      label={file.split('/').pop()}
-                      size="small"
-                      color="secondary"
-                      variant="outlined"
-                      onClick={() => {
-                        const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/${file}`;
-                        openFileInNewTab(fileUrl);
-                      }}
-                      onDelete={() => {
-                        const newFiles = existingDealerAcknowledgmentFiles.filter((_, i) => i !== index);
-                        setExistingDealerAcknowledgmentFiles(newFiles);
-                      }}
-                      sx={{ 
-                        cursor: 'pointer',
-                        '&:hover': {
-                          backgroundColor: '#f3e5f5',
-                        }
-                      }}
-                    />
-                  ))}
+                  {existingDealerAcknowledgmentFiles.map((file, index) => {
+                    const { url, fileName } = getFileUrlAndName(file, index, `Acknowledgment ${index + 1}`);
+                    const fileUrl = resolveAttachmentUrl(url);
+                    return (
+                      <Chip
+                        key={`existing-ack-${index}`}
+                        label={fileName}
+                        size="small"
+                        color="secondary"
+                        variant="outlined"
+                        onClick={() => openFileInNewTab(fileUrl)}
+                        onDelete={() => {
+                          const newFiles = existingDealerAcknowledgmentFiles.filter((_, i) => i !== index);
+                          setExistingDealerAcknowledgmentFiles(newFiles);
+                        }}
+                        sx={{ 
+                          cursor: 'pointer',
+                          '&:hover': {
+                            backgroundColor: '#f3e5f5',
+                          }
+                        }}
+                      />
+                    );
+                  })}
                 </Box>
               </Box>
             )}
@@ -4713,7 +4750,7 @@ export default function VendorRequests() {
                 {selectedInvoiceRequest.requestItems.map((item, idx) => {
                   const hasSitePhotos = (
                     (sitePhotosPerItem[item.id] && sitePhotosPerItem[item.id].length > 0) ||
-                    (existingSitePhotosPerItem[item.id] && existingSitePhotosPerItem[item.id].length > 0)
+                    getExistingSitePhotosForItem(existingSitePhotosPerItem, item.id).length > 0
                   );
                   return (
                   <Paper 
@@ -4792,38 +4829,40 @@ export default function VendorRequests() {
                     )}
 
                     {/* Existing Site Photos for this item */}
-                    {(existingSitePhotosPerItem[item.id] || []).length > 0 && (
+                    {getExistingSitePhotosForItem(existingSitePhotosPerItem, item.id).length > 0 && (
                       <Box sx={{ mt: 1, mb: 1 }}>
                         <Typography variant="body2" sx={{ color: '#666', mb: 1, fontWeight: 'bold' }}>
-                          Existing site photos: {(existingSitePhotosPerItem[item.id] || []).length}
+                          Existing site photos: {getExistingSitePhotosForItem(existingSitePhotosPerItem, item.id).length}
                         </Typography>
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                          {(existingSitePhotosPerItem[item.id] || []).map((file, index) => (
-                            <Chip
-                              key={`existing-site-photo-${item.id}-${index}`}
-                              label={file.split('/').pop()}
-                              size="small"
-                              color="success"
-                              variant="outlined"
-                              onClick={() => {
-                                const fileUrl = file.startsWith('/uploads/') ? `${BASE_URL}${file}` : `${BASE_URL}/${file}`;
-                                openFileInNewTab(fileUrl);
-                              }}
-                              onDelete={() => {
-                                setExistingSitePhotosPerItem(prev => {
-                                  const itemPhotos = [...(prev[item.id] || [])];
-                                  itemPhotos.splice(index, 1);
-                                  return { ...prev, [item.id]: itemPhotos };
-                                });
-                              }}
-                              sx={{ 
-                                cursor: 'pointer',
-                                '&:hover': {
-                                  backgroundColor: '#e8f5e8',
-                                }
-                              }}
-                            />
-                          ))}
+                          {getExistingSitePhotosForItem(existingSitePhotosPerItem, item.id).map((file, index) => {
+                            const { url, fileName } = getFileUrlAndName(file, index, `Site Photo ${index + 1}`);
+                            const fileUrl = resolveAttachmentUrl(url);
+                            return (
+                              <Chip
+                                key={`existing-site-photo-${item.id}-${index}`}
+                                label={fileName}
+                                size="small"
+                                color="success"
+                                variant="outlined"
+                                onClick={() => openFileInNewTab(fileUrl)}
+                                onDelete={() => {
+                                  setExistingSitePhotosPerItem(prev => {
+                                    const key = String(item.id);
+                                    const itemPhotos = [...getExistingSitePhotosForItem(prev, item.id)];
+                                    itemPhotos.splice(index, 1);
+                                    return { ...prev, [key]: itemPhotos };
+                                  });
+                                }}
+                                sx={{ 
+                                  cursor: 'pointer',
+                                  '&:hover': {
+                                    backgroundColor: '#e8f5e8',
+                                  }
+                                }}
+                              />
+                            );
+                          })}
                         </Box>
                       </Box>
                     )}
@@ -4903,7 +4942,7 @@ export default function VendorRequests() {
                 selectedInvoiceRequest.requestItems.some(item => {
                   const hasSitePhotos = (
                     (sitePhotosPerItem[item.id] && sitePhotosPerItem[item.id].length > 0) ||
-                    (existingSitePhotosPerItem[item.id] && existingSitePhotosPerItem[item.id].length > 0)
+                    getExistingSitePhotosForItem(existingSitePhotosPerItem, item.id).length > 0
                   );
                   return !hasSitePhotos;
                 }))
