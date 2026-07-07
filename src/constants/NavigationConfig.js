@@ -78,6 +78,12 @@ export const NAVIGATION_CONFIG = {
     icon: '🧭',
     requiredPermission: 'read'
   },
+  customSubDealers: {
+    displayName: 'Custom Sub Dealers',
+    routerLink: '/custom-sub-dealers',
+    icon: '🏪',
+    requiredPermission: 'read'
+  },
   // dashboard: {
   //   displayName: 'Dashboard',
   //   routerLink: '/dashboard',
