@@ -47,6 +47,18 @@ function formatDateTime(value) {
   return Number.isNaN(date.getTime()) ? 'N/A' : date.toLocaleString();
 }
 
+/** Matches Area Head Requests Created By: username first, then card_name */
+function getCreatedByDisplay(row) {
+  const c = row?.creator;
+  if (!c) {
+    return row?.created_by_name || 'N/A';
+  }
+  const u = c.username != null && String(c.username).trim() !== '' ? String(c.username).trim() : '';
+  if (u) return u;
+  const card = c.card_name != null && String(c.card_name).trim() !== '' ? String(c.card_name).trim() : '';
+  return card || row?.created_by_name || 'N/A';
+}
+
 export default function CustomSubDealers() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
@@ -219,8 +231,7 @@ export default function CustomSubDealers() {
         field: 'created_by_name',
         headerName: 'Created By',
         width: 160,
-        valueGetter: (value, row) =>
-          row.created_by_name || row.creator?.card_name || row.creator?.username || 'N/A',
+        valueGetter: (value, row) => getCreatedByDisplay(row),
       },
       {
         field: 'created_at',
