@@ -4989,32 +4989,102 @@ export default function AreaHeadRequests() {
         loading={false}
         hideSubmitButton={true}
         customContent={
-          selectedRequest?.survey_form_attachments && 
-          Array.isArray(selectedRequest.survey_form_attachments) && 
-          selectedRequest.survey_form_attachments.length > 0 ? (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold', color: '#1976d2' }}>
-                Survey Form Attachments
-              </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {selectedRequest.survey_form_attachments.map((file, index) => {
-                  const { url, fileName } = getFileUrlAndName(file, index, `Survey Form ${index + 1}`);
-                  const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/survey_forms/${url}`);
-                  return (
-                    <Chip
-                      key={index}
-                      label={fileName}
-                      size="small"
-                      color="primary"
-                      variant="outlined"
-                      onClick={() => openFileInNewTab(fileUrl)}
-                      sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#e3f2fd' } }}
-                    />
-                  );
-                })}
+          (() => {
+            const hasSurveyItems =
+              Array.isArray(selectedRequest?.surveyRequestItems) &&
+              selectedRequest.surveyRequestItems.length > 0;
+            const hasSurveyComments =
+              Array.isArray(selectedRequest?.surveyComments) &&
+              selectedRequest.surveyComments.length > 0;
+            const hasSurveyAttachments =
+              Array.isArray(selectedRequest?.survey_form_attachments) &&
+              selectedRequest.survey_form_attachments.length > 0;
+
+            if (!hasSurveyItems && !hasSurveyComments && !hasSurveyAttachments) {
+              return null;
+            }
+
+            return (
+              <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {(hasSurveyItems || hasSurveyComments) && (
+                  <Box>
+                    <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold', color: '#1976d2' }}>
+                      Survey Details
+                    </Typography>
+
+                    {hasSurveyItems && (
+                      <Box sx={{ mb: hasSurveyComments ? 2 : 0 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 1 }}>
+                          Suggested Request Items
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                          {selectedRequest.surveyRequestItems.map((item) => (
+                            <Chip
+                              key={item.id}
+                              label={item.requestType?.name || `Request Type #${item.request_item_id}`}
+                              size="small"
+                              color="primary"
+                              variant="outlined"
+                            />
+                          ))}
+                        </Box>
+                      </Box>
+                    )}
+
+                    {hasSurveyComments && (
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 1 }}>
+                          Survey Comments
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                          {selectedRequest.surveyComments.map((surveyComment) => (
+                            <Box
+                              key={surveyComment.id}
+                              sx={{
+                                p: 1.5,
+                                backgroundColor: '#f8f9fa',
+                                borderRadius: 1,
+                                border: '1px solid #e0e0e0',
+                              }}
+                            >
+                              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                                {surveyComment.comment}
+                              </Typography>
+                            </Box>
+                          ))}
+                        </Box>
+                      </Box>
+                    )}
+                  </Box>
+                )}
+
+                {hasSurveyAttachments && (
+                  <Box>
+                    <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold', color: '#1976d2' }}>
+                      Survey Form Attachments
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      {selectedRequest.survey_form_attachments.map((file, index) => {
+                        const { url, fileName } = getFileUrlAndName(file, index, `Survey Form ${index + 1}`);
+                        const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/survey_forms/${url}`);
+                        return (
+                          <Chip
+                            key={index}
+                            label={fileName}
+                            size="small"
+                            color="primary"
+                            variant="outlined"
+                            onClick={() => openFileInNewTab(fileUrl)}
+                            sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#e3f2fd' } }}
+                          />
+                        );
+                      })}
+                    </Box>
+                  </Box>
+                )}
               </Box>
-            </Box>
-          ) : null
+            );
+          })()
         }
       />
 
