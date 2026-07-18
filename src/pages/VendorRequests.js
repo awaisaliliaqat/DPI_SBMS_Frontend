@@ -4281,6 +4281,59 @@ export default function VendorRequests() {
                 )}
               </Paper>
 
+              {/* Survey Details — shown only when survey data is available */}
+              {(
+                (selectedDetailedRequest.surveyRequestItems &&
+                  selectedDetailedRequest.surveyRequestItems.length > 0) ||
+                (selectedDetailedRequest.surveyComments &&
+                  selectedDetailedRequest.surveyComments.length > 0)
+              ) && (
+                <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
+                  <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                    📝 Survey Details
+                  </Typography>
+
+                  {selectedDetailedRequest.surveyRequestItems?.length > 0 && (
+                    <Box sx={{ mb: selectedDetailedRequest.surveyComments?.length > 0 ? 3 : 0 }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                        Suggested Request Items
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        {selectedDetailedRequest.surveyRequestItems.map((item) => (
+                          <Chip
+                            key={item.id}
+                            label={item.requestType?.name || `Request Type #${item.request_item_id}`}
+                            color="primary"
+                            variant="outlined"
+                          />
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+
+                  {selectedDetailedRequest.surveyComments?.length > 0 && (
+                    <Box>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                        Survey Comments
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        {selectedDetailedRequest.surveyComments.map((surveyComment) => (
+                          <Paper
+                            key={surveyComment.id}
+                            variant="outlined"
+                            sx={{ p: 2, borderRadius: 1, backgroundColor: '#ffffff' }}
+                          >
+                            <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
+                              {surveyComment.comment}
+                            </Typography>
+                          </Paper>
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+                </Paper>
+              )}
+
               {/* Warranty & Installation Info */}
               <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
                 <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
