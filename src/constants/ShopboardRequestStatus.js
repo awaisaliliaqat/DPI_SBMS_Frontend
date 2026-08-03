@@ -27,6 +27,14 @@ export const SHOPBOARD_REQUEST_STATUS = {
   MANUAL_APPROVAL: 'manual_approval',
   DIRECTOR_APPROVAL: 'director_approval',
   ADDITIONAL_DIRECTOR_APPROVAL: 'additional_director_approval',
+  SALES_HEAD_PENDING: 'sales_head_pending',
+  DIRECTOR_PENDING: 'director_pending',
+  ADDITIONAL_DIRECTOR_PENDING: 'additional_director_pending',
+  SALES_HEAD_APPROVED: 'sales_head_approved',
+  SALES_HEAD_REJECTED: 'sales_head_rejected',
+  RFQ_REJECTED: 'rfq_rejected',
+  VENDOR_REJECTED: 'vendor_rejected',
+  VENDOR_RESUBMITTED: 'vendor_resubmitted',
 };
 
 // Display names mapping for each status
@@ -50,6 +58,14 @@ export const SHOPBOARD_REQUEST_STATUS_DISPLAY = {
   [SHOPBOARD_REQUEST_STATUS.MANUAL_APPROVAL]: 'Manual Approval',
   [SHOPBOARD_REQUEST_STATUS.DIRECTOR_APPROVAL]: 'Director Approval',
   [SHOPBOARD_REQUEST_STATUS.ADDITIONAL_DIRECTOR_APPROVAL]: 'Additional Director Approval',
+  [SHOPBOARD_REQUEST_STATUS.SALES_HEAD_PENDING]: 'Sales Head Pending',
+  [SHOPBOARD_REQUEST_STATUS.DIRECTOR_PENDING]: 'Director Pending',
+  [SHOPBOARD_REQUEST_STATUS.ADDITIONAL_DIRECTOR_PENDING]: 'Additional Director Pending',
+  [SHOPBOARD_REQUEST_STATUS.SALES_HEAD_APPROVED]: 'Sales Head Approved',
+  [SHOPBOARD_REQUEST_STATUS.SALES_HEAD_REJECTED]: 'Sales Head Rejected',
+  [SHOPBOARD_REQUEST_STATUS.RFQ_REJECTED]: 'RFQ Rejected',
+  [SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED]: 'Vendor Rejected',
+  [SHOPBOARD_REQUEST_STATUS.VENDOR_RESUBMITTED]: 'Vendor Resubmitted',
 };
 
 // Helper function to get display name for a status
@@ -69,8 +85,11 @@ export const getStatusColor = (status) => {
     case SHOPBOARD_REQUEST_STATUS.RFQ_NOT_ACCEPTED:
     case SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED:
     case SHOPBOARD_REQUEST_STATUS.REJECTED:
+    case SHOPBOARD_REQUEST_STATUS.RFQ_REJECTED:
+    case SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED:
       return 'error';
     case SHOPBOARD_REQUEST_STATUS.RFQ:
+    case SHOPBOARD_REQUEST_STATUS.VENDOR_RESUBMITTED:
       return 'info';
     case SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT:
       return 'secondary';

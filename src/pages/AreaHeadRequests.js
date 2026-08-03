@@ -179,24 +179,6 @@ export default function AreaHeadRequests() {
     endDate: null,
   });
 
-  // Helper function to get vendor name from request data
-  // Backend should include vendor information in the shopboard request response
-  const getVendorName = React.useCallback((row) => {
-    // Check if vendor object exists in the response (backend should include this)
-    if (row.vendor && row.vendor.card_name) {
-      return row.vendor.card_name;
-    }
-    // Fallback: check if vendor_name exists directly
-    if (row.vendor_name) {
-      return row.vendor_name;
-    }
-    // If vendor_code exists but no vendor info, show "Not Assigned"
-    if (row.vendor_code) {
-      return 'Not Assigned';
-    }
-    return 'Not Assigned';
-  }, []);
-  
   // Use rowsState.rows directly since filtering is done on backend
   const filteredRows = rowsState.rows;
 
@@ -306,6 +288,30 @@ export default function AreaHeadRequests() {
   const [vendorsError, setVendorsError] = React.useState(null);
   const [selectedVendor, setSelectedVendor] = React.useState(null);
   const [vendorComment, setVendorComment] = React.useState('');
+
+  // Helper function to get vendor name from request data
+  // Backend should include vendor information in the shopboard request response
+  const getVendorName = React.useCallback((row) => {
+    if (row.vendor && (row.vendor.card_name || row.vendor.username)) {
+      return row.vendor.card_name || row.vendor.username;
+    }
+    if (row.vendor_name) {
+      return row.vendor_name;
+    }
+    if (row.vendor_code) {
+      const code = String(row.vendor_code);
+      const match =
+        vendorsLookup.find((v) => String(v.id) === code) ||
+        vendorsLookup.find((v) => String(v.username) === code) ||
+        vendors.find((v) => String(v.id) === code) ||
+        vendors.find((v) => String(v.username) === code);
+      if (match) {
+        return match.card_name || match.name || match.username || code;
+      }
+      return code;
+    }
+    return 'Not Assigned';
+  }, [vendorsLookup, vendors]);
   
   // Dropdown options for edit form
   const [dealers, setDealers] = React.useState([]);
@@ -910,9 +916,10 @@ export default function AreaHeadRequests() {
   const handleAssign = React.useCallback((requestData) => {
     if (!canAssign) return;
     
-    // Allow assignment for both processing and not decided requests
-    if (requestData.status !== 'processing' && requestData.status !== 'not decided') {
-      toast.error('Only processing or not decided requests can be assigned to vendors', {
+    // Allow assignment for processing, not decided, and RFQ-rejected (re-assign)
+    const assignableStatuses = ['processing', 'not decided', 'rfq_rejected', SHOPBOARD_REQUEST_STATUS.RFQ_REJECTED];
+    if (!assignableStatuses.includes(requestData.status)) {
+      toast.error('Only processing, not decided, or RFQ rejected requests can be assigned to vendors', {
         position: "top-right",
         autoClose: 5000,
         hideProgressBar: false,
@@ -2189,8 +2196,14 @@ export default function AreaHeadRequests() {
     setRejectDialogOpen(false);
     
     try {
+      // Rejecting an RFQ request → rfq_rejected (enables re-assign vendor)
+      const nextStatus =
+        requestToAction.status === 'Rfq' || requestToAction.status === SHOPBOARD_REQUEST_STATUS.RFQ
+          ? SHOPBOARD_REQUEST_STATUS.RFQ_REJECTED
+          : 'rejected';
+
       const updateData = {
-        status: 'rejected',
+        status: nextStatus,
         updated_by: user.id,
         comment: rejectionComment.trim(),
         comment_type: 'rejection',
@@ -2233,9 +2246,11 @@ export default function AreaHeadRequests() {
     
     try {
       const updateData = {
-        vendor_id: selectedVendor.id, // This is now the SAP CardCode
+        // Persist as vendor_code (users.id as string). Keep vendor_id for backward compat on backend normalize.
+        vendor_id: selectedVendor.id,
+        vendor_code: String(selectedVendor.id),
         status: 'Rfq',
-        assigned_vm: 1,
+        assigned_vm: true,
         updated_by: user.id
       };
 
@@ -4326,6 +4341,7 @@ export default function AreaHeadRequests() {
           const row = params.row;
           const isNotDecided = row.status === 'not decided' || row.status === 'rfq not accepted' || row.status === null || row.status === undefined || row.status === '';
           const isProcessing = row.status === 'processing';
+          const isRfqRejected = row.status === 'rfq_rejected' || row.status === SHOPBOARD_REQUEST_STATUS.RFQ_REJECTED;
           const isReviewRequested = row.status === 'review requested';
           const isRfqStatus = row.status === 'Rfq';
           const isRfqNotAccepted = row.status === 'rfq not accepted';
@@ -4429,8 +4445,8 @@ export default function AreaHeadRequests() {
             );
           }
 
-          // Show view rejection comments icon when request is rejected
-          if (row.status === 'rejected' && canRead) {
+          // Show view rejection comments icon when request is rejected / RFQ rejected
+          if ((row.status === 'rejected' || row.status === 'rfq_rejected') && canRead) {
             actions.push(
               <GridActionsCellItem
                 key="viewRejectionComments"
@@ -4473,8 +4489,8 @@ export default function AreaHeadRequests() {
           //   }
           // }
           
-          // Show assign for both processing and not decided requests
-          if ((isProcessing || isNotDecided) && canAssign) {
+          // Show assign for processing, not decided, and RFQ-rejected (re-assign vendor)
+          if ((isProcessing || isNotDecided || isRfqRejected) && canAssign) {
             actions.push(
               <GridActionsCellItem
                 key="assign"
