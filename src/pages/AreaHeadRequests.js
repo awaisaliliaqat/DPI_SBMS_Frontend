@@ -21,6 +21,11 @@ import {
   CircularProgress,
   Avatar,
   Backdrop,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
+  FormControl,
+  FormLabel,
 } from '@mui/material';
 import CommentsDialog from '../components/CommentsDialog';
 import {
@@ -247,6 +252,8 @@ export default function AreaHeadRequests() {
   // Action confirmation dialogs
   const [approveDialogOpen, setApproveDialogOpen] = React.useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false);
+  // 'complete' → rfq_rejected (re-assign) | 'resubmit' → vendor_rejected (same vendor edits again)
+  const [rejectMode, setRejectMode] = React.useState('complete');
   const [assignDialogOpen, setAssignDialogOpen] = React.useState(false);
   const [reviewAgainDialogOpen, setReviewAgainDialogOpen] = React.useState(false);
   const [commentsDialogOpen, setCommentsDialogOpen] = React.useState(false);
@@ -910,6 +917,13 @@ export default function AreaHeadRequests() {
   const handleReject = React.useCallback((requestData) => {
     if (!canReject) return;
     setRequestToAction(requestData);
+    // Default: complete reject. Resubmit only applies when a vendor is already in RFQ flow.
+    const canAllowResubmit =
+      requestData.status === 'Rfq' ||
+      requestData.status === SHOPBOARD_REQUEST_STATUS.RFQ ||
+      requestData.status === 'quotation sent' ||
+      requestData.status === SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT;
+    setRejectMode(canAllowResubmit ? 'complete' : 'complete');
     setRejectDialogOpen(true);
   }, [canReject]);
 
@@ -2191,17 +2205,26 @@ export default function AreaHeadRequests() {
       });
       return;
     }
+
+    const isVendorFlow =
+      requestToAction.status === 'Rfq' ||
+      requestToAction.status === SHOPBOARD_REQUEST_STATUS.RFQ ||
+      requestToAction.status === 'quotation sent' ||
+      requestToAction.status === SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT;
+
+    let nextStatus = 'rejected';
+    if (isVendorFlow && rejectMode === 'resubmit') {
+      // Same vendor can edit & send quotation again; Area Head cannot re-assign
+      nextStatus = SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED;
+    } else if (isVendorFlow) {
+      // Complete reject → Area Head can assign another vendor
+      nextStatus = SHOPBOARD_REQUEST_STATUS.RFQ_REJECTED;
+    }
     
     setIsLoading(true);
     setRejectDialogOpen(false);
     
     try {
-      // Rejecting an RFQ request → rfq_rejected (enables re-assign vendor)
-      const nextStatus =
-        requestToAction.status === 'Rfq' || requestToAction.status === SHOPBOARD_REQUEST_STATUS.RFQ
-          ? SHOPBOARD_REQUEST_STATUS.RFQ_REJECTED
-          : 'rejected';
-
       const updateData = {
         status: nextStatus,
         updated_by: user.id,
@@ -2209,9 +2232,16 @@ export default function AreaHeadRequests() {
         comment_type: 'rejection',
       };
 
-      const response = await patch(`/api/shopboard-requests/${requestToAction.id}`, updateData);
+      await patch(`/api/shopboard-requests/${requestToAction.id}`, updateData);
 
-      toast.success(`Request #${requestToAction.id} rejected successfully!`, {
+      const successMsg =
+        nextStatus === SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED
+          ? `Request #${requestToAction.id} rejected — vendor may resubmit.`
+          : nextStatus === SHOPBOARD_REQUEST_STATUS.RFQ_REJECTED
+            ? `Request #${requestToAction.id} rejected — you can assign another vendor.`
+            : `Request #${requestToAction.id} rejected successfully!`;
+
+      toast.success(successMsg, {
         position: "top-right",
         autoClose: 3000,
         hideProgressBar: false,
@@ -2233,7 +2263,8 @@ export default function AreaHeadRequests() {
     } finally {
       setIsLoading(false);
       setRequestToAction(null);
-      setRejectionComment(''); // Clear comment after rejection
+      setRejectionComment('');
+      setRejectMode('complete');
     }
   };
 
@@ -2455,7 +2486,8 @@ export default function AreaHeadRequests() {
   const cancelReject = () => {
     setRejectDialogOpen(false);
     setRequestToAction(null);
-    setRejectionComment(''); // Clear comment when canceling
+    setRejectionComment('');
+    setRejectMode('complete');
   };
 
   const cancelAssign = () => {
@@ -4445,8 +4477,14 @@ export default function AreaHeadRequests() {
             );
           }
 
-          // Show view rejection comments icon when request is rejected / RFQ rejected
-          if ((row.status === 'rejected' || row.status === 'rfq_rejected') && canRead) {
+          // Show view rejection comments when rejected / RFQ rejected / vendor rejected (allow resubmit)
+          if (
+            (row.status === 'rejected' ||
+              row.status === 'rfq_rejected' ||
+              row.status === 'vendor_rejected' ||
+              row.status === SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED) &&
+            canRead
+          ) {
             actions.push(
               <GridActionsCellItem
                 key="viewRejectionComments"
@@ -5168,7 +5206,7 @@ export default function AreaHeadRequests() {
         PaperProps={{
           sx: {
             backgroundColor: '#ffffff',
-            minWidth: '400px',
+            minWidth: '440px',
           }
         }}
       >
@@ -5183,11 +5221,54 @@ export default function AreaHeadRequests() {
         </DialogTitle>
         <DialogContent>
           <Typography sx={{ color: '#333', mb: 2 }}>
-            Are you sure you want to reject request <strong>#{requestToAction?.id}</strong>?
+            Reject request <strong>#{requestToAction?.id}</strong>
           </Typography>
-          <Typography variant="body2" sx={{ color: '#666', mb: 2 }}>
-            This action will permanently reject this request.
-          </Typography>
+
+          {(requestToAction?.status === 'Rfq' ||
+            requestToAction?.status === SHOPBOARD_REQUEST_STATUS.RFQ ||
+            requestToAction?.status === 'quotation sent' ||
+            requestToAction?.status === SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT) && (
+            <FormControl component="fieldset" sx={{ mb: 2, width: '100%' }}>
+              <FormLabel component="legend" sx={{ color: '#333', mb: 1, fontWeight: 600 }}>
+                Choose rejection type
+              </FormLabel>
+              <RadioGroup
+                value={rejectMode}
+                onChange={(e) => setRejectMode(e.target.value)}
+              >
+                <FormControlLabel
+                  value="complete"
+                  control={<Radio color="error" />}
+                  label={
+                    <Box>
+                      <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                        Reject complete request
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#666' }}>
+                        Ends this vendor&apos;s work. You can assign another vendor.
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ alignItems: 'flex-start', mb: 1 }}
+                />
+                <FormControlLabel
+                  value="resubmit"
+                  control={<Radio color="warning" />}
+                  label={
+                    <Box>
+                      <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                        Allow resubmit
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#666' }}>
+                        Same vendor can edit and send quotation again. You cannot re-assign.
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ alignItems: 'flex-start' }}
+                />
+              </RadioGroup>
+            </FormControl>
+          )}
           
           <TextField
             fullWidth
@@ -5200,7 +5281,7 @@ export default function AreaHeadRequests() {
             variant="outlined"
             required
             error={rejectionComment !== undefined && rejectionComment.trim() === ''}
-            sx={{ mt: 2 }}
+            sx={{ mt: 1 }}
             helperText="A comment is required to reject this request"
           />
         </DialogContent>

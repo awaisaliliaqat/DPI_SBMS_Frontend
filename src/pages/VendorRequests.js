@@ -1411,27 +1411,36 @@ export default function VendorRequests() {
     }
   }, [get]);
 
-  // Confirm approve function
+  // Confirm approve / resubmit quotation → quotation sent (same old flow)
   const confirmApprove = async () => {
     if (!requestToAction) return;
     
     setIsLoading(true);
     setApproveDialogOpen(false);
+
+    const isResubmit =
+      requestToAction.status === SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED ||
+      requestToAction.status === 'vendor_rejected';
     
     try {
-      const response = await patch(`/api/shopboard-requests/${requestToAction.id}`, {
+      await patch(`/api/shopboard-requests/${requestToAction.id}`, {
         status: SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT,
         updated_by: user.id
       });
 
-      toast.success(`Request #${requestToAction.id} quotation sent successfully!`, {
-        position: "top-right",
-        autoClose: 3000,
-        hideProgressBar: false,
-        closeOnClick: true,
-        pauseOnHover: true,
-        draggable: true,
-      });
+      toast.success(
+        isResubmit
+          ? `Request #${requestToAction.id} resubmitted successfully!`
+          : `Request #${requestToAction.id} quotation sent successfully!`,
+        {
+          position: "top-right",
+          autoClose: 3000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        }
+      );
       
       loadRequests();
     } catch (approveError) {
@@ -2131,6 +2140,11 @@ export default function VendorRequests() {
         getActions: (params) => {
           const row = params.row;
           const isRfqStatus = row.status === SHOPBOARD_REQUEST_STATUS.RFQ;
+          // Area Head chose "Allow resubmit" — vendor can edit & send quotation again
+          const isVendorRejected =
+            row.status === SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED ||
+            row.status === 'vendor_rejected';
+          const canVendorEditQuotation = isRfqStatus || isVendorRejected;
           
           const actions = [];
           
@@ -2151,21 +2165,21 @@ export default function VendorRequests() {
             );
           }
           
-          // Show edit action for Rfq status
-          if (canUpdate && isRfqStatus) {
+          // Show edit for Rfq and vendor_rejected (allow resubmit)
+          if (canUpdate && canVendorEditQuotation) {
             actions.push(
               <GridActionsCellItem
                 key="edit"
-                icon={<Tooltip title="Edit"><EditIcon /></Tooltip>}
-                label="Add Pricing"
+                icon={<Tooltip title={isVendorRejected ? 'Edit & Resubmit' : 'Edit'}><EditIcon /></Tooltip>}
+                label={isVendorRejected ? 'Edit & Resubmit' : 'Add Pricing'}
                 onClick={() => handleEdit(row)}
                 color="info"
               />
             );
           }
           
-          // Show view comments for Rfq status
-          if (isRfqStatus && canRead) {
+          // Show view comments for Rfq / vendor_rejected
+          if (canVendorEditQuotation && canRead) {
             actions.push(
               <GridActionsCellItem
                 key="viewComments"
@@ -2190,8 +2204,8 @@ export default function VendorRequests() {
             );
           }
           
-          // Show approve/reject only for Rfq status
-          if (isRfqStatus) {
+          // Submit quotation for Rfq and after vendor_rejected resubmit
+          if (canVendorEditQuotation) {
             if (canApprove) {
               actions.push(
                 <GridActionsCellItem
@@ -2250,8 +2264,13 @@ export default function VendorRequests() {
             );
           }
           
-          // Show view rejection comments for rejected status
-          if (row.status === SHOPBOARD_REQUEST_STATUS.REJECTED && canRead) {
+          // Show view rejection comments for rejected / vendor_rejected (allow resubmit)
+          if (
+            (row.status === SHOPBOARD_REQUEST_STATUS.REJECTED ||
+              row.status === SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED ||
+              row.status === 'vendor_rejected') &&
+            canRead
+          ) {
             actions.push(
               <GridActionsCellItem
                 key="viewRequestRejectionComments"
@@ -3074,11 +3093,17 @@ export default function VendorRequests() {
             fontWeight: 'bold',
           }}
         >
-          Submit Quotation
+          {(requestToAction?.status === SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED ||
+            requestToAction?.status === 'vendor_rejected')
+            ? 'Resubmit Quotation'
+            : 'Submit Quotation'}
         </DialogTitle>
         <DialogContent>
           <Typography sx={{ color: '#333', mb: 2 }}>
-            Are you sure you want to submit quotation for request <strong>#{requestToAction?.id}</strong>?
+            {(requestToAction?.status === SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED ||
+              requestToAction?.status === 'vendor_rejected')
+              ? <>Resubmit quotation for request <strong>#{requestToAction?.id}</strong>?</>
+              : <>Are you sure you want to submit quotation for request <strong>#{requestToAction?.id}</strong>?</>}
           </Typography>
           <Typography variant="body2" sx={{ color: '#666' }}>
             This action will mark the request as quotation sent.
