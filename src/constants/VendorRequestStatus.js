@@ -36,6 +36,9 @@ export const VENDOR_REQUEST_STATUS_DISPLAY = {
   [SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED]: 'Invoice Rejected',
   [SHOPBOARD_REQUEST_STATUS.PAYMENT_SUCCESSFUL]: 'Payment Successful',
   [SHOPBOARD_REQUEST_STATUS.REJECTED]: 'Rejected',
+  // New statuses — vendor-facing labels only
+  [SHOPBOARD_REQUEST_STATUS.RFQ_REJECTED]: 'RFQ Closed',
+  [SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED]: 'Resubmit Required',
 };
 
 /**
@@ -73,7 +76,10 @@ export const getVendorStatusColor = (status) => {
     case SHOPBOARD_REQUEST_STATUS.RFQ_NOT_ACCEPTED:
     case SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED:
     case SHOPBOARD_REQUEST_STATUS.REJECTED:
+    case SHOPBOARD_REQUEST_STATUS.RFQ_REJECTED:
       return 'error';
+    case SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED:
+      return 'warning';
     case SHOPBOARD_REQUEST_STATUS.RFQ:
       return 'info';
     case SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT:
@@ -120,4 +126,3 @@ export const VENDOR_STATUS_OPTIONS = ALL_VENDOR_STATUSES.map(status => ({
   value: status,
   label: getVendorStatusDisplayName(status),
 }));
-
