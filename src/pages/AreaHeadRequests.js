@@ -914,16 +914,24 @@ export default function AreaHeadRequests() {
     setApproveDialogOpen(true);
   }, [canApprove]);
 
+  // Statuses that show Reject complete vs Allow resubmit
+  const isTwoOptionRejectStatus = React.useCallback((status) => {
+    return (
+      status === 'Rfq' ||
+      status === SHOPBOARD_REQUEST_STATUS.RFQ ||
+      status === 'quotation sent' ||
+      status === SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT ||
+      status === 'under_review' ||
+      status === SHOPBOARD_REQUEST_STATUS.UNDER_REVIEW ||
+      status === 'ceo_pending' ||
+      status === SHOPBOARD_REQUEST_STATUS.CEO_PENDING
+    );
+  }, []);
+
   const handleReject = React.useCallback((requestData) => {
     if (!canReject) return;
     setRequestToAction(requestData);
-    // Default: complete reject. Resubmit only applies when a vendor is already in RFQ flow.
-    const canAllowResubmit =
-      requestData.status === 'Rfq' ||
-      requestData.status === SHOPBOARD_REQUEST_STATUS.RFQ ||
-      requestData.status === 'quotation sent' ||
-      requestData.status === SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT;
-    setRejectMode(canAllowResubmit ? 'complete' : 'complete');
+    setRejectMode('complete');
     setRejectDialogOpen(true);
   }, [canReject]);
 
@@ -2206,17 +2214,13 @@ export default function AreaHeadRequests() {
       return;
     }
 
-    const isVendorFlow =
-      requestToAction.status === 'Rfq' ||
-      requestToAction.status === SHOPBOARD_REQUEST_STATUS.RFQ ||
-      requestToAction.status === 'quotation sent' ||
-      requestToAction.status === SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT;
+    const showTwoRejectOptions = isTwoOptionRejectStatus(requestToAction.status);
 
     let nextStatus = 'rejected';
-    if (isVendorFlow && rejectMode === 'resubmit') {
+    if (showTwoRejectOptions && rejectMode === 'resubmit') {
       // Same vendor can edit & send quotation again; Area Head cannot re-assign
       nextStatus = SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED;
-    } else if (isVendorFlow) {
+    } else if (showTwoRejectOptions) {
       // Complete reject → Area Head can assign another vendor
       nextStatus = SHOPBOARD_REQUEST_STATUS.RFQ_REJECTED;
     }
@@ -5224,10 +5228,7 @@ export default function AreaHeadRequests() {
             Reject request <strong>#{requestToAction?.id}</strong>
           </Typography>
 
-          {(requestToAction?.status === 'Rfq' ||
-            requestToAction?.status === SHOPBOARD_REQUEST_STATUS.RFQ ||
-            requestToAction?.status === 'quotation sent' ||
-            requestToAction?.status === SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT) && (
+          {isTwoOptionRejectStatus(requestToAction?.status) && (
             <FormControl component="fieldset" sx={{ mb: 2, width: '100%' }}>
               <FormLabel component="legend" sx={{ color: '#333', mb: 1, fontWeight: 600 }}>
                 Choose rejection type
