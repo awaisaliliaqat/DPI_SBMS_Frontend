@@ -6144,10 +6144,7 @@ export default function AreaHeadRequests() {
                 InputLabelProps={{
                   shrink: true,
                 }}
-                disabled={isLoading || (editingRequest?.last_installation_date && String(editingRequest.last_installation_date).trim() !== '')}
-                helperText={editingRequest?.last_installation_date && String(editingRequest.last_installation_date).trim() !== '' 
-                  ? 'Last installation date cannot be changed once set' 
-                  : ''}
+                disabled={isLoading}
               />
 
               {/* Site Photos Upload */}
