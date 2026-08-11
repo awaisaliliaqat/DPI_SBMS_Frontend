@@ -63,6 +63,7 @@ import InvoiceViewer from '../components/InvoiceViewer';
 import RejectInvoiceModal from '../components/RejectInvoiceModal';
 import PaymentSummaryModal from '../components/PaymentSummaryModal';
 import RequestDetailsWithInvoiceModal from '../components/RequestDetailsWithInvoiceModal';
+import AttachmentFilesDisplay from '../components/AttachmentFilesDisplay';
 import ShopboardRequestFilters from '../components/ShopboardRequestFilters';
 import OldPurchasesModal from '../components/OldPurchasesModal';
 import { BASE_URL, BASENAME } from "../constants/Constants";
@@ -4031,16 +4032,6 @@ export default function AreaHeadRequests() {
           if (!value) return 'Old';
           return value === 'new' ? 'New' : 'Old';
         },
-      },
-      {
-        name: 'survey_form_attachments',
-        label: 'Survey Form Attachments',
-        type: 'text',
-        readOnly: true,
-        valueFormatter: (value) => {
-          if (!value || !Array.isArray(value) || value.length === 0) return 'No attachments';
-          return `${value.length} file(s) attached`;
-        },
       }
     );
     
@@ -5057,8 +5048,20 @@ export default function AreaHeadRequests() {
             const hasSurveyAttachments =
               Array.isArray(selectedRequest?.survey_form_attachments) &&
               selectedRequest.survey_form_attachments.length > 0;
+            const hasSitePhotos =
+              Array.isArray(selectedRequest?.site_photo_attachement) &&
+              selectedRequest.site_photo_attachement.length > 0;
+            const hasOldBoardPhotos =
+              Array.isArray(selectedRequest?.old_board_photo_attachment) &&
+              selectedRequest.old_board_photo_attachment.length > 0;
 
-            if (!hasSurveyItems && !hasSurveyComments && !hasSurveyAttachments) {
+            if (
+              !hasSurveyItems &&
+              !hasSurveyComments &&
+              !hasSurveyAttachments &&
+              !hasSitePhotos &&
+              !hasOldBoardPhotos
+            ) {
               return null;
             }
 
@@ -5116,28 +5119,56 @@ export default function AreaHeadRequests() {
                   </Box>
                 )}
 
-                {hasSurveyAttachments && (
+                {(hasSitePhotos || hasOldBoardPhotos || hasSurveyAttachments) && (
                   <Box>
                     <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold', color: '#1976d2' }}>
-                      Survey Form Attachments
+                      Attachments
                     </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {selectedRequest.survey_form_attachments.map((file, index) => {
-                        const { url, fileName } = getFileUrlAndName(file, index, `Survey Form ${index + 1}`);
-                        const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/survey_forms/${url}`);
-                        return (
-                          <Chip
-                            key={index}
-                            label={fileName}
-                            size="small"
-                            color="primary"
-                            variant="outlined"
-                            onClick={() => openFileInNewTab(fileUrl)}
-                            sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#e3f2fd' } }}
-                          />
-                        );
-                      })}
-                    </Box>
+
+                    {hasSitePhotos && (
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 1 }}>
+                          Site Photos
+                        </Typography>
+                        <AttachmentFilesDisplay
+                          files={selectedRequest.site_photo_attachement}
+                          uploadFolder="site_photos"
+                          fallbackLabel="Site Photo"
+                          chipColor="primary"
+                          emptyText="No site photos uploaded"
+                        />
+                      </Box>
+                    )}
+
+                    {hasOldBoardPhotos && (
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 1 }}>
+                          Old Board Photos
+                        </Typography>
+                        <AttachmentFilesDisplay
+                          files={selectedRequest.old_board_photo_attachment}
+                          uploadFolder="old_board_photos"
+                          fallbackLabel="Old Board Photo"
+                          chipColor="secondary"
+                          emptyText="No old board photos uploaded"
+                        />
+                      </Box>
+                    )}
+
+                    {hasSurveyAttachments && (
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 1 }}>
+                          Survey Form Attachments
+                        </Typography>
+                        <AttachmentFilesDisplay
+                          files={selectedRequest.survey_form_attachments}
+                          uploadFolder="survey_forms"
+                          fallbackLabel="Survey Form"
+                          chipColor="success"
+                          emptyText="No survey forms uploaded"
+                        />
+                      </Box>
+                    )}
                   </Box>
                 )}
               </Box>
@@ -6979,34 +7010,18 @@ export default function AreaHeadRequests() {
                   📎 Attachments
                 </Typography>
                 
-                {/* Site Photos */}
+                {/* Site Photos — images inline; PDF/other open in new tab */}
                 <Box sx={{ mb: 3 }}>
                   <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
                     Site Photos
                   </Typography>
-                  {selectedDetailedRequest.site_photo_attachement && selectedDetailedRequest.site_photo_attachement.length > 0 ? (
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {selectedDetailedRequest.site_photo_attachement.map((file, index) => {
-                        const { url, fileName } = getFileUrlAndName(file, index, `Site Photo ${index + 1}`);
-                        const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/site_photos/${url}`);
-                        return (
-                          <Chip
-                            key={`site-${index}`}
-                            label={fileName}
-                            size="small"
-                            color="primary"
-                            variant="outlined"
-                            onClick={() => openFileInNewTab(fileUrl)}
-                            sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#e3f2fd' } }}
-                          />
-                        );
-                      })}
-                    </Box>
-                  ) : (
-                    <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
-                      No site photos uploaded
-                    </Typography>
-                  )}
+                  <AttachmentFilesDisplay
+                    files={selectedDetailedRequest.site_photo_attachement}
+                    uploadFolder="site_photos"
+                    fallbackLabel="Site Photo"
+                    chipColor="primary"
+                    emptyText="No site photos uploaded"
+                  />
                 </Box>
 
                 {/* Old Board Photos */}
@@ -7014,29 +7029,13 @@ export default function AreaHeadRequests() {
                   <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
                     Old Board Photos
                   </Typography>
-                  {selectedDetailedRequest.old_board_photo_attachment && selectedDetailedRequest.old_board_photo_attachment.length > 0 ? (
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {selectedDetailedRequest.old_board_photo_attachment.map((file, index) => {
-                        const { url, fileName } = getFileUrlAndName(file, index, `Old Board Photo ${index + 1}`);
-                        const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/old_board_photos/${url}`);
-                        return (
-                          <Chip
-                            key={`old-${index}`}
-                            label={fileName}
-                            size="small"
-                            color="secondary"
-                            variant="outlined"
-                            onClick={() => openFileInNewTab(fileUrl)}
-                            sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#f3e5f5' } }}
-                          />
-                        );
-                      })}
-                    </Box>
-                  ) : (
-                    <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
-                      No old board photos uploaded
-                    </Typography>
-                  )}
+                  <AttachmentFilesDisplay
+                    files={selectedDetailedRequest.old_board_photo_attachment}
+                    uploadFolder="old_board_photos"
+                    fallbackLabel="Old Board Photo"
+                    chipColor="secondary"
+                    emptyText="No old board photos uploaded"
+                  />
                 </Box>
 
                 {/* Survey Forms */}
@@ -7044,29 +7043,13 @@ export default function AreaHeadRequests() {
                   <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
                     Survey Forms
                   </Typography>
-                  {selectedDetailedRequest.survey_form_attachments && selectedDetailedRequest.survey_form_attachments.length > 0 ? (
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {selectedDetailedRequest.survey_form_attachments.map((file, index) => {
-                        const { url, fileName } = getFileUrlAndName(file, index, `Survey Form ${index + 1}`);
-                        const fileUrl = url.startsWith('data:') || url.startsWith('http') ? url : (url.startsWith('/') ? `${BASE_URL}${url}` : `${BASE_URL}/uploads/survey_forms/${url}`);
-                        return (
-                          <Chip
-                            key={`survey-${index}`}
-                            label={fileName}
-                            size="small"
-                            color="success"
-                            variant="outlined"
-                            onClick={() => openFileInNewTab(fileUrl)}
-                            sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#e8f5e8' } }}
-                          />
-                        );
-                      })}
-                    </Box>
-                  ) : (
-                    <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
-                      No survey forms uploaded
-                    </Typography>
-                  )}
+                  <AttachmentFilesDisplay
+                    files={selectedDetailedRequest.survey_form_attachments}
+                    uploadFolder="survey_forms"
+                    fallbackLabel="Survey Form"
+                    chipColor="success"
+                    emptyText="No survey forms uploaded"
+                  />
                 </Box>
               </Paper>
 
