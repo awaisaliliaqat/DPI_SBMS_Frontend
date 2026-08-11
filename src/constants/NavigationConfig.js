@@ -84,6 +84,12 @@ export const NAVIGATION_CONFIG = {
     icon: '🏪',
     requiredPermission: 'read'
   },
+  manualSurvey: {
+    displayName: 'Manual Survey',
+    routerLink: '/manual-survey',
+    icon: '📝',
+    requiredPermission: 'read'
+  },
   // dashboard: {
   //   displayName: 'Dashboard',
   //   routerLink: '/dashboard',

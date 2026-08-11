@@ -63,6 +63,7 @@ import InvoiceViewer from '../components/InvoiceViewer';
 import RejectInvoiceModal from '../components/RejectInvoiceModal';
 import PaymentSummaryModal from '../components/PaymentSummaryModal';
 import RequestDetailsWithInvoiceModal from '../components/RequestDetailsWithInvoiceModal';
+import ManualSurveyHighlight from '../components/ManualSurveyHighlight';
 import AttachmentFilesDisplay from '../components/AttachmentFilesDisplay';
 import ShopboardRequestFilters from '../components/ShopboardRequestFilters';
 import OldPurchasesModal from '../components/OldPurchasesModal';
@@ -414,7 +415,13 @@ export default function AreaHeadRequests() {
 
   // Load vendors when assign dialog opens
   React.useEffect(() => {
-    if (assignDialogOpen && requestToAction?.dealer?.district) {
+    if (!assignDialogOpen || !requestToAction) return;
+    // Manual surveys have no SAP dealer district — show all vendors
+    if (requestToAction.is_manual_survey) {
+      fetchVendors(null);
+      return;
+    }
+    if (requestToAction.dealer?.district) {
       fetchVendors(requestToAction.dealer.district);
     }
   }, [assignDialogOpen, fetchVendors, requestToAction]);
@@ -4143,10 +4150,13 @@ export default function AreaHeadRequests() {
         headerAlign: 'left',
         renderCell: (params) => {
           const dealer = params.row.dealer;
+          const surveyTitle = params.row.is_manual_survey
+            ? `${params.row.dealer_code_temp || dealer?.name || 'Untitled'} (manual survey)`
+            : null;
           return (
             <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
               <Typography variant="body2">
-                {dealer ? dealer.name : 'N/A'}
+                {surveyTitle || (dealer ? dealer.name : 'N/A')}
               </Typography>
             </Box>
           );
@@ -4163,7 +4173,9 @@ export default function AreaHeadRequests() {
           return (
             <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
               <Typography variant="body2">
-                {dealer ? dealer.code : 'N/A'}
+                {params.row.is_manual_survey
+                  ? (params.row.region || 'Manual Survey')
+                  : (dealer ? dealer.code : 'N/A')}
               </Typography>
             </Box>
           );
@@ -5014,7 +5026,10 @@ export default function AreaHeadRequests() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         mode="view"
-        title="Request Details"
+        title={
+          selectedRequest?.is_manual_survey ? 'Request Details — Manual Survey' : 'Request Details'
+        }
+        headerContent={<ManualSurveyHighlight request={selectedRequest} />}
         initialData={(() => {
           const data = selectedRequest || {};
           // Check if there's a parent dealer and add parent fields to initialData
@@ -5431,11 +5446,15 @@ export default function AreaHeadRequests() {
           <Typography variant="body2" sx={{ color: '#666', mb: 1 }}>
             Choose from available SAP vendors to assign this request for quotation.
           </Typography>
-          {requestToAction?.dealer?.district && (
+          {requestToAction?.is_manual_survey ? (
+            <Typography variant="body2" sx={{ color: '#1976d2', mb: 2, fontStyle: 'italic' }}>
+              Manual Survey{requestToAction.region ? ` — ${requestToAction.region}` : ''}. Showing all vendors.
+            </Typography>
+          ) : requestToAction?.dealer?.district ? (
             <Typography variant="body2" sx={{ color: '#1976d2', mb: 2, fontStyle: 'italic' }}>
               Showing vendors from <strong>{requestToAction.dealer.district}</strong> region only.
             </Typography>
-          )}
+          ) : null}
           
           {loadingVendors ? (
             <Typography>Loading vendors...</Typography>
@@ -6776,11 +6795,15 @@ export default function AreaHeadRequests() {
             mb: 1,
           }}
         >
-          Request Details - #{selectedDetailedRequest?.id}
+          <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+            Request Details - #{selectedDetailedRequest?.id}
+            <ManualSurveyHighlight request={selectedDetailedRequest} compact />
+          </Box>
         </DialogTitle>
         <DialogContent>
           {selectedDetailedRequest && (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 2 }}>
+              <ManualSurveyHighlight request={selectedDetailedRequest} />
               {/* Dealer Information */}
               <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa' }}>
                 <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>

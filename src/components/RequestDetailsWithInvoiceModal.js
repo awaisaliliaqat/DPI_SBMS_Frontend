@@ -16,6 +16,7 @@ import {
   Person as PersonIcon,
 } from '@mui/icons-material';
 import AttachmentFilesDisplay from './AttachmentFilesDisplay';
+import ManualSurveyHighlight from './ManualSurveyHighlight';
 
 const RequestDetailsWithInvoiceModal = ({
   open,
@@ -146,10 +147,14 @@ const RequestDetailsWithInvoiceModal = ({
           mb: 1,
         }}
       >
-        Request Details & Invoice - #{requestData.id}
+        <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+          Request Details & Invoice - #{requestData.id}
+          <ManualSurveyHighlight request={requestData} compact />
+        </Box>
       </DialogTitle>
       <DialogContent>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 2 }}>
+          <ManualSurveyHighlight request={requestData} />
           {/* Request Details Section */}
           <Box>
             <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>

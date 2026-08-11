@@ -35,6 +35,7 @@ const DynamicModal = ({
   onSubmit,
   loading = false,
   customContent = null,
+  headerContent = null,
   showPasswordChange = false,
   onTogglePasswordChange,
   isEditMode = false,
@@ -475,6 +476,7 @@ const DynamicModal = ({
 
       <DialogContent dividers>
         <Box component="form" sx={{ mt: 1 }}>
+          {headerContent}
           {/* Regular form fields */}
           {otherFields.map(field => renderField(field))}
           

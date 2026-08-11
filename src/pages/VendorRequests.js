@@ -54,6 +54,7 @@ import PageContainer from '../components/PageContainer';
 import DynamicModal from '../components/DynamicModel';
 import InvoiceViewer from '../components/InvoiceViewer';
 import WorkOrderPDFGenerator from '../components/WorkOrderPDFGenerator';
+import ManualSurveyHighlight from '../components/ManualSurveyHighlight';
 import { BASE_URL } from "../constants/Constants";
 import { 
   SHOPBOARD_REQUEST_STATUS, 
@@ -2906,9 +2907,12 @@ export default function VendorRequests() {
             fontWeight: 'bold',
           }}
         >
-          {selectedRequest?.status === VENDOR_APPROVAL_STATUS 
-            ? `Work Order #${selectedRequest?.id}`
-            : `Request Details #${selectedRequest?.id}`}
+          <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+            {selectedRequest?.status === VENDOR_APPROVAL_STATUS 
+              ? `Work Order #${selectedRequest?.id}`
+              : `Request Details #${selectedRequest?.id}`}
+            <ManualSurveyHighlight request={selectedRequest} compact />
+          </Box>
         </DialogTitle>
         <DialogContent>
           {selectedRequest && (() => {
@@ -2920,6 +2924,7 @@ export default function VendorRequests() {
             
             return (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
+                <ManualSurveyHighlight request={selectedRequest} />
                 {/* Parent Dealer Information - Only show if parent exists */}
                 {hasParent && parent && (
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -4123,9 +4128,12 @@ export default function VendorRequests() {
             mb: 1,
           }}
         >
-          {selectedDetailedRequest?.status === VENDOR_APPROVAL_STATUS 
-            ? `Work Order - #${selectedDetailedRequest?.id}`
-            : `Request Details - #${selectedDetailedRequest?.id}`}
+          <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+            {selectedDetailedRequest?.status === VENDOR_APPROVAL_STATUS 
+              ? `Work Order - #${selectedDetailedRequest?.id}`
+              : `Request Details - #${selectedDetailedRequest?.id}`}
+            <ManualSurveyHighlight request={selectedDetailedRequest} compact />
+          </Box>
         </DialogTitle>
         <DialogContent>
           {selectedDetailedRequest && (() => {
@@ -4137,6 +4145,7 @@ export default function VendorRequests() {
             
             return (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 2 }}>
+                <ManualSurveyHighlight request={selectedDetailedRequest} />
                 {/* Parent Dealer Information - Only show if parent exists */}
                 {hasParent && parent && (
                   <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, backgroundColor: '#e3f2fd', border: '2px solid #bbdefb' }}>
