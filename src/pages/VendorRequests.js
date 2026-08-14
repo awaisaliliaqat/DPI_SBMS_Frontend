@@ -125,6 +125,23 @@ function getExistingSitePhotosForItem(map, itemId) {
   return map[itemId] || map[String(itemId)] || [];
 }
 
+const isEnableQuantityFlag = (value) => value === true || value === 1 || value === '1' || value === 'true';
+
+const getQtyMultiplier = (item, requestType) => {
+  if (!isEnableQuantityFlag(requestType?.enable_quantity)) return 1;
+  const q = parseInt(item?.quantity, 10);
+  return Number.isFinite(q) && q > 0 ? q : 1;
+};
+
+const calcFixedOrManualTotal = (item, requestType) => {
+  const widthFt = parseFloat(item?.width) || 0;
+  const heightFt = parseFloat(item?.height) || 0;
+  const areaSqft = widthFt * heightFt;
+  const pricePerSqft = parseFloat(item?.price_per_sqft) || 0;
+  const total = areaSqft * pricePerSqft * getQtyMultiplier(item, requestType);
+  return isNaN(total) ? '' : Number(total.toFixed(2));
+};
+
 // Open file in new tab; for data URLs use blob URL so image/PDF loads reliably
 async function openFileInNewTab(url) {
   if (!url) return;
@@ -575,16 +592,12 @@ export default function VendorRequests() {
         if (isManual) {
           // For manual type: set price_per_sqft from API if not already set, calculate price
           const pricePerSqft = item.price_per_sqft || selectedRequestType?.price || '';
-          const widthFt = parseFloat(item.width) || 0;
-          const heightFt = parseFloat(item.height) || 0;
-          const areaSqft = widthFt * heightFt;
-          const pricePerSqftNum = parseFloat(pricePerSqft) || 0;
-          const total = areaSqft * pricePerSqftNum;
+          const total = calcFixedOrManualTotal({ ...item, price_per_sqft: pricePerSqft }, selectedRequestType);
           
           return {
             ...item,
             price_per_sqft: pricePerSqft,
-            price: isNaN(total) ? (item.price || '') : Number(total.toFixed(2))
+            price: total === '' ? (item.price || '') : total
           };
         } else if (isFees) {
           // For fees type: set width/height to 0, price_per_sqft from API, keep price (editable)
@@ -1182,6 +1195,7 @@ export default function VendorRequests() {
           height: item.height,
           price: item.price,
           price_per_sqft: price_per_sqft,
+          quantity: item.quantity != null && item.quantity !== '' ? String(item.quantity) : '1',
         };
       });
 
@@ -3305,22 +3319,16 @@ export default function VendorRequests() {
                         const isFees = selectedRequestType?.request_type === 'fees';
                         
                         if (isManual) {
-                          // For manual type: set price_per_sqft from API, keep existing width/height, calculate price
                           const pricePerSqft = selectedRequestType?.price || '';
-                          const widthFt = parseFloat(newItems[index].width) || 0;
-                          const heightFt = parseFloat(newItems[index].height) || 0;
-                          const areaSqft = widthFt * heightFt;
-                          const pricePerSqftNum = parseFloat(pricePerSqft) || 0;
-                          const total = areaSqft * pricePerSqftNum;
-                          
-                          newItems[index] = { 
-                            ...newItems[index], 
+                          const nextItem = {
+                            ...newItems[index],
                             request_type_id: newValue?.id || '',
                             price_per_sqft: pricePerSqft,
-                            price: isNaN(total) ? '' : Number(total.toFixed(2))
+                            quantity: isEnableQuantityFlag(selectedRequestType?.enable_quantity) ? (newItems[index].quantity || '1') : newItems[index].quantity,
                           };
+                          nextItem.price = calcFixedOrManualTotal(nextItem, selectedRequestType);
+                          newItems[index] = nextItem;
                         } else if (isFees) {
-                          // For fees type: set width/height to 0, price_per_sqft from API, keep existing price (editable)
                           const pricePerSqft = selectedRequestType?.price || '';
                           newItems[index] = { 
                             ...newItems[index], 
@@ -3328,25 +3336,19 @@ export default function VendorRequests() {
                             width: '0',
                             height: '0',
                             price_per_sqft: pricePerSqft,
-                            price: newItems[index].price || '' // Keep existing price, allow editing
+                            price: newItems[index].price || '',
+                            quantity: isEnableQuantityFlag(selectedRequestType?.enable_quantity) ? (newItems[index].quantity || '1') : newItems[index].quantity,
                           };
                         } else {
-                          // For fixed type: use existing behavior
                           const pricePerSqft = selectedRequestType?.price || '';
-                          newItems[index] = { 
-                            ...newItems[index], 
+                          const nextItem = {
+                            ...newItems[index],
                             request_type_id: newValue?.id || '',
                             price_per_sqft: pricePerSqft,
-                            // Recalculate price if width and height are already set
-                            price: (() => {
-                              const widthFt = parseFloat(newItems[index].width) || 0;
-                              const heightFt = parseFloat(newItems[index].height) || 0;
-                              const areaSqft = widthFt * heightFt;
-                              const pricePerSqftNum = parseFloat(pricePerSqft) || 0;
-                              const total = areaSqft * pricePerSqftNum;
-                              return isNaN(total) ? '' : Number(total.toFixed(2));
-                            })()
+                            quantity: isEnableQuantityFlag(selectedRequestType?.enable_quantity) ? (newItems[index].quantity || '1') : newItems[index].quantity,
                           };
+                          nextItem.price = calcFixedOrManualTotal(nextItem, selectedRequestType);
+                          newItems[index] = nextItem;
                         }
                         handleEditFormChange('request_items', newItems);
                       }}
@@ -3381,12 +3383,7 @@ export default function VendorRequests() {
                         if (isFees) return;
                         
                         newItems[index] = { ...newItems[index], width: e.target.value };
-                        const widthFt = parseFloat(newItems[index].width) || 0;
-                        const heightFt = parseFloat(newItems[index].height) || 0;
-                        const areaSqft = widthFt * heightFt;
-                        const pricePerSqft = parseFloat(newItems[index].price_per_sqft) || 0;
-                        const total = areaSqft * pricePerSqft;
-                        newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
+                        newItems[index].price = calcFixedOrManualTotal(newItems[index], selectedRequestType);
                         handleEditFormChange('request_items', newItems);
                       }}
                       variant="outlined"
@@ -3415,12 +3412,7 @@ export default function VendorRequests() {
                         if (isFees) return;
                         
                         newItems[index] = { ...newItems[index], height: e.target.value };
-                        const widthFt = parseFloat(newItems[index].width) || 0;
-                        const heightFt = parseFloat(newItems[index].height) || 0;
-                        const areaSqft = widthFt * heightFt;
-                        const pricePerSqft = parseFloat(newItems[index].price_per_sqft) || 0;
-                        const total = areaSqft * pricePerSqft;
-                        newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
+                        newItems[index].price = calcFixedOrManualTotal(newItems[index], selectedRequestType);
                         handleEditFormChange('request_items', newItems);
                       }}
                       variant="outlined"
@@ -3458,12 +3450,7 @@ export default function VendorRequests() {
                         // Only allow editing for manual types (not fees or fixed)
                         if (isManual && !isFees) {
                           newItems[index] = { ...newItems[index], price_per_sqft: e.target.value };
-                          const widthFt = parseFloat(newItems[index].width) || 0;
-                          const heightFt = parseFloat(newItems[index].height) || 0;
-                          const areaSqft = widthFt * heightFt;
-                          const pricePerSqft = parseFloat(e.target.value) || 0;
-                          const total = areaSqft * pricePerSqft;
-                          newItems[index].price = isNaN(total) ? '' : Number(total.toFixed(2));
+                          newItems[index].price = calcFixedOrManualTotal(newItems[index], selectedRequestType);
                           handleEditFormChange('request_items', newItems);
                         }
                       }}
@@ -3482,6 +3469,35 @@ export default function VendorRequests() {
                       })()}
                       inputProps={{ step: '0.01', min: '0' }}
                     />
+
+                    {isEnableQuantityFlag(requestTypes.find(rt => rt.id === item.request_type_id)?.enable_quantity) && (
+                      <TextField
+                        label="Quantity"
+                        type="number"
+                        value={item.quantity !== undefined && item.quantity !== null && item.quantity !== '' ? String(item.quantity) : '1'}
+                        onChange={(e) => {
+                          const newItems = [...editFormData.request_items];
+                          const selectedRequestType = requestTypes.find(rt => rt.id === newItems[index].request_type_id);
+                          const isFees = selectedRequestType?.request_type === 'fees';
+                          const oldQty = getQtyMultiplier(newItems[index], selectedRequestType);
+                          newItems[index] = { ...newItems[index], quantity: e.target.value };
+                          if (isFees) {
+                            const newQty = getQtyMultiplier(newItems[index], selectedRequestType);
+                            const currentPrice = parseFloat(newItems[index].price) || 0;
+                            const unit = oldQty > 0 ? currentPrice / oldQty : currentPrice;
+                            newItems[index].price = Number((unit * newQty).toFixed(2));
+                          } else {
+                            newItems[index].price = calcFixedOrManualTotal(newItems[index], selectedRequestType);
+                          }
+                          handleEditFormChange('request_items', newItems);
+                        }}
+                        variant="outlined"
+                        disabled={isLoading}
+                        sx={{ mr: 1.5, minWidth: 120 }}
+                        helperText="Optional, default 1"
+                        inputProps={{ step: '1', min: '1' }}
+                      />
+                    )}
                     
                     {/* Total Cost Field - Calculated for manual and fixed, editable for fees */}
                     <TextField
@@ -3496,13 +3512,8 @@ export default function VendorRequests() {
                           return item.price !== undefined && item.price !== null && item.price !== '' ? String(item.price) : '';
                         }
                         
-                        // For manual and fixed: calculate from area × price per sqft
-                        const widthFt = parseFloat(item.width) || 0;
-                        const heightFt = parseFloat(item.height) || 0;
-                        const areaSqft = widthFt * heightFt;
-                        const pricePerSqft = parseFloat(item.price_per_sqft) || 0;
-                        const total = areaSqft * pricePerSqft;
-                        return isNaN(total) ? '0.00' : total.toFixed(2);
+                        const total = calcFixedOrManualTotal(item, selectedRequestType);
+                        return total === '' ? '0.00' : Number(total).toFixed(2);
                       })()}
                       onChange={(e) => {
                         const newItems = [...editFormData.request_items];
@@ -3525,7 +3536,9 @@ export default function VendorRequests() {
                       helperText={(() => {
                         const selectedRequestType = requestTypes.find(rt => rt.id === item.request_type_id);
                         if (selectedRequestType?.request_type === 'fees') return 'Editable for fees type';
-                        return 'Area × price per ft²';
+                        return isEnableQuantityFlag(selectedRequestType?.enable_quantity)
+                          ? 'Area × price per ft² × quantity'
+                          : 'Area × price per ft²';
                       })()}
                       inputProps={{ step: '0.01', min: '0' }}
                     />
@@ -3557,7 +3570,8 @@ export default function VendorRequests() {
                       width: '', 
                       height: '', 
                       price: '', 
-                      price_per_sqft: '' 
+                      price_per_sqft: '',
+                      quantity: '1',
                     }];
                     handleEditFormChange('request_items', newItems);
                   }}
@@ -3591,13 +3605,8 @@ export default function VendorRequests() {
                             return sum + (isNaN(price) ? 0 : price);
                           }
                           
-                          // For manual and fixed: calculate area × price_per_sqft
-                          const widthFt = parseFloat(it.width) || 0;
-                          const heightFt = parseFloat(it.height) || 0;
-                          const areaSqft = widthFt * heightFt;
-                          const pricePerSqft = parseFloat(it.price_per_sqft) || 0;
-                          const itemTotal = areaSqft * pricePerSqft;
-                          return sum + (isNaN(itemTotal) ? 0 : itemTotal);
+                          const itemTotal = calcFixedOrManualTotal(it, selectedRequestType);
+                          return sum + (itemTotal === '' ? 0 : itemTotal);
                         }, 0);
                         return total.toFixed(2);
                       })()}
@@ -4068,6 +4077,11 @@ export default function VendorRequests() {
                                 Price per sqft: Rs {parseFloat(item.price_per_sqft).toFixed(2)}
                               </Typography>
                             )}
+                            {item.quantity !== null && item.quantity !== undefined && parseInt(item.quantity, 10) > 0 && (
+                              <Typography variant="body2" sx={{ color: '#333', mb: 0.5 }}>
+                                Quantity: {item.quantity}
+                              </Typography>
+                            )}
                             {/* Always show total price if available */}
                             {item.price && (
                               <Typography variant="body2" sx={{ color: '#333', mb: 0.5 }}>
@@ -4239,7 +4253,7 @@ export default function VendorRequests() {
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     {selectedDetailedRequest.requestItems.map((item, index) => (
                       <Paper key={index} variant="outlined" sx={{ p: 2, borderRadius: 2, backgroundColor: '#ffffff' }}>
-                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 2, alignItems: 'center' }}>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr 1fr', gap: 2, alignItems: 'center' }}>
                           <Box>
                             <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
                               Request Type
@@ -4277,6 +4291,14 @@ export default function VendorRequests() {
                                 const ppsf = areaSqft > 0 ? priceNum / areaSqft : null;
                                 return ppsf ? `₨${ppsf.toFixed(2)}` : 'N/A';
                               })()}
+                            </Typography>
+                          </Box>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                              Quantity
+                            </Typography>
+                            <Typography variant="body2">
+                              {item.quantity != null && item.quantity !== '' ? item.quantity : '1'}
                             </Typography>
                           </Box>
                           <Box>

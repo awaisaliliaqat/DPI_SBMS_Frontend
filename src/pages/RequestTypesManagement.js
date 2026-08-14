@@ -14,6 +14,8 @@ import {
   FormControl,
   InputLabel,
   Chip,
+  Checkbox,
+  FormControlLabel,
 } from '@mui/material';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast, ToastContainer } from 'react-toastify';
@@ -25,6 +27,8 @@ import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
 
 const INITIAL_PAGE_SIZE = 10;
+
+const isEnableQuantity = (value) => value === true || value === 1 || value === '1' || value === 'true';
 
 // Custom toolbar with only columns button
 function CustomToolbar() {
@@ -87,6 +91,7 @@ export default function RequestTypesManagement() {
   const [formData, setFormData] = React.useState({
     name: '',
     request_type: 'fixed', // 'manual' | 'fixed' | 'fees'
+    enable_quantity: false,
   });
 
   // Request type options
@@ -155,7 +160,7 @@ export default function RequestTypesManagement() {
   const handleCreate = React.useCallback(() => {
     if (!canCreate) return;
     setSelectedRow(null);
-    setFormData({ name: '', request_type: 'fixed' });
+    setFormData({ name: '', request_type: 'fixed', enable_quantity: false });
     setModalMode('create');
     setModalOpen(true);
   }, [canCreate]);
@@ -166,6 +171,7 @@ export default function RequestTypesManagement() {
     setFormData({
       name: row.name || '',
       request_type: row.request_type || 'fixed',
+      enable_quantity: isEnableQuantity(row.enable_quantity),
     });
     setModalMode('view');
     setModalOpen(true);
@@ -177,6 +183,7 @@ export default function RequestTypesManagement() {
     setFormData({
       name: row.name || '',
       request_type: row.request_type || 'fixed',
+      enable_quantity: isEnableQuantity(row.enable_quantity),
     });
     setModalMode('edit');
     setModalOpen(true);
@@ -246,6 +253,7 @@ export default function RequestTypesManagement() {
         await post('/api/request-types', {
           name: formData.name.trim(),
           request_type: formData.request_type,
+          enable_quantity: !!formData.enable_quantity,
         });
         toast.success('Request type created successfully');
         loadRequestTypes();
@@ -253,6 +261,7 @@ export default function RequestTypesManagement() {
         await put(`/api/request-types/${selectedRow.id}`, {
           name: formData.name.trim(),
           request_type: formData.request_type,
+          enable_quantity: !!formData.enable_quantity,
         });
         toast.success('Request type updated successfully');
         loadRequestTypes();
@@ -299,6 +308,20 @@ export default function RequestTypesManagement() {
           />
         );
       }
+    },
+    {
+      field: 'enable_quantity',
+      headerName: 'Enable Quantity',
+      width: 160,
+      flex: 0.8,
+      sortable: true,
+      renderCell: (params) => (
+        <Checkbox
+          checked={isEnableQuantity(params.value)}
+          disabled
+          color="primary"
+        />
+      )
     },
     {
       field: 'created_at',
@@ -439,6 +462,18 @@ export default function RequestTypesManagement() {
                 ))}
               </Select>
             </FormControl>
+
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={!!formData.enable_quantity}
+                  onChange={(e) => setFormData(prev => ({ ...prev, enable_quantity: e.target.checked }))}
+                  disabled={modalMode === 'view'}
+                  color="primary"
+                />
+              }
+              label="Enable Quantity"
+            />
 
             {/* Info Box */}
             <Box sx={{ 
