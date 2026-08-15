@@ -78,6 +78,12 @@ import jsPDF from 'jspdf';
 
 const INITIAL_PAGE_SIZE = 10;
 
+const isInvoiceReleaseStatus = (status) =>
+  status === 'invoice_sent' ||
+  status === SHOPBOARD_REQUEST_STATUS.INVOICE_SENT ||
+  status === 'invoice_approved' ||
+  status === SHOPBOARD_REQUEST_STATUS.INVOICE_APPROVED;
+
 const isEnableQuantityFlag = (value) => value === true || value === 1 || value === '1' || value === 'true';
 
 const getQtyMultiplier = (item, requestType) => {
@@ -270,6 +276,7 @@ export default function AreaHeadRequests() {
 
   // Action confirmation dialogs
   const [approveDialogOpen, setApproveDialogOpen] = React.useState(false);
+  const [invoiceApproveDialogOpen, setInvoiceApproveDialogOpen] = React.useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false);
   // 'complete' → rfq_rejected (re-assign) | 'resubmit' → vendor_rejected (same vendor edits again)
   const [rejectMode, setRejectMode] = React.useState('complete');
@@ -782,9 +789,9 @@ export default function AreaHeadRequests() {
       if (canManualApproval) {
         // Show selection column if there are:
         // - ceo_pending requests (where email not sent)
-        // - invoice_sent requests (always)
+        // - invoice_sent / invoice_approved requests (always)
         const hasCeoPending = requestsData.some(request => request.status === 'ceo_pending' && request.is_email !== true);
-        const hasInvoiceSent = requestsData.some(request => request.status === 'invoice_sent');
+        const hasInvoiceSent = requestsData.some(request => isInvoiceReleaseStatus(request.status));
         shouldShowSelection = hasCeoPending || hasInvoiceSent;
       }
       if (canPaymentRelease) {
@@ -934,6 +941,12 @@ export default function AreaHeadRequests() {
     setRequestToAction(requestData);
     setApproveDialogOpen(true);
   }, [canApprove]);
+
+  const handleApproveInvoice = React.useCallback((requestData) => {
+    if (!canRead || canManualApproval) return;
+    setRequestToAction(requestData);
+    setInvoiceApproveDialogOpen(true);
+  }, [canRead, canManualApproval]);
 
   // Statuses that show Reject complete vs Allow resubmit
   const isTwoOptionRejectStatus = React.useCallback((status) => {
@@ -1758,18 +1771,18 @@ export default function AreaHeadRequests() {
     }
   }, [canManualApproval, selectedRequests, filteredRows, post, loadRequests, get]);
 
-  // Bulk release payment handler (for invoice_sent -> Submitted for Payment)
+  // Bulk release payment handler (for invoice_sent / invoice_approved -> Submitted for Payment)
   const handleBulkReleasePayment = React.useCallback(async () => {
     if (!selectedRequests || selectedRequests.length === 0) return;
     
     setIsLoading(true);
     const selectedRequestObjects = filteredRows.filter(row => selectedRequests.includes(row.id));
     
-    // Filter to only invoice_sent status requests
-    const invoiceSentRequests = selectedRequestObjects.filter(req => req.status === 'invoice_sent');
+    // Filter to invoice_sent or invoice_approved (Executive verified)
+    const invoiceSentRequests = selectedRequestObjects.filter(req => isInvoiceReleaseStatus(req.status));
     
     if (invoiceSentRequests.length === 0) {
-      toast.warning('Please select requests with "Invoice Received" status to release payment', {
+      toast.warning('Please select requests with "Invoice Received" or "Executive verified" status to release payment', {
         position: "top-right",
         autoClose: 5000,
         hideProgressBar: false,
@@ -1901,11 +1914,11 @@ export default function AreaHeadRequests() {
         // Selecting - check if this request is selectable based on user permissions
         let isSelectable = false;
         if (canManualApproval) {
-          // Users with manual_approval can select ceo_pending (if email not sent) and invoice_sent (always)
+          // Users with manual_approval can select ceo_pending (if email not sent) and invoice_sent / invoice_approved (always)
           if (request.status === 'ceo_pending') {
             isSelectable = request.is_email !== true;
-          } else if (request.status === 'invoice_sent') {
-            isSelectable = true; // invoice_sent can always be selected regardless of is_email
+          } else if (isInvoiceReleaseStatus(request.status)) {
+            isSelectable = true;
           }
         }
         if (canPaymentRelease) {
@@ -1927,7 +1940,7 @@ export default function AreaHeadRequests() {
           const existingStatus = selectedRequests[0]?.status;
           
           // Define status groups based on permissions
-          const manualApprovalStatuses = ['ceo_pending', 'invoice_sent'];
+          const manualApprovalStatuses = ['ceo_pending', 'invoice_sent', 'invoice_approved'];
           const paymentReleaseStatus = SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT;
           
           // Don't allow mixing manual approval statuses with payment release status
@@ -1966,12 +1979,12 @@ export default function AreaHeadRequests() {
     if (canManualApproval) {
       // Users with manual_approval can select:
       // - ceo_pending (only if email not sent, i.e., is_email !== true)
-      // - invoice_sent (always, regardless of is_email)
+      // - invoice_sent / invoice_approved (always, regardless of is_email)
       const ceoPendingRows = filteredRows
         .filter(row => row.status === 'ceo_pending' && row.is_email !== true)
         .map(row => row.id);
       const invoiceSentRows = filteredRows
-        .filter(row => row.status === 'invoice_sent')
+        .filter(row => isInvoiceReleaseStatus(row.status))
         .map(row => row.id);
       selectableRequests = [...selectableRequests, ...ceoPendingRows, ...invoiceSentRows];
     }
@@ -2168,6 +2181,39 @@ export default function AreaHeadRequests() {
       loadRequests();
     } catch (approveError) {
       toast.error(`Failed to approve request: ${approveError.message}`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setIsLoading(false);
+      setRequestToAction(null);
+    }
+  };
+
+  const confirmApproveInvoice = async () => {
+    if (!requestToAction) return;
+    if (canManualApproval) return;
+
+    setIsLoading(true);
+    setInvoiceApproveDialogOpen(false);
+
+    try {
+      await post(`/api/shopboard-requests/${requestToAction.id}/approve-invoice`);
+      toast.success(`Invoice for request #${requestToAction.id} approved successfully!`, {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      loadRequests();
+    } catch (approveError) {
+      toast.error(`Failed to approve invoice: ${approveError.message}`, {
         position: "top-right",
         autoClose: 5000,
         hideProgressBar: false,
@@ -2505,6 +2551,11 @@ export default function AreaHeadRequests() {
   // Cancel functions
   const cancelApprove = () => {
     setApproveDialogOpen(false);
+    setRequestToAction(null);
+  };
+
+  const cancelInvoiceApprove = () => {
+    setInvoiceApproveDialogOpen(false);
     setRequestToAction(null);
   };
 
@@ -4081,12 +4132,12 @@ export default function AreaHeadRequests() {
             if (canManualApproval) {
               // Users with manual_approval can select:
               // - ceo_pending (only if email not sent, i.e., is_email !== true)
-              // - invoice_sent (always, regardless of is_email)
+              // - invoice_sent / invoice_approved (always, regardless of is_email)
               const ceoPendingRows = filteredRows.filter(row => 
                 row.status === 'ceo_pending' && row.is_email !== true
               );
               const invoiceSentRows = filteredRows.filter(row => 
-                row.status === 'invoice_sent'
+                isInvoiceReleaseStatus(row.status)
               );
               selectableRows = [...ceoPendingRows, ...invoiceSentRows];
             }
@@ -4113,11 +4164,11 @@ export default function AreaHeadRequests() {
             if (canManualApproval) {
               // Users with manual_approval can select:
               // - ceo_pending (only if email not sent, i.e., is_email !== true)
-              // - invoice_sent (always, regardless of is_email)
+              // - invoice_sent / invoice_approved (always, regardless of is_email)
               if (params.row.status === 'ceo_pending') {
                 isSelectable = params.row.is_email !== true;
-              } else if (params.row.status === 'invoice_sent') {
-                isSelectable = true; // invoice_sent can always be selected
+              } else if (isInvoiceReleaseStatus(params.row.status)) {
+                isSelectable = true;
               }
             }
             if (canPaymentRelease) {
@@ -4325,6 +4376,9 @@ export default function AreaHeadRequests() {
           if (status === SHOPBOARD_REQUEST_STATUS.INVOICE_SENT) {
             displayStatus = 'Invoice Received';
           }
+          if (status === SHOPBOARD_REQUEST_STATUS.INVOICE_APPROVED) {
+            displayStatus = 'Executive verified';
+          }
           
           const statusColor = getStatusColorHelper(status);
           
@@ -4431,6 +4485,24 @@ export default function AreaHeadRequests() {
                 label="View Details"
                 onClick={() => handleViewDetails(row)}
                 color="info"
+              />
+            );
+          }
+
+          // Show Approve Invoice for invoice_sent (Invoice Received)
+          // Hidden for users with manual_approval permission
+          if (isInvoiceSent && canRead && !canManualApproval) {
+            actions.push(
+              <GridActionsCellItem
+                key="approveInvoice"
+                icon={
+                  <Tooltip title="Approve Invoice">
+                    <ApproveIcon sx={{ color: '#2e7d32' }} />
+                  </Tooltip>
+                }
+                label="Approve Invoice"
+                onClick={() => handleApproveInvoice(row)}
+                color="success"
               />
             );
           }
@@ -4798,7 +4870,7 @@ export default function AreaHeadRequests() {
 
     return baseColumns;
     },
-    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, canPaymentRelease, showSelectionColumn, selectedRequests, filteredRows, handleView, handleViewDetails, handleEdit, handleApprove, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleViewRejectionComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleViewManualApproval, handleViewInvoice, handleViewOldPurchases, handleSelectAll, handleSelectRequest, handleBulkReleasePayment, getVendorName],
+    [canApprove, canReject, canAssign, canUpdate, canRead, canAddComment, canPrint, canManualApproval, canApprovalAction, canPaymentRelease, showSelectionColumn, selectedRequests, filteredRows, handleView, handleViewDetails, handleEdit, handleApprove, handleApproveInvoice, handleReject, handleAssign, handleReviewAgain, handleViewComments, handleViewRejectionComments, handleSendToCEO, handleViewHistory, handleAddComment, handleViewMarketingComments, handleViewAndSendMessages, handlePrint, handleManualApproval, handleViewManualApproval, handleViewInvoice, handleViewOldPurchases, handleSelectAll, handleSelectRequest, handleBulkReleasePayment, getVendorName],
   );
 
   const pageTitle = 'Area Head Requests';
@@ -4861,7 +4933,7 @@ export default function AreaHeadRequests() {
           {(() => {
             const selectedRequestObjects = filteredRows.filter(row => selectedRequests.includes(row.id));
             const hasCeoPending = selectedRequestObjects.some(req => req.status === 'ceo_pending');
-            const hasInvoiceSent = selectedRequestObjects.some(req => req.status === 'invoice_sent');
+            const hasInvoiceSent = selectedRequestObjects.some(req => isInvoiceReleaseStatus(req.status));
             const hasSubmittedForPayment = selectedRequestObjects.some(req => req.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT);
             const hasMixedSelection = (hasCeoPending && hasInvoiceSent) || 
                                      (hasCeoPending && hasSubmittedForPayment) || 
@@ -4921,7 +4993,7 @@ export default function AreaHeadRequests() {
                     variant="contained"
                     color="success"
                     onClick={handleBulkReleasePayment}
-                    disabled={hasMixedSelection || hasCeoPending || hasSubmittedForPayment || isLoading || selectedRequestObjects.filter(req => req.status === 'invoice_sent').length === 0}
+                    disabled={hasMixedSelection || hasCeoPending || hasSubmittedForPayment || isLoading || selectedRequestObjects.filter(req => isInvoiceReleaseStatus(req.status)).length === 0}
                     sx={{ fontWeight: 'bold', textTransform: 'none' }}
                   >
                     {isLoading ? 'Processing...' : 'Release Payment'}
@@ -5252,6 +5324,62 @@ export default function AreaHeadRequests() {
           </Button>
           <Button 
             onClick={confirmApprove}
+            variant="contained"
+            color="success"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Approving...' : 'Approve'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Approve Invoice Confirmation Dialog (invoice_sent -> invoice_approved) */}
+      <Dialog
+        open={invoiceApproveDialogOpen}
+        onClose={cancelInvoiceApprove}
+        aria-labelledby="approve-invoice-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '400px',
+          }
+        }}
+      >
+        <DialogTitle
+          id="approve-invoice-dialog-title"
+          sx={{
+            color: 'success.main',
+            fontWeight: 'bold',
+          }}
+        >
+          Confirm Invoice Approval
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#333', mb: 2 }}>
+            Are you sure you want to approve the invoice for request <strong>#{requestToAction?.id}</strong>?
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#666' }}>
+            This will change the status from Invoice Received to Executive verified.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button
+            onClick={cancelInvoiceApprove}
+            variant="outlined"
+            sx={{
+              color: '#666',
+              borderColor: '#ddd',
+              '&:hover': {
+                borderColor: '#999',
+                backgroundColor: '#f5f5f5',
+              }
+            }}
+            disabled={isLoading}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={confirmApproveInvoice}
             variant="contained"
             color="success"
             disabled={isLoading}
@@ -7106,6 +7234,7 @@ export default function AreaHeadRequests() {
                     <Chip 
                       label={
                         selectedDetailedRequest.status === 'invoice_sent' ? 'Invoice Received' :
+                        selectedDetailedRequest.status === 'invoice_approved' ? 'Executive verified' :
                         selectedDetailedRequest.status || 'Not Decided'
                       } 
                       variant="filled" 
@@ -7117,6 +7246,7 @@ export default function AreaHeadRequests() {
                         selectedDetailedRequest.status === 'Rfq' ? 'info' :
                         selectedDetailedRequest.status === 'quotation sent' ? 'secondary' :
                         selectedDetailedRequest.status === 'invoice_sent' ? 'primary' :
+                        selectedDetailedRequest.status === 'invoice_approved' ? 'success' :
                         selectedDetailedRequest.status === 'payment_released' ? 'success' :
                         selectedDetailedRequest.status === 'ceo_pending' ? 'warning' :
                         selectedDetailedRequest.status === 'under_review' ? 'info' :

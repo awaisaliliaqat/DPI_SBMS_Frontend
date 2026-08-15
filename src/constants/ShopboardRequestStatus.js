@@ -35,6 +35,7 @@ export const SHOPBOARD_REQUEST_STATUS = {
   RFQ_REJECTED: 'rfq_rejected',
   VENDOR_REJECTED: 'vendor_rejected',
   VENDOR_RESUBMITTED: 'vendor_resubmitted',
+  INVOICE_APPROVED: 'invoice_approved',
 };
 
 // Display names mapping for each status
@@ -66,6 +67,7 @@ export const SHOPBOARD_REQUEST_STATUS_DISPLAY = {
   [SHOPBOARD_REQUEST_STATUS.RFQ_REJECTED]: 'RFQ Rejected',
   [SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED]: 'Vendor Rejected',
   [SHOPBOARD_REQUEST_STATUS.VENDOR_RESUBMITTED]: 'Vendor Resubmitted',
+  [SHOPBOARD_REQUEST_STATUS.INVOICE_APPROVED]: 'Executive verified',
 };
 
 // Helper function to get display name for a status
@@ -96,6 +98,8 @@ export const getStatusColor = (status) => {
     case SHOPBOARD_REQUEST_STATUS.INVOICE_SENT:
     case SHOPBOARD_REQUEST_STATUS.UNDER_REVIEW:
       return 'primary';
+    case SHOPBOARD_REQUEST_STATUS.INVOICE_APPROVED:
+      return 'success';
     case SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT:
       return 'info';
     case SHOPBOARD_REQUEST_STATUS.PAYMENT_RELEASED:
