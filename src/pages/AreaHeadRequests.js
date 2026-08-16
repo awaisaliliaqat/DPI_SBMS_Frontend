@@ -92,6 +92,20 @@ const isInvoiceReleaseStatus = (status) =>
 
 const isEnableQuantityFlag = (value) => value === true || value === 1 || value === '1' || value === 'true';
 
+// Backend columns (`width`, `height`, `price`, `price_per_square_foot` in
+// shopboard_request_items and its logs table) are DECIMAL(10, 2), so the
+// hard ceiling for any single value is 99,999,999.99. Anything larger
+// makes MSSQL throw error 8115 (arithmetic overflow) on insert/update.
+const DECIMAL_10_2_MAX = 99999999.99;
+
+const formatNumber = (value) => {
+  if (!Number.isFinite(value)) return String(value);
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
 const getQtyMultiplier = (item, requestType) => {
   if (!isEnableQuantityFlag(requestType?.enable_quantity)) return 1;
   const q = parseInt(item?.quantity, 10);
@@ -913,7 +927,7 @@ export default function AreaHeadRequests() {
           price_per_sqft: item.price_per_square_foot !== null && item.price_per_square_foot !== undefined
             ? String(item.price_per_square_foot)
             : '',
-          quantity: item.quantity != null && item.quantity !== '' ? String(item.quantity) : '1',
+          quantity: item.quantity != null && item.quantity !== '' ? String(item.quantity) : '',
         };
       });
 
@@ -2991,6 +3005,29 @@ export default function AreaHeadRequests() {
                 validationErrors.push(`Item ${index + 1}: Price per sqft must be greater than 0`);
               }
             }
+          }
+
+          // Guard against DECIMAL(10, 2) overflow in the DB. Every numeric
+          // column on shopboard_request_items caps at 99,999,999.99, so we
+          // check each input and the computed line total before submit.
+          const widthNum = parseFloat(item.width);
+          const heightNum = parseFloat(item.height);
+          const priceNum = parseFloat(item.price);
+          const pricePerSqftNum = parseFloat(item.price_per_sqft);
+
+          if (Number.isFinite(widthNum) && widthNum > DECIMAL_10_2_MAX) {
+            validationErrors.push(`Item ${index + 1}: Width is too large (max ${formatNumber(DECIMAL_10_2_MAX)})`);
+          }
+          if (Number.isFinite(heightNum) && heightNum > DECIMAL_10_2_MAX) {
+            validationErrors.push(`Item ${index + 1}: Height is too large (max ${formatNumber(DECIMAL_10_2_MAX)})`);
+          }
+          if (Number.isFinite(pricePerSqftNum) && pricePerSqftNum > DECIMAL_10_2_MAX) {
+            validationErrors.push(`Item ${index + 1}: Price per sqft is too large (max ${formatNumber(DECIMAL_10_2_MAX)})`);
+          }
+          if (Number.isFinite(priceNum) && priceNum > DECIMAL_10_2_MAX) {
+            validationErrors.push(
+              `Item ${index + 1}: Total price (₨${formatNumber(priceNum)}) exceeds the maximum allowed (₨${formatNumber(DECIMAL_10_2_MAX)}). Please reduce width, height, or price per sqft.`
+            );
           }
         }
       });
