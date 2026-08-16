@@ -893,7 +893,9 @@ export default function AreaHeadRequests() {
   }, [hasReadApprovedRequestPermission, fetchFullRequest]);
 
   const handleEdit = React.useCallback(async (requestData) => {
-    if (!canUpdate) return;
+    const canEditInvoiceStatuses =
+      canManualApproval && isInvoiceReleaseStatus(requestData?.status);
+    if (!canUpdate && !canEditInvoiceStatuses) return;
     setLoadingRequestDetails(true);
     try {
       // Edit modal: includeFiles=edit (site_photo, old_board_photo, vendor_quotation only; no survey_form)
@@ -947,7 +949,7 @@ export default function AreaHeadRequests() {
     } finally {
       setLoadingRequestDetails(false);
     }
-  }, [canUpdate, fetchFullRequest]);
+  }, [canUpdate, canManualApproval, fetchFullRequest]);
 
   const handleApprove = React.useCallback((requestData) => {
     if (!canApprove) return;
@@ -4625,8 +4627,15 @@ export default function AreaHeadRequests() {
             ? row.activeApprovals.some(ap => String(ap.user_id) === String(user?.id))
             : false;
 
-          // Show edit action for quotation sent OR (under_review and user is an active approver)
-          if (canUpdate && (row.status === 'quotation sent' || (row.status === 'under_review' && isUserInActiveApprovals))) {
+          // Show edit action for:
+          // - quotation sent, or under_review when the user is an active approver (update permission)
+          // - invoice_sent / invoice_approved for users with manual_approval
+          const canEditByUpdate =
+            canUpdate &&
+            (row.status === 'quotation sent' || (row.status === 'under_review' && isUserInActiveApprovals));
+          const canEditByManualApproval =
+            canManualApproval && isInvoiceReleaseStatus(row.status);
+          if (canEditByUpdate || canEditByManualApproval) {
             actions.push(
               <GridActionsCellItem
                 key="edit"
