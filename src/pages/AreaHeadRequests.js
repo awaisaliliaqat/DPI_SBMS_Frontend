@@ -26,6 +26,12 @@ import {
   FormControlLabel,
   FormControl,
   FormLabel,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
 } from '@mui/material';
 import CommentsDialog from '../components/CommentsDialog';
 import {
@@ -245,6 +251,13 @@ export default function AreaHeadRequests() {
   // View manual approval modal state
   const [viewManualApprovalModalOpen, setViewManualApprovalModalOpen] = React.useState(false);
   const [selectedManualApprovalRequest, setSelectedManualApprovalRequest] = React.useState(null);
+
+  // Bulk (multiple) manual approval modal state
+  const [bulkManualApprovalModalOpen, setBulkManualApprovalModalOpen] = React.useState(false);
+  const [bulkManualApprovalReason, setBulkManualApprovalReason] = React.useState('');
+  const [bulkManualApprovalFile, setBulkManualApprovalFile] = React.useState(null);
+  const [bulkManualApprovalLoading, setBulkManualApprovalLoading] = React.useState(false);
+  const [bulkManualApprovalRows, setBulkManualApprovalRows] = React.useState([]);
 
   // Selection state for manual approval
   const [selectedRequests, setSelectedRequests] = React.useState([]);
@@ -1327,6 +1340,93 @@ export default function AreaHeadRequests() {
       setManualApprovalLoading(false);
     }
   }, [selectedRequest, manualApprovalReason, manualApprovalFile, upload, loadRequests]);
+
+  const handleOpenBulkManualApproval = React.useCallback(() => {
+    if (!canManualApproval) return;
+
+    const rows = filteredRows.filter((row) => selectedRequests.includes(row.id));
+    const ceoPendingOnly = rows.filter((req) => req.status === 'ceo_pending');
+
+    if (ceoPendingOnly.length === 0) {
+      toast.warning('Please select requests with "CEO Pending" status to manually approve', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+
+    setBulkManualApprovalRows(ceoPendingOnly);
+    setBulkManualApprovalReason('');
+    setBulkManualApprovalFile(null);
+    setBulkManualApprovalModalOpen(true);
+  }, [canManualApproval, filteredRows, selectedRequests]);
+
+  const handleBulkManualApprovalSubmit = React.useCallback(async () => {
+    if (!bulkManualApprovalRows || bulkManualApprovalRows.length === 0) return;
+
+    if (!bulkManualApprovalReason || bulkManualApprovalReason.trim() === '') {
+      toast.error('Manual approval reason is required', {
+        position: 'top-right',
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
+
+    setBulkManualApprovalLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('requestIds', JSON.stringify(bulkManualApprovalRows.map((row) => row.id)));
+      formData.append('manual_approval_reason', bulkManualApprovalReason);
+      if (bulkManualApprovalFile) {
+        formData.append('manual_approval_file', bulkManualApprovalFile);
+      }
+
+      const response = await upload('/api/manual-approval-batches', formData);
+
+      if (response.success) {
+        toast.success(
+          `${response.data?.total_requests || bulkManualApprovalRows.length} request(s) manually approved (Batch ${response.data?.batch_number || ''})`,
+          {
+            position: 'top-right',
+            autoClose: 4000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          }
+        );
+
+        setBulkManualApprovalModalOpen(false);
+        setBulkManualApprovalReason('');
+        setBulkManualApprovalFile(null);
+        setBulkManualApprovalRows([]);
+        setSelectedRequests([]);
+        loadRequests();
+      } else {
+        throw new Error(response.message || 'Bulk manual approval failed');
+      }
+    } catch (error) {
+      console.error('Error submitting bulk manual approval:', error);
+      toast.error(`Failed to submit manual approval: ${error.message}`, {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setBulkManualApprovalLoading(false);
+    }
+  }, [bulkManualApprovalRows, bulkManualApprovalReason, bulkManualApprovalFile, upload, loadRequests]);
 
   // Bulk send to CEO handler
   const handleBulkSendToCEO = React.useCallback(async () => {
@@ -4991,6 +5091,24 @@ export default function AreaHeadRequests() {
                 {canManualApproval && (
                   <Button
                     variant="contained"
+                    color="warning"
+                    onClick={handleOpenBulkManualApproval}
+                    disabled={
+                      hasMixedSelection ||
+                      hasInvoiceSent ||
+                      hasSubmittedForPayment ||
+                      selectedRequestObjects.length === 0 ||
+                      selectedRequestObjects.some((req) => req.status !== 'ceo_pending')
+                    }
+                    startIcon={<ManualApprovalIcon />}
+                    sx={{ fontWeight: 'bold', textTransform: 'none' }}
+                  >
+                    Manual Approval
+                  </Button>
+                )}
+                {canManualApproval && (
+                  <Button
+                    variant="contained"
                     color="success"
                     onClick={handleBulkReleasePayment}
                     disabled={hasMixedSelection || hasCeoPending || hasSubmittedForPayment || isLoading || selectedRequestObjects.filter(req => isInvoiceReleaseStatus(req.status)).length === 0}
@@ -7418,6 +7536,150 @@ export default function AreaHeadRequests() {
         </DialogActions>
       </Dialog>
       
+      {/* Bulk (multiple) Manual Approval Modal */}
+      <Dialog
+        open={bulkManualApprovalModalOpen}
+        onClose={() => setBulkManualApprovalModalOpen(false)}
+        maxWidth="lg"
+        fullWidth
+        aria-labelledby="bulk-manual-approval-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            borderRadius: 2,
+            boxShadow: 6,
+          }
+        }}
+      >
+        <DialogTitle
+          id="bulk-manual-approval-dialog-title"
+          sx={{
+            color: 'warning.main',
+            fontWeight: 'bold',
+            borderBottom: '1px solid #eaeaea',
+            padding: '20px 24px 16px 24px'
+          }}
+        >
+          Manual Approval — {bulkManualApprovalRows.length} Request(s)
+        </DialogTitle>
+
+        <DialogContent sx={{ padding: '20px 24px' }}>
+          <TableContainer component={Paper} variant="outlined" sx={{ mb: 3, maxHeight: 360 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Request ID</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Dealer Name</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Vendor Name</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Created By</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Request Items</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }} align="right">Total Amount</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {bulkManualApprovalRows.map((row) => {
+                  const dealerLabel = row.is_manual_survey
+                    ? `${row.dealer_code_temp || row.dealer?.name || 'Untitled'} (manual survey)`
+                    : (row.dealer?.name || 'N/A');
+                  const itemsLabel = (row.requestItems || [])
+                    .map((item) => {
+                      const qty = item.quantity && item.quantity > 1 ? ` x${item.quantity}` : '';
+                      return `${item.requestType?.name || 'N/A'} (${item.width || '-'} x ${item.height || '-'})${qty}`;
+                    })
+                    .join(', ');
+
+                  return (
+                    <TableRow key={row.id} hover>
+                      <TableCell>{row.id}</TableCell>
+                      <TableCell>{dealerLabel}</TableCell>
+                      <TableCell>{row.vendor?.card_name || row.vendor_name || row.vendor_code || 'N/A'}</TableCell>
+                      <TableCell>{getShopboardCreatedByDisplay(row)}</TableCell>
+                      <TableCell sx={{ maxWidth: 320 }}>
+                        <Typography variant="body2" sx={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                          {itemsLabel || 'N/A'}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        Rs. {Number(row.total_cost || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+
+          <Box sx={{ mb: 3, display: 'flex', justifyContent: 'flex-end' }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+              Grand Total: Rs.{' '}
+              {bulkManualApprovalRows
+                .reduce((sum, row) => sum + (parseFloat(row.total_cost) || 0), 0)
+                .toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Typography>
+          </Box>
+
+          <TextField
+            fullWidth
+            multiline
+            rows={4}
+            label="Reason for Manual Approval *"
+            value={bulkManualApprovalReason}
+            onChange={(e) => setBulkManualApprovalReason(e.target.value)}
+            placeholder="Enter the reason for manual approval (applies to all selected requests)..."
+            sx={{ mb: 3 }}
+            required
+            error={!bulkManualApprovalReason || bulkManualApprovalReason.trim() === ''}
+            helperText={(!bulkManualApprovalReason || bulkManualApprovalReason.trim() === '') ? 'Reason for manual approval is required' : ''}
+          />
+
+          <Box sx={{ mb: 1 }}>
+            <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
+              Upload File (Optional)
+            </Typography>
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+              onChange={(e) => setBulkManualApprovalFile(e.target.files[0] || null)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                fontSize: '14px'
+              }}
+            />
+            {bulkManualApprovalFile && (
+              <Typography variant="caption" color="success.main" sx={{ mt: 1, display: 'block' }}>
+                File selected: {bulkManualApprovalFile.name}
+              </Typography>
+            )}
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+              The signed form can also be uploaded later from the Manual Approvals page.
+            </Typography>
+          </Box>
+        </DialogContent>
+
+        <DialogActions sx={{ padding: '16px 24px 20px 24px', gap: 1 }}>
+          <Button
+            onClick={() => setBulkManualApprovalModalOpen(false)}
+            variant="outlined"
+            color="secondary"
+            disabled={bulkManualApprovalLoading}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleBulkManualApprovalSubmit}
+            variant="contained"
+            color="success"
+            disabled={bulkManualApprovalLoading || !bulkManualApprovalReason || bulkManualApprovalReason.trim() === ''}
+            sx={{ minWidth: '160px', fontWeight: 'bold' }}
+          >
+            {bulkManualApprovalLoading ? 'Approving...' : `Approve ${bulkManualApprovalRows.length} Request(s)`}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* View Manual Approval Modal */}
       <Dialog
         open={viewManualApprovalModalOpen}
@@ -7471,12 +7733,13 @@ export default function AreaHeadRequests() {
                 </Typography>
               </Paper>
 
-              {/* Manual Approval File from DB (manual_approval_files) */}
-              {selectedManualApprovalRequest.manual_approval_files?.length > 0 && (
-                <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: '#ff9800' }}>
-                    Uploaded File
-                  </Typography>
+              {/* Manual approval form: the request's own file, or the shared batch form */}
+              <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: '#ff9800' }}>
+                  Manual Approval Form
+                </Typography>
+
+                {selectedManualApprovalRequest.manual_approval_files?.length > 0 ? (
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                     {selectedManualApprovalRequest.manual_approval_files.map((file, idx) => (
                       <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -7484,6 +7747,14 @@ export default function AreaHeadRequests() {
                           File:
                         </Typography>
                         <Typography variant="body2">{file.fileName || 'N/A'}</Typography>
+                        {file.isBatchForm && (
+                          <Chip
+                            label={file.batchNumber ? `Batch ${file.batchNumber}` : 'Batch form'}
+                            size="small"
+                            color="info"
+                            variant="outlined"
+                          />
+                        )}
                         <Button
                           variant="contained"
                           color="primary"
@@ -7497,8 +7768,15 @@ export default function AreaHeadRequests() {
                       </Box>
                     ))}
                   </Box>
-                </Paper>
-              )}
+                ) : (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                    <Chip label="Pending" color="warning" size="small" />
+                    <Typography variant="body2" color="text.secondary">
+                      No signed form has been uploaded for this request yet.
+                    </Typography>
+                  </Box>
+                )}
+              </Paper>
             </Box>
           )}
         </DialogContent>

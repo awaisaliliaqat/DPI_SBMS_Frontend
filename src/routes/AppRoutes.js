@@ -19,6 +19,7 @@ import BudgetManagement from '../pages/BudgetManagement';
 import Payments from '../pages/Payments';
 import SmtpSettings from '../pages/SmtpSettings';
 import PaymentBatch from '../pages/PaymentBatch';
+import ManualApprovalBatches from '../pages/ManualApprovalBatches';
 import SalesHeadManagement from '../pages/SalesHeadManagement';
 import CustomSubDealers from '../pages/CustomSubDealers';
 import ManualSurvey from '../pages/ManualSurvey';
@@ -84,6 +85,7 @@ const AppRoutesContent = () => {
         <Route path="payments" element={<Payments />} />
         <Route path="smtp-settings" element={<SmtpSettings />} />
         <Route path="payment-batch" element={<PaymentBatch />} />
+        <Route path="manual-approvals" element={<ManualApprovalBatches />} />
         <Route path="sales-head-management" element={<SalesHeadManagement />} />
         <Route path="custom-sub-dealers" element={<CustomSubDealers />} />
         <Route path="manual-survey" element={<ManualSurvey />} />

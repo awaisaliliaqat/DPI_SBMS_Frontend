@@ -90,6 +90,12 @@ export const NAVIGATION_CONFIG = {
     icon: '📝',
     requiredPermission: 'read'
   },
+  manualApprovalBatch: {
+    displayName: 'Manual Approvals',
+    routerLink: '/manual-approvals',
+    icon: '🗂️',
+    requiredPermission: 'read'
+  },
   // dashboard: {
   //   displayName: 'Dashboard',
   //   routerLink: '/dashboard',
