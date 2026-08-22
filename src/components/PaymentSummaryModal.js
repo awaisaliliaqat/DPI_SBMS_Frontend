@@ -12,6 +12,8 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  FormControlLabel,
+  Switch,
 } from '@mui/material';
 import { Download as DownloadIcon } from '@mui/icons-material';
 import { useApi } from '../hooks/useApi';
@@ -24,7 +26,14 @@ const PaymentSummaryModal = ({
   isLoading = false,
 }) => {
   const [downloading, setDownloading] = React.useState(false);
+  const [applySalesTax, setApplySalesTax] = React.useState(false);
   const { request } = useApi();
+
+  React.useEffect(() => {
+    if (open) {
+      setApplySalesTax(false);
+    }
+  }, [open]);
 
   const handleDownload = React.useCallback(async () => {
     if (!paymentSummaryData || !paymentSummaryData.requestIds || paymentSummaryData.requestIds.length === 0) {
@@ -38,7 +47,8 @@ const PaymentSummaryModal = ({
       const response = await request('/api/shopboard-requests/generate-payment-summary-excel', {
         method: 'POST',
         data: {
-          requestIds: paymentSummaryData.requestIds || []
+          requestIds: paymentSummaryData.requestIds || [],
+          applySalesTax,
         },
         responseType: 'blob', // Important: tell apiService to expect a blob response
         headers: {
@@ -61,7 +71,7 @@ const PaymentSummaryModal = ({
     } finally {
       setDownloading(false);
     }
-  }, [paymentSummaryData, request]);
+  }, [paymentSummaryData, request, applySalesTax]);
 
   return (
     <Dialog
@@ -111,6 +121,41 @@ const PaymentSummaryModal = ({
               <Typography variant="body2" sx={{ mt: 1, color: '#666' }}>
                 {paymentSummaryData.invoiceDetails.length} invoice(s) selected
               </Typography>
+            </Box>
+
+            <Box
+              sx={{
+                mb: 3,
+                p: 2,
+                border: '1px solid #e0e0e0',
+                borderRadius: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 2,
+              }}
+            >
+              <Box>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#1a237e' }}>
+                  Apply Sales Tax
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#666' }}>
+                  When enabled, Excel Sale Tax is filled from the active sales_tax rate (currently 18% of total cost).
+                </Typography>
+              </Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={applySalesTax}
+                    onChange={(e) => setApplySalesTax(e.target.checked)}
+                    color="success"
+                    disabled={isLoading || downloading}
+                  />
+                }
+                label={applySalesTax ? 'Enabled' : 'Disabled'}
+                labelPlacement="start"
+                sx={{ m: 0 }}
+              />
             </Box>
 
             {/* Individual Invoice Details */}
@@ -210,4 +255,3 @@ const PaymentSummaryModal = ({
 };
 
 export default PaymentSummaryModal;
-
