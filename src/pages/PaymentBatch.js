@@ -15,10 +15,14 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  TextField,
 } from '@mui/material';
 import {
   Visibility as VisibilityIcon,
   Download as DownloadIcon,
+  CheckCircle as CompleteIcon,
+  Cancel as RejectIcon,
+  Payment as PaymentIcon,
 } from '@mui/icons-material';
 import { GridActionsCellItem } from '@mui/x-data-grid';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -30,6 +34,17 @@ import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
 
 const INITIAL_PAGE_SIZE = 10;
+
+const isVoucherSentStatus = (status) =>
+  String(status || '').trim().toLowerCase() === 'voucher sent';
+
+const getBatchStatusColor = (status) => {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'voucher sent') return 'warning';
+  if (normalized === 'payment successful') return 'success';
+  if (normalized === 'rejected') return 'error';
+  return 'default';
+};
 
 export default function PaymentBatch() {
   const { pathname } = useLocation();
@@ -56,7 +71,9 @@ export default function PaymentBatch() {
   const [batchDetails, setBatchDetails] = React.useState(null);
   const [loadingDetails, setLoadingDetails] = React.useState(false);
   const [downloading, setDownloading] = React.useState(false);
-  
+  const [actionLoading, setActionLoading] = React.useState(false);
+  const [confirmDialog, setConfirmDialog] = React.useState(null);
+  const [rejectComment, setRejectComment] = React.useState('');
 
   // Table state management
   const [paginationModel, setPaginationModel] = React.useState({
@@ -191,14 +208,14 @@ export default function PaymentBatch() {
 
   // Helper function to get vendor name
   const getVendorName = React.useCallback((request) => {
-    if (request.vendor && request.vendor.card_name) {
-      return request.vendor.card_name;
+    if (request?.vendor && (request.vendor.card_name || request.vendor.username)) {
+      return request.vendor.card_name || request.vendor.username;
     }
-    if (request.vendor_name) {
+    if (request?.vendor_name) {
       return request.vendor_name;
     }
-    if (request.vendor_code) {
-      return 'Not Assigned';
+    if (request?.vendor_code) {
+      return String(request.vendor_code);
     }
     return 'Not Assigned';
   }, []);
@@ -241,6 +258,97 @@ export default function PaymentBatch() {
       loadPaymentBatches();
     }
   }, [isLoading, loadPaymentBatches, canRead]);
+
+  const handleCompleteBatch = React.useCallback(async (batchId, batchNumber) => {
+    setActionLoading(true);
+    try {
+      const response = await post(`/api/payment-batches/${batchId}/complete`, {});
+      if (response.success) {
+        toast.success(response.message || `Batch ${batchNumber} completed`, {
+          position: 'top-right',
+          autoClose: 3000,
+        });
+        setViewModalOpen(false);
+        setSelectedBatch(null);
+        setBatchDetails(null);
+        loadPaymentBatches();
+      } else {
+        throw new Error(response.message || 'Failed to complete batch');
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to complete batch', {
+        position: 'top-right',
+        autoClose: 5000,
+      });
+    } finally {
+      setActionLoading(false);
+      setConfirmDialog(null);
+    }
+  }, [post, loadPaymentBatches]);
+
+  const handleRejectBatch = React.useCallback(async (batchId, batchNumber, comment) => {
+    setActionLoading(true);
+    try {
+      const response = await post(`/api/payment-batches/${batchId}/reject`, { comment });
+      if (response.success) {
+        toast.success(response.message || `Batch ${batchNumber} rejected`, {
+          position: 'top-right',
+          autoClose: 3000,
+        });
+        setViewModalOpen(false);
+        setSelectedBatch(null);
+        setBatchDetails(null);
+        loadPaymentBatches();
+      } else {
+        throw new Error(response.message || 'Failed to reject batch');
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to reject batch', {
+        position: 'top-right',
+        autoClose: 5000,
+      });
+    } finally {
+      setActionLoading(false);
+      setConfirmDialog(null);
+      setRejectComment('');
+    }
+  }, [post, loadPaymentBatches]);
+
+  const handleRejectBatchItem = React.useCallback(async (batchId, requestId, comment) => {
+    setActionLoading(true);
+    try {
+      const response = await post(`/api/payment-batches/${batchId}/items/${requestId}/reject`, { comment });
+      if (response.success) {
+        toast.success(response.message || `Request #${requestId} rejected`, {
+          position: 'top-right',
+          autoClose: 3000,
+        });
+        await fetchBatchDetails(batchId);
+        loadPaymentBatches();
+        if (response.data?.remainingRequests === 0) {
+          setViewModalOpen(false);
+          setSelectedBatch(null);
+          setBatchDetails(null);
+        }
+      } else {
+        throw new Error(response.message || 'Failed to reject request');
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to reject request', {
+        position: 'top-right',
+        autoClose: 5000,
+      });
+    } finally {
+      setActionLoading(false);
+      setConfirmDialog(null);
+      setRejectComment('');
+    }
+  }, [post, fetchBatchDetails, loadPaymentBatches]);
+
+  const openConfirmDialog = React.useCallback((config) => {
+    setRejectComment('');
+    setConfirmDialog(config);
+  }, []);
 
   const handleRowClick = React.useCallback(
     ({ row }) => {
@@ -300,6 +408,21 @@ export default function PaymentBatch() {
         ),
       },
       {
+        field: 'vendor_names',
+        headerName: 'Vendor Name',
+        minWidth: 200,
+        flex: 1,
+        align: 'left',
+        headerAlign: 'left',
+        renderCell: (params) => (
+          <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+            <Typography variant="body2" sx={{ whiteSpace: 'normal', lineHeight: 1.4 }}>
+              {params.value || 'Not Assigned'}
+            </Typography>
+          </Box>
+        ),
+      },
+      {
         field: 'status',
         headerName: 'Status',
         width: 150,
@@ -311,7 +434,7 @@ export default function PaymentBatch() {
               label={params.value || 'N/A'} 
               variant="filled" 
               size="small"
-              color="success"
+              color={getBatchStatusColor(params.value)}
             />
           </Box>
         ),
@@ -397,14 +520,14 @@ export default function PaymentBatch() {
         field: 'actions',
         type: 'actions',
         headerName: 'Actions',
-        width: 100,
+        width: 220,
         align: 'left',
         headerAlign: 'left',
         getActions: (params) => {
           const row = params.row;
           const actions = [];
+          const voucherSent = isVoucherSentStatus(row.status);
           
-          // View action only - no delete option as payment processing is irreversible
           if (canRead) {
             actions.push(
               <GridActionsCellItem
@@ -416,12 +539,45 @@ export default function PaymentBatch() {
               />
             );
           }
+
+          if (canRead && voucherSent) {
+            actions.push(
+              <GridActionsCellItem
+                key="complete"
+                icon={<Tooltip title="Complete Batch"><CompleteIcon sx={{ color: '#2e7d32' }} /></Tooltip>}
+                label="Complete Batch"
+                onClick={() => openConfirmDialog({
+                  type: 'complete-batch',
+                  batchId: row.id,
+                  batchNumber: row.batch_number,
+                  title: 'Complete Batch',
+                  message: `Mark all requests in batch ${row.batch_number} as Payment Successful?`,
+                })}
+                color="success"
+              />
+            );
+            actions.push(
+              <GridActionsCellItem
+                key="reject-batch"
+                icon={<Tooltip title="Reject Batch"><RejectIcon sx={{ color: '#d32f2f' }} /></Tooltip>}
+                label="Reject Batch"
+                onClick={() => openConfirmDialog({
+                  type: 'reject-batch',
+                  batchId: row.id,
+                  batchNumber: row.batch_number,
+                  title: 'Reject Batch',
+                  message: `Reject batch ${row.batch_number} and mark all requests as Finance Rejected?`,
+                })}
+                color="error"
+              />
+            );
+          }
           
           return actions;
         },
       },
     ],
-    [canRead, handleView],
+    [canRead, handleView, openConfirmDialog],
   );
 
   const pageTitle = 'Payment Batch';
@@ -590,12 +746,18 @@ export default function PaymentBatch() {
                       <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Invoice No.</TableCell>
                       <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Invoice Date</TableCell>
                       <TableCell align="right" sx={{ fontWeight: 'bold', color: '#666' }}>Amount</TableCell>
+                      {isVoucherSentStatus(batchDetails.status) && (
+                        <TableCell align="center" sx={{ fontWeight: 'bold', color: '#666' }}>Actions</TableCell>
+                      )}
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {batchDetails.items && batchDetails.items.length > 0 ? (
                       batchDetails.items.map((item) => {
                         const request = item.request;
+                        const canRejectItem =
+                          isVoucherSentStatus(batchDetails.status) &&
+                          request?.status === 'voucher_sent';
                         return (
                           <TableRow 
                             key={item.id}
@@ -613,7 +775,14 @@ export default function PaymentBatch() {
                               </Typography>
                             </TableCell>
                             <TableCell>
-                              {request ? getVendorName(request) : 'N/A'}
+                              <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                {request ? getVendorName(request) : 'N/A'}
+                              </Typography>
+                              {request?.vendor_code && (
+                                <Typography variant="caption" sx={{ color: '#666' }}>
+                                  {request.vendor?.username || String(request.vendor_code)}
+                                </Typography>
+                              )}
                             </TableCell>
                             <TableCell>
                               {request?.invoice_number || 'N/A'}
@@ -630,12 +799,37 @@ export default function PaymentBatch() {
                             <TableCell align="right" sx={{ fontWeight: 600, color: '#2e7d32' }}>
                               Rs {parseFloat(item.amount || request?.total_cost || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </TableCell>
+                            {isVoucherSentStatus(batchDetails.status) && (
+                              <TableCell align="center">
+                                {canRejectItem ? (
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="error"
+                                    disabled={actionLoading}
+                                    onClick={() => openConfirmDialog({
+                                      type: 'reject-item',
+                                      batchId: batchDetails.id,
+                                      requestId: request?.id || item.request_id,
+                                      title: 'Reject Request',
+                                      message: `Reject request #${request?.id || item.request_id} and mark it as Finance Rejected?`,
+                                    })}
+                                  >
+                                    Reject
+                                  </Button>
+                                ) : (
+                                  <Typography variant="caption" sx={{ color: '#999' }}>
+                                    —
+                                  </Typography>
+                                )}
+                              </TableCell>
+                            )}
                           </TableRow>
                         );
                       })
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
+                        <TableCell colSpan={isVoucherSentStatus(batchDetails.status) ? 7 : 6} align="center" sx={{ py: 3 }}>
                           <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
                             No requests found in this batch
                           </Typography>
@@ -654,7 +848,42 @@ export default function PaymentBatch() {
             </Box>
           )}
         </DialogContent>
-        <DialogActions sx={{ padding: '16px 24px 20px 24px', gap: 1 }}>
+        <DialogActions sx={{ padding: '16px 24px 20px 24px', gap: 1, flexWrap: 'wrap' }}>
+          {batchDetails && isVoucherSentStatus(batchDetails.status) && (
+            <>
+              <Button
+                onClick={() => openConfirmDialog({
+                  type: 'reject-batch',
+                  batchId: batchDetails.id,
+                  batchNumber: batchDetails.batch_number,
+                  title: 'Reject Batch',
+                  message: `Reject batch ${batchDetails.batch_number} and mark all requests as Finance Rejected?`,
+                })}
+                variant="outlined"
+                color="error"
+                disabled={actionLoading || !batchDetails.items?.length}
+                startIcon={<RejectIcon />}
+              >
+                Reject Batch
+              </Button>
+              <Button
+                onClick={() => openConfirmDialog({
+                  type: 'complete-batch',
+                  batchId: batchDetails.id,
+                  batchNumber: batchDetails.batch_number,
+                  title: 'Process Payment',
+                  message: `Mark all ${batchDetails.items?.length || 0} request(s) in this batch as Payment Successful?`,
+                })}
+                variant="contained"
+                color="success"
+                disabled={actionLoading || !batchDetails.items?.length}
+                startIcon={<PaymentIcon />}
+                sx={{ fontWeight: 'bold' }}
+              >
+                Process Payment
+              </Button>
+            </>
+          )}
           <Button
             onClick={async () => {
               if (!selectedBatch?.id) return;
@@ -717,6 +946,79 @@ export default function PaymentBatch() {
             color="secondary"
           >
             Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Confirm action dialog */}
+      <Dialog
+        open={Boolean(confirmDialog)}
+        onClose={() => {
+          if (!actionLoading) {
+            setConfirmDialog(null);
+            setRejectComment('');
+          }
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 'bold' }}>
+          {confirmDialog?.title}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" sx={{ mb: confirmDialog?.type === 'reject-batch' || confirmDialog?.type === 'reject-item' ? 2 : 0 }}>
+            {confirmDialog?.message}
+          </Typography>
+          {(confirmDialog?.type === 'reject-batch' || confirmDialog?.type === 'reject-item') && (
+            <TextField
+              fullWidth
+              multiline
+              rows={4}
+              required
+              label="Rejection Comment"
+              placeholder="Provide a reason for finance rejection..."
+              value={rejectComment}
+              onChange={(e) => setRejectComment(e.target.value)}
+              error={rejectComment.trim() === '' && rejectComment.length > 0}
+              helperText="Comment is required"
+            />
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => {
+              setConfirmDialog(null);
+              setRejectComment('');
+            }}
+            disabled={actionLoading}
+            color="secondary"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              if (!confirmDialog) return;
+              const trimmedComment = rejectComment.trim();
+              if ((confirmDialog.type === 'reject-batch' || confirmDialog.type === 'reject-item') && !trimmedComment) {
+                toast.error('Rejection comment is required', { position: 'top-right', autoClose: 3000 });
+                return;
+              }
+              if (confirmDialog.type === 'complete-batch') {
+                handleCompleteBatch(confirmDialog.batchId, confirmDialog.batchNumber);
+              } else if (confirmDialog.type === 'reject-batch') {
+                handleRejectBatch(confirmDialog.batchId, confirmDialog.batchNumber, trimmedComment);
+              } else if (confirmDialog.type === 'reject-item') {
+                handleRejectBatchItem(confirmDialog.batchId, confirmDialog.requestId, trimmedComment);
+              }
+            }}
+            disabled={
+              actionLoading ||
+              ((confirmDialog?.type === 'reject-batch' || confirmDialog?.type === 'reject-item') && !rejectComment.trim())
+            }
+            color={confirmDialog?.type === 'reject-batch' || confirmDialog?.type === 'reject-item' ? 'error' : 'success'}
+            variant="contained"
+          >
+            {actionLoading ? 'Processing...' : 'Confirm'}
           </Button>
         </DialogActions>
       </Dialog>
