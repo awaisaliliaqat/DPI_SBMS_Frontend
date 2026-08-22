@@ -1201,17 +1201,30 @@ export default function AreaHeadRequests() {
     setOldPurchasesModalOpen(true);
   }, [canRead]);
 
-  // Open payment summary modal for selected "Submitted for Payment" requests
+  const isProcessPaymentStatus = React.useCallback((status) => {
+    if (canPaymentRelease && status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT) {
+      return true;
+    }
+    if (canManualApproval && isInvoiceReleaseStatus(status)) {
+      return true;
+    }
+    return false;
+  }, [canPaymentRelease, canManualApproval]);
+
+  // Open payment summary modal for processable statuses
+  // payment_release: Submitted for Payment
+  // manual_approval: Invoice Received / Executive verified
   const handleOpenPaymentSummary = React.useCallback(() => {
-    if (!canPaymentRelease || !selectedRequests || selectedRequests.length === 0) return;
+    if ((!canPaymentRelease && !canManualApproval) || !selectedRequests || selectedRequests.length === 0) return;
     
     const selectedRequestObjects = filteredRows.filter(row => selectedRequests.includes(row.id));
-    const submittedForPaymentRequests = selectedRequestObjects.filter(
-      req => req.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT
-    );
+    const processableRequests = selectedRequestObjects.filter(req => isProcessPaymentStatus(req.status));
     
-    if (submittedForPaymentRequests.length === 0) {
-      toast.warning('Please select requests with "Submitted for Payment" status', {
+    if (processableRequests.length === 0) {
+      const allowedLabels = [];
+      if (canPaymentRelease) allowedLabels.push('"Submitted for Payment"');
+      if (canManualApproval) allowedLabels.push('"Invoice Received" or "Executive verified"');
+      toast.warning(`Please select requests with ${allowedLabels.join(' or ')} status`, {
         position: "top-right",
         autoClose: 5000,
         hideProgressBar: false,
@@ -1223,12 +1236,12 @@ export default function AreaHeadRequests() {
     }
     
     // Calculate total and prepare individual invoice data
-    const totalAmount = submittedForPaymentRequests.reduce((sum, req) => {
+    const totalAmount = processableRequests.reduce((sum, req) => {
       const cost = parseFloat(req.total_cost) || 0;
       return sum + cost;
     }, 0);
     
-    const invoiceDetails = submittedForPaymentRequests.map(req => ({
+    const invoiceDetails = processableRequests.map(req => ({
       id: req.id,
       dealerName: req.dealer?.name || 'N/A',
       dealerCode: req.dealer?.code || 'N/A',
@@ -1242,11 +1255,11 @@ export default function AreaHeadRequests() {
     setPaymentSummaryData({
       totalAmount,
       invoiceDetails,
-      requestIds: submittedForPaymentRequests.map(req => req.id),
-      fullRequestsData: submittedForPaymentRequests, // Include full request data for Excel generation
+      requestIds: processableRequests.map(req => req.id),
+      fullRequestsData: processableRequests, // Include full request data for Excel generation
     });
     setPaymentSummaryModalOpen(true);
-  }, [canPaymentRelease, selectedRequests, filteredRows, getVendorName]);
+  }, [canPaymentRelease, canManualApproval, selectedRequests, filteredRows, getVendorName, isProcessPaymentStatus]);
 
   const handleConfirmRejectInvoice = React.useCallback(async (comment) => {
     if (!rejectInvoiceTarget) return;
@@ -5152,23 +5165,13 @@ export default function AreaHeadRequests() {
                     Manual Approval
                   </Button>
                 )}
-                {canManualApproval && (
-                  <Button
-                    variant="contained"
-                    color="success"
-                    onClick={handleBulkReleasePayment}
-                    disabled={hasMixedSelection || hasCeoPending || hasSubmittedForPayment || isLoading || selectedRequestObjects.filter(req => isInvoiceReleaseStatus(req.status)).length === 0}
-                    sx={{ fontWeight: 'bold', textTransform: 'none' }}
-                  >
-                    {isLoading ? 'Processing...' : 'Release Payment'}
-                  </Button>
-                )}
-                {canPaymentRelease && (
+                {/* Release Payment hidden for now (manual_approval users use Process Payment instead) */}
+                {(canPaymentRelease || canManualApproval) && (
                   <Button
                     variant="contained"
                     color="success"
                     onClick={handleOpenPaymentSummary}
-                    disabled={hasMixedSelection || hasCeoPending || hasInvoiceSent || isLoading || selectedRequestObjects.filter(req => req.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT).length === 0}
+                    disabled={hasMixedSelection || hasCeoPending || isLoading || selectedRequestObjects.filter(req => isProcessPaymentStatus(req.status)).length === 0}
                     sx={{ fontWeight: 'bold', textTransform: 'none' }}
                     startIcon={<PaymentIcon />}
                   >
