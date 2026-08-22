@@ -1963,7 +1963,7 @@ export default function AreaHeadRequests() {
   }, [selectedRequests, filteredRows, post, loadRequests]);
 
   // Process payment (update status to payment_successful) - called from payment summary modal
-  const handleProcessPayment = React.useCallback(async () => {
+  const handleProcessPayment = React.useCallback(async (applySalesTax = false) => {
     if (!paymentSummaryData || !paymentSummaryData.requestIds || paymentSummaryData.requestIds.length === 0) {
       return;
     }
@@ -1975,7 +1975,8 @@ export default function AreaHeadRequests() {
       const paymentDate = new Date().toISOString();
       const response = await post('/api/shopboard-requests/batch-payment', {
         requestIds: paymentSummaryData.requestIds,
-        payment_date: paymentDate
+        payment_date: paymentDate,
+        applySalesTax: !!applySalesTax,
       });
       
       if (response.success) {

@@ -140,7 +140,7 @@ const PaymentSummaryModal = ({
                   Apply Sales Tax
                 </Typography>
                 <Typography variant="body2" sx={{ color: '#666' }}>
-                  When enabled, Excel Sale Tax is filled from the active sales_tax rate (currently 18% of total cost).
+                  When enabled, sales tax is saved on payment and included in the Excel export (18% of total cost).
                 </Typography>
               </Box>
               <FormControlLabel
@@ -238,7 +238,7 @@ const PaymentSummaryModal = ({
           {downloading ? 'Downloading...' : 'Download Excel'}
         </Button>
         <Button
-          onClick={onProcessPayment}
+          onClick={() => onProcessPayment(applySalesTax)}
           variant="contained"
           color="success"
           disabled={isLoading || downloading}
