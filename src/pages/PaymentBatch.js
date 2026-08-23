@@ -95,6 +95,7 @@ export default function PaymentBatch() {
 
   // Check user permissions
   const canRead = user?.permissions?.paymentBatch?.includes('read') || false;
+  const canCreate = user?.permissions?.paymentBatch?.includes('create') || false;
 
   const { get, post } = useApi();
   const [rowsState, setRowsState] = React.useState({
@@ -315,6 +316,10 @@ export default function PaymentBatch() {
   }, [isLoading, loadPaymentBatches, canRead]);
 
   const handleCompleteBatch = React.useCallback(async (batchId, batchNumber) => {
+    if (!canCreate) {
+      toast.error('You do not have permission to process payment batches', { position: 'top-right', autoClose: 3000 });
+      return;
+    }
     setActionLoading(true);
     try {
       const response = await post(`/api/payment-batches/${batchId}/complete`, {});
@@ -339,9 +344,13 @@ export default function PaymentBatch() {
       setActionLoading(false);
       setConfirmDialog(null);
     }
-  }, [post, loadPaymentBatches]);
+  }, [canCreate, post, loadPaymentBatches]);
 
   const handleRejectBatch = React.useCallback(async (batchId, batchNumber, comment) => {
+    if (!canCreate) {
+      toast.error('You do not have permission to reject payment batches', { position: 'top-right', autoClose: 3000 });
+      return;
+    }
     setActionLoading(true);
     try {
       const response = await post(`/api/payment-batches/${batchId}/reject`, { comment });
@@ -367,9 +376,13 @@ export default function PaymentBatch() {
       setConfirmDialog(null);
       setRejectComment('');
     }
-  }, [post, loadPaymentBatches]);
+  }, [canCreate, post, loadPaymentBatches]);
 
   const handleRejectBatchItem = React.useCallback(async (batchId, requestId, comment) => {
+    if (!canCreate) {
+      toast.error('You do not have permission to reject payment batch items', { position: 'top-right', autoClose: 3000 });
+      return;
+    }
     setActionLoading(true);
     try {
       const response = await post(`/api/payment-batches/${batchId}/items/${requestId}/reject`, { comment });
@@ -398,7 +411,7 @@ export default function PaymentBatch() {
       setConfirmDialog(null);
       setRejectComment('');
     }
-  }, [post, fetchBatchDetails, loadPaymentBatches]);
+  }, [canCreate, post, fetchBatchDetails, loadPaymentBatches]);
 
   const openConfirmDialog = React.useCallback((config) => {
     setRejectComment('');
@@ -835,7 +848,7 @@ window.populateRequestTemplate=populateTemplate;
             );
           }
 
-          if (canRead && voucherSent) {
+          if (canCreate && voucherSent) {
             actions.push(
               <GridActionsCellItem
                 key="complete"
@@ -872,7 +885,7 @@ window.populateRequestTemplate=populateTemplate;
         },
       },
     ],
-    [canRead, handleView, openConfirmDialog],
+    [canRead, canCreate, handleView, openConfirmDialog],
   );
 
   const pageTitle = 'Payment Batch';
@@ -1053,6 +1066,7 @@ window.populateRequestTemplate=populateTemplate;
                       batchDetails.items.map((item) => {
                         const request = item.request;
                         const canRejectItem =
+                          canCreate &&
                           isVoucherSentStatus(batchDetails.status) &&
                           request?.status === 'voucher_sent';
                         return (
@@ -1181,7 +1195,7 @@ window.populateRequestTemplate=populateTemplate;
           )}
         </DialogContent>
         <DialogActions sx={{ padding: '16px 24px 20px 24px', gap: 1, flexWrap: 'wrap' }}>
-          {batchDetails && isVoucherSentStatus(batchDetails.status) && (
+          {batchDetails && isVoucherSentStatus(batchDetails.status) && canCreate && (
             <>
               <Button
                 onClick={() => openConfirmDialog({
