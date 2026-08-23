@@ -3048,8 +3048,18 @@ export default function AreaHeadRequests() {
         }
       }
 
-      // Send existing files that weren't deleted (compact: fileName + mimeType only to avoid huge payload)
-      const compactExisting = (arr) => arr.map(f => typeof f === 'object' && f && (f.url != null || f.fileName != null) ? { fileName: f.fileName || 'file', mimeType: f.mimeType } : f);
+      // Send existing files that weren't deleted (id + fileName; omit base64 to keep payload small)
+      const compactExisting = (arr) =>
+        (arr || []).map((f) => {
+          if (typeof f === 'object' && f) {
+            return {
+              id: f.id != null ? f.id : undefined,
+              fileName: f.fileName || f.file_name || 'file',
+              mimeType: f.mimeType || f.mime_type,
+            };
+          }
+          return f;
+        });
       formData.append('existing_site_photos', JSON.stringify(compactExisting(existingSitePhotos)));
       formData.append('existing_old_board_photos', JSON.stringify(compactExisting(existingOldBoardPhotos)));
 
@@ -6510,8 +6520,7 @@ export default function AreaHeadRequests() {
                         variant="outlined"
                         onClick={() => openFileInNewTab(fileUrl)}
                         onDelete={() => {
-                          const newFiles = existingSitePhotos.filter((_, i) => i !== index);
-                          setExistingSitePhotos(newFiles);
+                          setExistingSitePhotos((prev) => prev.filter((_, i) => i !== index));
                         }}
                         sx={{ 
                           mr: 1, 
@@ -6603,8 +6612,7 @@ export default function AreaHeadRequests() {
                         variant="outlined"
                         onClick={() => openFileInNewTab(fileUrl)}
                         onDelete={() => {
-                          const newFiles = existingOldBoardPhotos.filter((_, i) => i !== index);
-                          setExistingOldBoardPhotos(newFiles);
+                          setExistingOldBoardPhotos((prev) => prev.filter((_, i) => i !== index));
                         }}
                         sx={{ 
                           mr: 1, 
