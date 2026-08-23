@@ -1312,6 +1312,11 @@ window.populateRequestTemplate=populateTemplate;
           {confirmDialog?.title}
         </DialogTitle>
         <DialogContent>
+          {(confirmDialog?.type === 'reject-batch' || confirmDialog?.type === 'reject-item') && (
+            <Typography variant="body2" sx={{ mb: 1.5, color: '#d32f2f', fontWeight: 600 }}>
+              Are you sure? This cannot be undone.
+            </Typography>
+          )}
           <Typography variant="body1" sx={{ mb: confirmDialog?.type === 'reject-batch' || confirmDialog?.type === 'reject-item' ? 2 : 0 }}>
             {confirmDialog?.message}
           </Typography>
@@ -1331,41 +1336,67 @@ window.populateRequestTemplate=populateTemplate;
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button
-            onClick={() => {
-              setConfirmDialog(null);
-              setRejectComment('');
-            }}
-            disabled={actionLoading}
-            color="secondary"
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={() => {
-              if (!confirmDialog) return;
-              const trimmedComment = rejectComment.trim();
-              if ((confirmDialog.type === 'reject-batch' || confirmDialog.type === 'reject-item') && !trimmedComment) {
-                toast.error('Rejection comment is required', { position: 'top-right', autoClose: 3000 });
-                return;
-              }
-              if (confirmDialog.type === 'complete-batch') {
-                handleCompleteBatch(confirmDialog.batchId, confirmDialog.batchNumber);
-              } else if (confirmDialog.type === 'reject-batch') {
-                handleRejectBatch(confirmDialog.batchId, confirmDialog.batchNumber, trimmedComment);
-              } else if (confirmDialog.type === 'reject-item') {
-                handleRejectBatchItem(confirmDialog.batchId, confirmDialog.requestId, trimmedComment);
-              }
-            }}
-            disabled={
-              actionLoading ||
-              ((confirmDialog?.type === 'reject-batch' || confirmDialog?.type === 'reject-item') && !rejectComment.trim())
-            }
-            color={confirmDialog?.type === 'reject-batch' || confirmDialog?.type === 'reject-item' ? 'error' : 'success'}
-            variant="contained"
-          >
-            {actionLoading ? 'Processing...' : 'Confirm'}
-          </Button>
+          {(confirmDialog?.type === 'reject-batch' || confirmDialog?.type === 'reject-item') ? (
+            <>
+              <Button
+                onClick={() => {
+                  setConfirmDialog(null);
+                  setRejectComment('');
+                }}
+                disabled={actionLoading}
+                color="secondary"
+                variant="outlined"
+              >
+                No
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!confirmDialog) return;
+                  const trimmedComment = rejectComment.trim();
+                  if (!trimmedComment) {
+                    toast.error('Rejection comment is required', { position: 'top-right', autoClose: 3000 });
+                    return;
+                  }
+                  if (confirmDialog.type === 'reject-batch') {
+                    handleRejectBatch(confirmDialog.batchId, confirmDialog.batchNumber, trimmedComment);
+                  } else if (confirmDialog.type === 'reject-item') {
+                    handleRejectBatchItem(confirmDialog.batchId, confirmDialog.requestId, trimmedComment);
+                  }
+                }}
+                disabled={actionLoading || !rejectComment.trim()}
+                color="error"
+                variant="contained"
+              >
+                {actionLoading ? 'Processing...' : 'Yes, Reject'}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                onClick={() => {
+                  setConfirmDialog(null);
+                  setRejectComment('');
+                }}
+                disabled={actionLoading}
+                color="secondary"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!confirmDialog) return;
+                  if (confirmDialog.type === 'complete-batch') {
+                    handleCompleteBatch(confirmDialog.batchId, confirmDialog.batchNumber);
+                  }
+                }}
+                disabled={actionLoading}
+                color="success"
+                variant="contained"
+              >
+                {actionLoading ? 'Processing...' : 'Confirm'}
+              </Button>
+            </>
+          )}
         </DialogActions>
       </Dialog>
 
