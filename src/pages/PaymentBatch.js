@@ -16,6 +16,9 @@ import {
   TableHead,
   TableRow,
   TextField,
+  IconButton,
+  Backdrop,
+  CircularProgress,
 } from '@mui/material';
 import {
   Visibility as VisibilityIcon,
@@ -23,6 +26,11 @@ import {
   CheckCircle as CompleteIcon,
   Cancel as RejectIcon,
   Payment as PaymentIcon,
+  Description as RequestIcon,
+  History as HistoryIcon,
+  Print as PrintIcon,
+  Receipt as InvoiceIcon,
+  ShoppingCart as OldPurchasesIcon,
 } from '@mui/icons-material';
 import { GridActionsCellItem } from '@mui/x-data-grid';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -32,8 +40,40 @@ import { useAuth } from '../auth/AuthContext';
 import { useApi } from '../hooks/useApi';
 import ReusableDataTable from '../components/ReusableData';
 import PageContainer from '../components/PageContainer';
+import DynamicModal from '../components/DynamicModel';
+import InvoiceViewer from '../components/InvoiceViewer';
+import OldPurchasesModal from '../components/OldPurchasesModal';
+import { BASE_URL } from '../constants/Constants';
+import {
+  getStatusDisplayName,
+  getStatusColor as getStatusColorHelper,
+} from '../constants/ShopboardRequestStatus';
 
 const INITIAL_PAGE_SIZE = 10;
+
+function getFileUrlAndName(item, index, fallbackLabel) {
+  if (item == null) return { url: '', fileName: fallbackLabel };
+  if (typeof item === 'object' && item.url != null) return { url: item.url, fileName: item.fileName || fallbackLabel };
+  const str = typeof item === 'string' ? item : '';
+  return { url: str, fileName: str.startsWith('data:') ? fallbackLabel : str.split('/').pop() || fallbackLabel };
+}
+
+async function openFileInNewTab(url) {
+  if (!url) return;
+  if (url.startsWith('data:')) {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch {
+      window.open(url, '_blank');
+    }
+  } else {
+    window.open(url, '_blank');
+  }
+}
 
 const isVoucherSentStatus = (status) =>
   String(status || '').trim().toLowerCase() === 'voucher sent';
@@ -74,6 +114,21 @@ export default function PaymentBatch() {
   const [actionLoading, setActionLoading] = React.useState(false);
   const [confirmDialog, setConfirmDialog] = React.useState(null);
   const [rejectComment, setRejectComment] = React.useState('');
+
+  // Per-request actions (same as Payments page)
+  const [loadingRequestDetails, setLoadingRequestDetails] = React.useState(false);
+  const [modalOpen, setModalOpen] = React.useState(false);
+  const [selectedRequest, setSelectedRequest] = React.useState(null);
+  const [detailedViewModalOpen, setDetailedViewModalOpen] = React.useState(false);
+  const [selectedDetailedRequest, setSelectedDetailedRequest] = React.useState(null);
+  const [invoiceModalOpen, setInvoiceModalOpen] = React.useState(false);
+  const [selectedInvoiceRequest, setSelectedInvoiceRequest] = React.useState(null);
+  const [historyDialogOpen, setHistoryDialogOpen] = React.useState(false);
+  const [requestToAction, setRequestToAction] = React.useState(null);
+  const [requestHistory, setRequestHistory] = React.useState([]);
+  const [loadingHistory, setLoadingHistory] = React.useState(false);
+  const [oldPurchasesModalOpen, setOldPurchasesModalOpen] = React.useState(false);
+  const [selectedDealerForOldPurchases, setSelectedDealerForOldPurchases] = React.useState(null);
 
   // Table state management
   const [paginationModel, setPaginationModel] = React.useState({
@@ -349,6 +404,246 @@ export default function PaymentBatch() {
     setRejectComment('');
     setConfirmDialog(config);
   }, []);
+
+  const fetchFullRequest = React.useCallback(async (id, includeFiles) => {
+    const url = includeFiles
+      ? `/api/shopboard-requests/${id}?includeFiles=${encodeURIComponent(includeFiles)}`
+      : `/api/shopboard-requests/${id}`;
+    const res = await get(url);
+    if (res?.success && res?.data) return res.data;
+    throw new Error('Failed to load request details');
+  }, [get]);
+
+  const handleViewRequest = React.useCallback(async (requestData) => {
+    if (!canRead || !requestData?.id) return;
+    setLoadingRequestDetails(true);
+    try {
+      const full = await fetchFullRequest(requestData.id, 'details');
+      setSelectedRequest(full);
+      setModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load request details', { position: 'top-right', autoClose: 5000 });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [canRead, fetchFullRequest]);
+
+  const handleViewRequestDetails = React.useCallback(async (requestData) => {
+    if (!requestData?.id) return;
+    setLoadingRequestDetails(true);
+    try {
+      const full = await fetchFullRequest(requestData.id, 'details');
+      setSelectedDetailedRequest(full);
+      setDetailedViewModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load request details', { position: 'top-right', autoClose: 5000 });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [fetchFullRequest]);
+
+  const handleViewRequestInvoice = React.useCallback(async (requestData) => {
+    if (!canRead || !requestData?.id) return;
+    setLoadingRequestDetails(true);
+    try {
+      const full = await fetchFullRequest(requestData.id, 'invoice');
+      setSelectedInvoiceRequest(full);
+      setInvoiceModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load request details', { position: 'top-right', autoClose: 5000 });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [canRead, fetchFullRequest]);
+
+  const fetchRequestHistory = React.useCallback(async (requestId) => {
+    setLoadingHistory(true);
+    try {
+      const response = await get(`/api/shopboard-logs/request/${requestId}`);
+      if (response.success && response.data) {
+        const sorted = [...response.data].sort((a, b) => {
+          if (a.action === 'CURRENT' && b.action !== 'CURRENT') return -1;
+          if (b.action === 'CURRENT' && a.action !== 'CURRENT') return 1;
+          const da = a.changed_at ? new Date(a.changed_at).getTime() : 0;
+          const db = b.changed_at ? new Date(b.changed_at).getTime() : 0;
+          return db - da;
+        });
+        setRequestHistory(sorted);
+      } else {
+        setRequestHistory([]);
+      }
+    } catch (error) {
+      console.error('Error fetching history:', error);
+      toast.error('Failed to load history', { position: 'top-right', autoClose: 5000 });
+      setRequestHistory([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [get]);
+
+  const handleViewRequestHistory = React.useCallback((requestData) => {
+    if (!canRead || !requestData?.id) return;
+    setRequestToAction(requestData);
+    setRequestHistory([]);
+    setHistoryDialogOpen(true);
+    fetchRequestHistory(requestData.id);
+  }, [canRead, fetchRequestHistory]);
+
+  const handleViewOldPurchases = React.useCallback((requestData) => {
+    if (!canRead) return;
+    const dealerId = requestData?.dealer?.code || requestData?.dealer_id;
+    const dealerName = requestData?.dealer?.name || 'Dealer';
+    if (!dealerId) {
+      toast.error('Dealer information not available', { position: 'top-right', autoClose: 3000 });
+      return;
+    }
+    setSelectedDealerForOldPurchases({ id: dealerId, name: dealerName });
+    setOldPurchasesModalOpen(true);
+  }, [canRead]);
+
+  const generatePDF = React.useCallback(async (requestData) => {
+    if (!canRead || !requestData?.id) return;
+    setLoadingRequestDetails(true);
+    try {
+      const full = await fetchFullRequest(requestData.id, 'details');
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.top = '-10000px';
+      iframe.style.left = '-10000px';
+      iframe.style.width = '210mm';
+      iframe.style.height = '297mm';
+      document.body.appendChild(iframe);
+      const iframeDoc = iframe.contentWindow.document;
+      const templateHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Payment Details - ${full.id}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}@page{size:A4;margin:10mm}body{font-family:Arial,sans-serif;color:#333;width:210mm;margin:0 auto}.container{padding:15px}.header{text-align:center;margin-bottom:15px;border-bottom:2px solid #2c3e50;padding-bottom:8px}.header h1{font-size:24px;color:#2c3e50}.header h2{font-size:14px;color:#7f8c8d;font-weight:normal}.section{margin-bottom:12px}.section-title{font-size:12px;font-weight:bold;color:#2c3e50;text-transform:uppercase;border-bottom:1.5px solid #3498db;margin-bottom:8px;padding-bottom:4px}.fields-row{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:8px}.field-label{font-size:9.5px;font-weight:bold;color:#555}.field-value{font-size:10.5px;border-bottom:.5px solid #ddd;min-height:14px}.items-table{width:100%;border-collapse:collapse;font-size:10px}.items-table th,.items-table td{padding:6px;border:1px solid #ddd}.items-table th{background:#f8f9fa}.total-box{background:#3498db;color:#fff;padding:8px;border-radius:3px;margin:10px 0;text-align:center}.total-amount{font-size:18px;font-weight:bold}</style></head>
+<body><div class="container"><div class="header"><h1>DIAMOND PAINTS</h1><h2>Payment Details Report</h2></div>
+<div class="section"><div class="section-title">Dealer Information</div>
+<div class="fields-row"><div class="field"><div class="field-label">Dealer Name:</div><div class="field-value" id="dealer-name">-</div></div>
+<div class="field"><div class="field-label">Dealer Code:</div><div class="field-value" id="dealer-code">-</div></div></div>
+<div class="fields-row"><div class="field"><div class="field-label">Phone:</div><div class="field-value" id="dealer-phone">-</div></div>
+<div class="field"><div class="field-label">Address:</div><div class="field-value" id="dealer-address">-</div></div></div></div>
+<div class="section"><div class="section-title">Request Items</div>
+<table class="items-table"><thead><tr><th>#</th><th>Type</th><th>Width</th><th>Height</th><th>Cost</th></tr></thead><tbody id="request-items"></tbody></table>
+<div class="total-box"><div>Total Cost</div><div class="total-amount" id="total-cost">Rs 0.00</div></div></div>
+<div class="section"><div class="section-title">Payment Information</div>
+<div class="fields-row"><div class="field"><div class="field-label">Vendor:</div><div class="field-value" id="assigned-vendor">-</div></div>
+<div class="field"><div class="field-label">Status:</div><div class="field-value" id="payment-status">-</div></div></div></div></div>
+<script>
+function populateTemplate(data){
+  const clean=v=>v==null||v===''?'N/A':String(v);
+  document.getElementById('dealer-name').textContent=clean(data.dealer&&data.dealer.name);
+  document.getElementById('dealer-code').textContent=clean(data.dealer&&data.dealer.code);
+  document.getElementById('dealer-phone').textContent=clean(data.dealer&&data.dealer.phone);
+  document.getElementById('dealer-address').textContent=clean(data.dealer&&data.dealer.city);
+  const tbody=document.getElementById('request-items');
+  const items=data.requestItems||[];
+  let total=0;
+  if(items.length){items.forEach((item,i)=>{const cost=parseFloat(item.price)||0;total+=cost;const tr=document.createElement('tr');tr.innerHTML='<td>'+(i+1)+'</td><td>'+clean(item.requestType&&item.requestType.name)+'</td><td>'+(item.width||'N/A')+'</td><td>'+(item.height||'N/A')+'</td><td>Rs '+cost.toFixed(2)+'</td>';tbody.appendChild(tr);});}
+  else{tbody.innerHTML='<tr><td colspan="5" style="text-align:center">No items</td></tr>';}
+  document.getElementById('total-cost').textContent='Rs '+total.toFixed(2);
+  document.getElementById('assigned-vendor').textContent=clean((data.vendor&&(data.vendor.card_name||data.vendor.name))||data.vendor_name||'Not assigned');
+  document.getElementById('payment-status').textContent=clean(data.status);
+  setTimeout(function(){window.print();},400);
+}
+window.populateRequestTemplate=populateTemplate;
+</script></body></html>`;
+      iframeDoc.open();
+      iframeDoc.write(templateHtml);
+      iframeDoc.close();
+      iframe.onload = () => {
+        setTimeout(() => {
+          if (iframe.contentWindow.populateRequestTemplate) {
+            iframe.contentWindow.populateRequestTemplate(full);
+            setTimeout(() => {
+              if (document.body.contains(iframe)) document.body.removeChild(iframe);
+            }, 1000);
+          }
+        }, 100);
+      };
+      toast.success('PDF generation initiated. Please use the print dialog to save as PDF.', {
+        position: 'top-right',
+        autoClose: 3000,
+      });
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast.error('Failed to generate PDF. Please try again.', { position: 'top-right', autoClose: 5000 });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [canRead, fetchFullRequest]);
+
+  const getRequestFields = (requestData = null) => {
+    if (!requestData) return [];
+    const fields = [];
+    const hasParent =
+      requestData?.dealer_relation?.parent &&
+      requestData?.dealer?.id &&
+      requestData.dealer.id !== requestData.dealer_relation.parent.id;
+    if (hasParent && requestData.dealer_relation.parent) {
+      fields.push(
+        { name: 'parent_dealer_code', label: 'Parent Dealer Code', type: 'text', disabled: true },
+        { name: 'parent_dealer_name', label: 'Parent Dealer Name', type: 'text', disabled: true },
+        { name: 'parent_dealer_phone', label: 'Parent Dealer Phone', type: 'text', disabled: true },
+      );
+    }
+    fields.push(
+      { name: 'dealer_name', label: 'Dealer Name', type: 'text', disabled: true },
+      { name: 'dealer_code', label: 'Dealer Code', type: 'text', disabled: true },
+      { name: 'dealer_phone', label: 'Dealer Phone', type: 'text', disabled: true },
+      { name: 'dealer_city', label: 'Dealer City', type: 'text', disabled: true },
+      { name: 'dealer_type', label: 'Dealer Type', type: 'text', disabled: true },
+      { name: 'vendor_name', label: 'Vendor Name', type: 'text', disabled: true },
+      { name: 'status', label: 'Status', type: 'text', disabled: true },
+      { name: 'total_cost', label: 'Total Cost', type: 'text', disabled: true },
+      { name: 'created_at', label: 'Created At', type: 'text', disabled: true },
+      { name: 'approval_date', label: 'Approval Date', type: 'text', disabled: true },
+    );
+    return fields;
+  };
+
+  const renderMainChanges = (log) => {
+    const mc = log.main_changes || {};
+    const entries = Object.entries(mc);
+    if (entries.length === 0) return null;
+    return (
+      <Box sx={{ mb: 2 }}>
+        {entries.map(([key, value], idx) => {
+          if (key === 'assigned_vm' || value == null) return null;
+          if (Array.isArray(value) && value.length === 0) return null;
+          if (key === 'vendor_code') {
+            return (
+              <Typography key={`${key}-${idx}`} variant="body2" sx={{ color: '#333', mb: 0.5 }}>
+                Vendor: {mc.vendor_name || value}
+              </Typography>
+            );
+          }
+          if (key === 'dealer_id') {
+            return (
+              <Typography key={`${key}-${idx}`} variant="body2" sx={{ color: '#333', mb: 0.5 }}>
+                Dealer: {mc.dealer_name || value}
+              </Typography>
+            );
+          }
+          if (key === 'total_cost') {
+            const num = Number(value);
+            if (!isNaN(num) && num > 0) {
+              return (
+                <Typography key={`${key}-${idx}`} variant="body2" sx={{ color: '#333', mb: 0.5 }}>
+                  Total Cost: Rs {num.toFixed(2)}
+                </Typography>
+              );
+            }
+            return null;
+          }
+          return (
+            <Typography key={`${key}-${idx}`} variant="body2" sx={{ color: '#333', mb: 0.5 }}>
+              {key}: {String(value)}
+            </Typography>
+          );
+        })}
+      </Box>
+    );
+  };
 
   const handleRowClick = React.useCallback(
     ({ row }) => {
@@ -630,6 +925,10 @@ export default function PaymentBatch() {
       title={pageTitle}
       breadcrumbs={[{ title: pageTitle }]}
     >
+      <Backdrop open={loadingRequestDetails} sx={{ color: '#fff', zIndex: (theme) => theme.zIndex.modal + 2 }}>
+        <CircularProgress color="inherit" />
+      </Backdrop>
+
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
@@ -687,8 +986,8 @@ export default function PaymentBatch() {
         PaperProps={{
           sx: {
             backgroundColor: '#ffffff',
-            minWidth: '600px',
-            maxWidth: '900px',
+            minWidth: '800px',
+            maxWidth: '1100px',
             borderRadius: 2,
             boxShadow: 6,
           }
@@ -746,9 +1045,7 @@ export default function PaymentBatch() {
                       <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Invoice No.</TableCell>
                       <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Invoice Date</TableCell>
                       <TableCell align="right" sx={{ fontWeight: 'bold', color: '#666' }}>Amount</TableCell>
-                      {isVoucherSentStatus(batchDetails.status) && (
-                        <TableCell align="center" sx={{ fontWeight: 'bold', color: '#666' }}>Actions</TableCell>
-                      )}
+                      <TableCell align="center" sx={{ fontWeight: 'bold', color: '#666', minWidth: 220 }}>Actions</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -799,9 +1096,47 @@ export default function PaymentBatch() {
                             <TableCell align="right" sx={{ fontWeight: 600, color: '#2e7d32' }}>
                               Rs {parseFloat(item.amount || request?.total_cost || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </TableCell>
-                            {isVoucherSentStatus(batchDetails.status) && (
-                              <TableCell align="center">
-                                {canRejectItem ? (
+                            <TableCell align="center">
+                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 0.25 }}>
+                                {canRead && request && (
+                                  <>
+                                    <Tooltip title="Request">
+                                      <IconButton size="small" color="primary" onClick={() => handleViewRequest(request)}>
+                                        <RequestIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="View Details">
+                                      <IconButton size="small" color="info" onClick={() => handleViewRequestDetails(request)}>
+                                        <VisibilityIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                    {request.has_invoice_files && (
+                                      <Tooltip title="View Invoice Documents">
+                                        <IconButton size="small" color="info" onClick={() => handleViewRequestInvoice(request)}>
+                                          <InvoiceIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    )}
+                                    {request.dealer && (
+                                      <Tooltip title="Old Purchases">
+                                        <IconButton size="small" color="info" onClick={() => handleViewOldPurchases(request)}>
+                                          <OldPurchasesIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    )}
+                                    <Tooltip title="View History">
+                                      <IconButton size="small" onClick={() => handleViewRequestHistory(request)}>
+                                        <HistoryIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Print PDF">
+                                      <IconButton size="small" color="secondary" onClick={() => generatePDF(request)}>
+                                        <PrintIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </>
+                                )}
+                                {canRejectItem && (
                                   <Button
                                     size="small"
                                     variant="outlined"
@@ -814,22 +1149,19 @@ export default function PaymentBatch() {
                                       title: 'Reject Request',
                                       message: `Reject request #${request?.id || item.request_id} and mark it as Finance Rejected?`,
                                     })}
+                                    sx={{ ml: 0.5 }}
                                   >
                                     Reject
                                   </Button>
-                                ) : (
-                                  <Typography variant="caption" sx={{ color: '#999' }}>
-                                    —
-                                  </Typography>
                                 )}
-                              </TableCell>
-                            )}
+                              </Box>
+                            </TableCell>
                           </TableRow>
                         );
                       })
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={isVoucherSentStatus(batchDetails.status) ? 7 : 6} align="center" sx={{ py: 3 }}>
+                        <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
                           <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
                             No requests found in this batch
                           </Typography>
@@ -1022,6 +1354,374 @@ export default function PaymentBatch() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Request view modal (same as Payments) */}
+      <DynamicModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        mode="view"
+        title="Payment Details"
+        initialData={(() => {
+          const data = selectedRequest || {};
+          const hasParent =
+            data?.dealer_relation?.parent &&
+            data?.dealer?.id &&
+            data.dealer.id !== data.dealer_relation.parent.id;
+          const flattenedData = {
+            ...data,
+            dealer_name: data?.dealer?.name || 'N/A',
+            dealer_code: data?.dealer?.code || 'N/A',
+            dealer_phone: data?.dealer?.phone || 'N/A',
+            dealer_city: data?.dealer?.city || 'N/A',
+            dealer_type: data?.dealer_type === 'new' ? 'New' : 'Old',
+            vendor_name: getVendorName(data) || 'N/A',
+            status: getStatusDisplayName(data?.status) || 'N/A',
+            total_cost: data?.total_cost ? `Rs ${parseFloat(data.total_cost).toFixed(2)}` : 'N/A',
+            created_at: data?.created_at ? new Date(data.created_at).toLocaleString() : 'N/A',
+            approval_date: data?.approval_date ? new Date(data.approval_date).toLocaleString() : 'N/A',
+          };
+          if (hasParent && data.dealer_relation.parent) {
+            const parent = data.dealer_relation.parent;
+            flattenedData.parent_dealer_code = parent.code || 'N/A';
+            flattenedData.parent_dealer_name = parent.name || 'N/A';
+            flattenedData.parent_dealer_phone = parent.phone || 'N/A';
+          }
+          return flattenedData;
+        })()}
+        fields={getRequestFields(selectedRequest)}
+        onSubmit={() => setModalOpen(false)}
+        loading={false}
+        hideSubmitButton={true}
+        customContent={
+          selectedRequest?.survey_form_attachments &&
+          Array.isArray(selectedRequest.survey_form_attachments) &&
+          selectedRequest.survey_form_attachments.length > 0 ? (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold', color: '#1976d2' }}>
+                Survey Form Attachments
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {selectedRequest.survey_form_attachments.map((file, index) => {
+                  const { url, fileName } = getFileUrlAndName(file, index, `Survey Form ${index + 1}`);
+                  const fileUrl =
+                    url.startsWith('data:') || url.startsWith('http')
+                      ? url
+                      : url.startsWith('/')
+                        ? `${BASE_URL}${url}`
+                        : `${BASE_URL}/uploads/survey_forms/${url}`;
+                  return (
+                    <Chip
+                      key={index}
+                      label={fileName}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                      onClick={() => (url.startsWith('data:') ? openFileInNewTab(fileUrl) : window.open(fileUrl, '_blank'))}
+                      sx={{ cursor: 'pointer', '&:hover': { backgroundColor: '#e3f2fd' } }}
+                    />
+                  );
+                })}
+              </Box>
+            </Box>
+          ) : null
+        }
+      />
+
+      {/* Detailed view modal */}
+      <Dialog
+        open={detailedViewModalOpen}
+        onClose={() => setDetailedViewModalOpen(false)}
+        aria-labelledby="batch-request-detailed-view-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '800px',
+            maxWidth: '1200px',
+            maxHeight: '90vh',
+            overflow: 'auto',
+            borderRadius: 2,
+            boxShadow: 6,
+          },
+        }}
+      >
+        <DialogTitle
+          id="batch-request-detailed-view-title"
+          sx={{ color: 'info.main', fontWeight: 'bold', borderBottom: '1px solid #eaeaea', mb: 1 }}
+        >
+          Payment Details - #{selectedDetailedRequest?.id}
+        </DialogTitle>
+        <DialogContent>
+          {selectedDetailedRequest && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 2 }}>
+              <Box sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa', border: '1px solid #e0e0e0' }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                  Dealer Information
+                </Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>Dealer Name</Typography>
+                    <Typography variant="body1">{selectedDetailedRequest.dealer?.name || 'N/A'}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>Dealer Code</Typography>
+                    <Typography variant="body1">{selectedDetailedRequest.dealer?.code || 'N/A'}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>Phone</Typography>
+                    <Typography variant="body1">{selectedDetailedRequest.dealer?.phone || 'N/A'}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>Address</Typography>
+                    <Typography variant="body1">{selectedDetailedRequest.dealer?.city || 'N/A'}</Typography>
+                  </Box>
+                </Box>
+              </Box>
+
+              <Box sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa', border: '1px solid #e0e0e0' }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>
+                  Request Items & Dimensions
+                </Typography>
+                {selectedDetailedRequest.requestItems?.length > 0 ? (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {selectedDetailedRequest.requestItems.map((item, index) => (
+                      <Box key={index} sx={{ p: 2, borderRadius: 2, backgroundColor: '#ffffff', border: '1px solid #e0e0e0' }}>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 2 }}>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>Request Type</Typography>
+                            <Typography variant="body2">{item.requestType?.name || 'N/A'}</Typography>
+                          </Box>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>Width (ft)</Typography>
+                            <Typography variant="body2">{item.width || 'N/A'}</Typography>
+                          </Box>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>Height (ft)</Typography>
+                            <Typography variant="body2">{item.height || 'N/A'}</Typography>
+                          </Box>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>Price per ft²</Typography>
+                            <Typography variant="body2">
+                              {(() => {
+                                const widthFt = parseFloat(item.width) || 0;
+                                const heightFt = parseFloat(item.height) || 0;
+                                const areaSqft = widthFt * heightFt;
+                                const priceNum = parseFloat(item.price) || 0;
+                                const ppsf = areaSqft > 0 ? priceNum / areaSqft : null;
+                                return ppsf ? `Rs ${ppsf.toFixed(2)}` : 'N/A';
+                              })()}
+                            </Typography>
+                          </Box>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>Total Cost</Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                              {item.price ? `Rs ${parseFloat(item.price).toFixed(2)}` : 'N/A'}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </Box>
+                    ))}
+                    <Box sx={{ mt: 1, p: 2, backgroundColor: '#e3f2fd', borderRadius: 2 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'primary.main' }}>Total Cost (All Items)</Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                          Rs{(selectedDetailedRequest.requestItems || []).reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0).toFixed(2)}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Box>
+                ) : (
+                  <Typography variant="body1" sx={{ color: '#666', fontStyle: 'italic' }}>No request items found</Typography>
+                )}
+              </Box>
+
+              <Box sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa', border: '1px solid #e0e0e0' }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>Attachments</Typography>
+                {[
+                  { key: 'site_photo_attachement', label: 'Site Photos', color: 'primary', folder: 'site_photos' },
+                  { key: 'old_board_photo_attachment', label: 'Old Board Photos', color: 'secondary', folder: 'old_board_photos' },
+                  { key: 'survey_form_attachments', label: 'Survey Forms', color: 'success', folder: 'survey_forms' },
+                ].map((section) => (
+                  <Box key={section.key} sx={{ mb: 2 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>{section.label}</Typography>
+                    {selectedDetailedRequest[section.key]?.length > 0 ? (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        {selectedDetailedRequest[section.key].map((file, index) => {
+                          const { url, fileName } = getFileUrlAndName(file, index, `${section.label} ${index + 1}`);
+                          const fileUrl =
+                            url.startsWith('data:') || url.startsWith('http')
+                              ? url
+                              : url.startsWith('/')
+                                ? `${BASE_URL}${url}`
+                                : `${BASE_URL}/uploads/${section.folder}/${url}`;
+                          return (
+                            <Chip
+                              key={`${section.key}-${index}`}
+                              label={fileName}
+                              size="small"
+                              color={section.color}
+                              variant="outlined"
+                              onClick={() => openFileInNewTab(fileUrl)}
+                              sx={{ cursor: 'pointer' }}
+                            />
+                          );
+                        })}
+                      </Box>
+                    ) : (
+                      <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>No {section.label.toLowerCase()} uploaded</Typography>
+                    )}
+                  </Box>
+                ))}
+              </Box>
+
+              <Box sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa', border: '1px solid #e0e0e0' }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: 'primary.main' }}>Payment Information</Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>Status</Typography>
+                    <Chip
+                      label={getStatusDisplayName(selectedDetailedRequest.status)}
+                      variant="filled"
+                      size="small"
+                      color={getStatusColorHelper(selectedDetailedRequest.status)}
+                    />
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>Vendor</Typography>
+                    <Typography variant="body1">{getVendorName(selectedDetailedRequest) || 'Not Assigned'}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>Total Cost</Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                      {selectedDetailedRequest.total_cost ? `Rs ${parseFloat(selectedDetailedRequest.total_cost).toFixed(2)}` : 'N/A'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>Approval Date</Typography>
+                    <Typography variant="body1">
+                      {selectedDetailedRequest.approval_date
+                        ? new Date(selectedDetailedRequest.approval_date).toLocaleString()
+                        : 'N/A'}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 3 }}>
+          <Button onClick={() => setDetailedViewModalOpen(false)} variant="outlined">Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      <InvoiceViewer
+        open={invoiceModalOpen}
+        onClose={() => setInvoiceModalOpen(false)}
+        invoiceData={selectedInvoiceRequest?.invoice}
+        requestId={selectedInvoiceRequest?.id}
+        requestItems={selectedInvoiceRequest?.requestItems}
+        invoiceNumber={selectedInvoiceRequest?.invoice_number}
+        invoiceDate={selectedInvoiceRequest?.invoice_date}
+        invoice_files_data={selectedInvoiceRequest?.invoice_files_data}
+        dealer_acknowledgment_files_data={selectedInvoiceRequest?.dealer_acknowledgment_files_data}
+        invoice_site_photos_by_item_data={selectedInvoiceRequest?.invoice_site_photos_by_item_data}
+      />
+
+      <Dialog
+        open={historyDialogOpen}
+        onClose={() => setHistoryDialogOpen(false)}
+        aria-labelledby="batch-request-history-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '600px',
+            maxWidth: '900px',
+            maxHeight: '80vh',
+            overflow: 'auto',
+          },
+        }}
+      >
+        <DialogTitle id="batch-request-history-title" sx={{ color: 'info.main', fontWeight: 'bold' }}>
+          Request History - #{requestToAction?.id || 'N/A'}
+        </DialogTitle>
+        <DialogContent>
+          {loadingHistory ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+              <Typography>Loading history...</Typography>
+            </Box>
+          ) : requestHistory.length === 0 ? (
+            <Box sx={{ textAlign: 'center', p: 4 }}>
+              <Typography variant="body1" sx={{ color: '#666' }}>No history found for this request.</Typography>
+            </Box>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {requestHistory.map((log, index) => (
+                <Box key={index} sx={{ p: 2, border: '1px solid #e0e0e0', borderRadius: 1, backgroundColor: '#f9f9f9' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                      {log.changed_by
+                        ? (log.changed_by.card_name && log.changed_by.user_type === 'vendor'
+                          ? `${log.changed_by.card_name} (${log.changed_by.username})`
+                          : log.changed_by.username)
+                        : 'Unknown User'}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#666' }}>
+                      {log.changed_at ? new Date(log.changed_at).toLocaleString() : 'Unknown Date'}
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" sx={{ color: '#333', mb: 1, fontWeight: 'bold' }}>
+                    Action: {log.action}
+                  </Typography>
+                  {renderMainChanges(log)}
+                  {log.item_changes?.length > 0 && (
+                    <Box sx={{ mt: 1, p: 1, backgroundColor: '#f0f0f0', borderRadius: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>Request items:</Typography>
+                      {log.item_changes.map((item, idx) => (
+                        <Box key={idx} sx={{ mb: 1, p: 1, backgroundColor: '#ffffff', borderRadius: 0.5 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                            {item.action}: {item.request_type}
+                          </Typography>
+                          {item.width && parseFloat(item.width) > 0 && (
+                            <Typography variant="body2" sx={{ color: '#333', mb: 0.5 }}>Width: {item.width} ft</Typography>
+                          )}
+                          {item.height && parseFloat(item.height) > 0 && (
+                            <Typography variant="body2" sx={{ color: '#333', mb: 0.5 }}>Height: {item.height} ft</Typography>
+                          )}
+                          {item.price && (
+                            <Typography variant="body2" sx={{ color: '#333', mb: 0.5 }}>
+                              Total Price: Rs {parseFloat(item.price).toFixed(2)}
+                            </Typography>
+                          )}
+                        </Box>
+                      ))}
+                    </Box>
+                  )}
+                </Box>
+              ))}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={() => {
+              setHistoryDialogOpen(false);
+              setRequestHistory([]);
+            }}
+            variant="outlined"
+          >
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <OldPurchasesModal
+        open={oldPurchasesModalOpen}
+        onClose={() => {
+          setOldPurchasesModalOpen(false);
+          setSelectedDealerForOldPurchases(null);
+        }}
+        dealerId={selectedDealerForOldPurchases?.id}
+        dealerName={selectedDealerForOldPurchases?.name}
+      />
 
       {/* React Toastify Container */}
       <ToastContainer
