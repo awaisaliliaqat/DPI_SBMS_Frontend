@@ -65,6 +65,12 @@ import {
 } from "../constants/VendorRequestStatus";
 import { useApi } from '../hooks/useApi';
 
+const isVendorInvoiceDocumentsStatus = (status) =>
+  status === SHOPBOARD_REQUEST_STATUS.INVOICE_SENT ||
+  status === SHOPBOARD_REQUEST_STATUS.FINANCE_REJECTED ||
+  status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT ||
+  status === SHOPBOARD_REQUEST_STATUS.PAYMENT_SUCCESSFUL;
+
 const INITIAL_PAGE_SIZE = 10;
 
 function getFileUrlAndName(item, index, fallbackLabel) {
@@ -2297,8 +2303,8 @@ export default function VendorRequests() {
             );
           }
 
-          // Show invoice viewer if invoice files exist (invoice_sent, Submitted for Payment, or payment successful)
-          if (canRead && (row.status === SHOPBOARD_REQUEST_STATUS.INVOICE_SENT || row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT || row.status === SHOPBOARD_REQUEST_STATUS.PAYMENT_SUCCESSFUL) && row.has_invoice_files) {
+          // Show invoice viewer if invoice files exist (invoice_sent, finance_rejected, Submitted for Payment, or payment successful)
+          if (canRead && isVendorInvoiceDocumentsStatus(row.status) && row.has_invoice_files) {
             actions.push(
               <GridActionsCellItem
                 key="viewInvoice"

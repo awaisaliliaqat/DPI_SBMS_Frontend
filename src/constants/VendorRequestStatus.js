@@ -32,6 +32,7 @@ export const VENDOR_REQUEST_STATUS_DISPLAY = {
   [VENDOR_APPROVAL_STATUS]: 'Approved for work',
   [SHOPBOARD_REQUEST_STATUS.COMPLETED]: 'Completed',
   [SHOPBOARD_REQUEST_STATUS.INVOICE_SENT]: 'Invoice Sent',
+  [SHOPBOARD_REQUEST_STATUS.FINANCE_REJECTED]: 'Finance Rejected',
   [SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT]: 'Invoice Approved',
   [SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED]: 'Invoice Rejected',
   [SHOPBOARD_REQUEST_STATUS.PAYMENT_SUCCESSFUL]: 'Payment Successful',
@@ -86,6 +87,8 @@ export const getVendorStatusColor = (status) => {
       return 'secondary';
     case SHOPBOARD_REQUEST_STATUS.INVOICE_SENT:
       return 'primary';
+    case SHOPBOARD_REQUEST_STATUS.FINANCE_REJECTED:
+      return 'error';
     case SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT:
       return 'success'; // Green color for "Invoice Approved"
     case SHOPBOARD_REQUEST_STATUS.PAYMENT_SUCCESSFUL:
