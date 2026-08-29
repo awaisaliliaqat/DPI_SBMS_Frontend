@@ -336,6 +336,11 @@ export default function AreaHeadRequests() {
   const [marketingComments, setMarketingComments] = React.useState([]);
   const [loadingMarketingComments, setLoadingMarketingComments] = React.useState(false);
   const [marketingCommentsDialogOpen, setMarketingCommentsDialogOpen] = React.useState(false);
+
+  // RFQ comments state (vendor thread during RFQ status)
+  const [rfqComments, setRfqComments] = React.useState([]);
+  const [loadingRfqComments, setLoadingRfqComments] = React.useState(false);
+  const [rfqCommentsDialogOpen, setRfqCommentsDialogOpen] = React.useState(false);
   
   // History state for viewing request history
   const [historyDialogOpen, setHistoryDialogOpen] = React.useState(false);
@@ -2156,6 +2161,40 @@ export default function AreaHeadRequests() {
     }
   }, [get]);
 
+  // Fetch RFQ comments (vendor + area head thread)
+  const fetchRfqComments = React.useCallback(async (requestId) => {
+    setLoadingRfqComments(true);
+    try {
+      const response = await get(`/api/comments/rfq/${requestId}`);
+      if (response.success && Array.isArray(response.data)) {
+        setRfqComments(response.data);
+      } else {
+        setRfqComments([]);
+      }
+    } catch (error) {
+      console.error('Error fetching RFQ comments:', error);
+      toast.error('Failed to load RFQ comments', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      setRfqComments([]);
+    } finally {
+      setLoadingRfqComments(false);
+    }
+  }, [get]);
+
+  const handleViewRfqComments = React.useCallback((requestData) => {
+    if (!canRead) return;
+
+    setRequestToAction(requestData);
+    setRfqCommentsDialogOpen(true);
+    fetchRfqComments(requestData.id);
+  }, [canRead, fetchRfqComments]);
+
   // Fetch history for a specific request
   const fetchRequestHistory = React.useCallback(async (requestId) => {
     setLoadingHistory(true);
@@ -2889,6 +2928,12 @@ export default function AreaHeadRequests() {
     setMarketingCommentsDialogOpen(false);
     setRequestToAction(null);
     setMarketingComments([]);
+  };
+
+  const cancelRfqComments = () => {
+    setRfqCommentsDialogOpen(false);
+    setRequestToAction(null);
+    setRfqComments([]);
   };
 
   // Edit form handlers
@@ -4740,6 +4785,19 @@ export default function AreaHeadRequests() {
           //   );
           // }
           
+          // Show RFQ vendor comments for requests in RFQ status
+          if (isRfqStatus && canRead) {
+            actions.push(
+              <GridActionsCellItem
+                key="viewRfqComments"
+                icon={<Tooltip title="View RFQ Comments"><CommentIcon /></Tooltip>}
+                label="View RFQ Comments"
+                onClick={() => handleViewRfqComments(row)}
+                color="info"
+              />
+            );
+          }
+
           // Show view comments for rfq not accepted status
           if (isRfqNotAccepted && canRead) {
             actions.push(
@@ -4996,6 +5054,7 @@ export default function AreaHeadRequests() {
       handleViewHistory,
       handleAddComment,
       handleViewMarketingComments,
+      handleViewRfqComments,
       handleViewAndSendMessages,
       handlePrint,
       handleManualApproval,
@@ -7051,6 +7110,25 @@ export default function AreaHeadRequests() {
         currentUser={user}
         onSendMessage={handleSendMessageFromDialog}
         onClearMessage={() => setNewComment('')}
+      />
+
+      {/* RFQ Comments Dialog (read-only for area head) */}
+      <CommentsDialog
+        addCommentDialogOpen={false}
+        onCloseAddComment={cancelRfqComments}
+        onConfirmAddComment={() => {}}
+        newComment=""
+        onCommentChange={() => {}}
+        isLoading={false}
+        requestId={requestToAction?.id}
+        messagesDialogOpen={rfqCommentsDialogOpen}
+        onCloseMessages={cancelRfqComments}
+        messages={rfqComments}
+        loadingMessages={loadingRfqComments}
+        canAddComment={false}
+        currentUser={user}
+        onSendMessage={() => {}}
+        onClearMessage={() => {}}
       />
 
       {/* Detailed View Modal */}

@@ -55,6 +55,7 @@ import DynamicModal from '../components/DynamicModel';
 import InvoiceViewer from '../components/InvoiceViewer';
 import WorkOrderPDFGenerator from '../components/WorkOrderPDFGenerator';
 import ManualSurveyHighlight from '../components/ManualSurveyHighlight';
+import CommentsDialog from '../components/CommentsDialog';
 import { BASE_URL } from "../constants/Constants";
 import { 
   SHOPBOARD_REQUEST_STATUS, 
@@ -413,9 +414,12 @@ export default function VendorRequests() {
   // Comment state for rejection
   const [rejectionComment, setRejectionComment] = React.useState('');
   
-  // Comments state for viewing area head comments
+  // Comments state for RFQ thread (area head + vendor)
   const [requestComments, setRequestComments] = React.useState([]);
   const [loadingComments, setLoadingComments] = React.useState(false);
+  const [rfqNewComment, setRfqNewComment] = React.useState('');
+  const [canAddRfqComment, setCanAddRfqComment] = React.useState(false);
+  const [rfqCommentLoading, setRfqCommentLoading] = React.useState(false);
   
   // History state for viewing request history
   const [historyDialogOpen, setHistoryDialogOpen] = React.useState(false);
@@ -1325,8 +1329,10 @@ export default function VendorRequests() {
     if (!canRead) return;
     
     setRequestToAction(requestData);
+    setCanAddRfqComment(requestData.status === SHOPBOARD_REQUEST_STATUS.RFQ);
+    setRfqNewComment('');
     setCommentsDialogOpen(true);
-    fetchRequestComments(requestData.id);
+    fetchRfqComments(requestData.id);
   }, [canRead]);
 
   const handleViewHistory = React.useCallback((requestData) => {
@@ -1342,18 +1348,18 @@ export default function VendorRequests() {
     WorkOrderPDFGenerator.generate(requestData);
   }, [canRead]);
 
-  // Fetch comments for a specific request
-  const fetchRequestComments = React.useCallback(async (requestId) => {
+  // Fetch RFQ comments for a specific request
+  const fetchRfqComments = React.useCallback(async (requestId) => {
     setLoadingComments(true);
     try {
-      const response = await get(`/api/shopboard-requests/${requestId}`);
-      if (response.success && response.data && response.data.comments) {
-        setRequestComments(response.data.comments);
+      const response = await get(`/api/comments/rfq/${requestId}`);
+      if (response.success && Array.isArray(response.data)) {
+        setRequestComments(response.data);
       } else {
         setRequestComments([]);
       }
     } catch (error) {
-      console.error('Error fetching comments:', error);
+      console.error('Error fetching RFQ comments:', error);
       toast.error('Failed to load comments', {
         position: "top-right",
         autoClose: 5000,
@@ -1367,6 +1373,33 @@ export default function VendorRequests() {
       setLoadingComments(false);
     }
   }, [get]);
+
+  const handleSendRfqComment = React.useCallback(async () => {
+    if (!requestToAction || !rfqNewComment.trim()) return;
+
+    setRfqCommentLoading(true);
+    try {
+      await post('/api/comments/rfq/add', {
+        shopboard_request_id: requestToAction.id,
+        comment: rfqNewComment.trim(),
+      });
+
+      toast.success('Comment added successfully', {
+        position: 'top-right',
+        autoClose: 3000,
+      });
+
+      await fetchRfqComments(requestToAction.id);
+      setRfqNewComment('');
+    } catch (error) {
+      toast.error(error.message || 'Failed to add comment', {
+        position: 'top-right',
+        autoClose: 5000,
+      });
+    } finally {
+      setRfqCommentLoading(false);
+    }
+  }, [requestToAction, rfqNewComment, post, fetchRfqComments]);
 
   // Fetch history for a specific request (vendor-specific API - already filtered for item_changes)
   const fetchRequestHistory = React.useCallback(async (requestId) => {
@@ -1543,6 +1576,8 @@ export default function VendorRequests() {
     setCommentsDialogOpen(false);
     setRequestToAction(null);
     setRequestComments([]);
+    setRfqNewComment('');
+    setCanAddRfqComment(false);
   };
 
   const cancelHistory = () => {
@@ -2209,13 +2244,13 @@ export default function VendorRequests() {
             );
           }
           
-          // Show view comments for Rfq / vendor_rejected
+          // Show comments for Rfq / vendor_rejected
           if (canVendorEditQuotation && canRead) {
             actions.push(
               <GridActionsCellItem
                 key="viewComments"
-                icon={<Tooltip title="View Comments"><CommentIcon /></Tooltip>}
-                label="View Area Head Comments"
+                icon={<Tooltip title={isRfqStatus ? 'Comments' : 'View Comments'}><CommentIcon /></Tooltip>}
+                label={isRfqStatus ? 'Comments' : 'View Comments'}
                 onClick={() => handleViewComments(row)}
                 color="info"
               />
@@ -3903,89 +3938,24 @@ export default function VendorRequests() {
         </DialogActions>
       </Dialog>
 
-      {/* View Comments Dialog */}
-      <Dialog
-        open={commentsDialogOpen}
-        onClose={cancelComments}
-        aria-labelledby="comments-dialog-title"
-        PaperProps={{
-          sx: {
-            backgroundColor: '#ffffff',
-            minWidth: '500px',
-            maxWidth: '700px',
-            maxHeight: '80vh',
-            overflow: 'auto',
-          }
-        }}
-      >
-        <DialogTitle 
-          id="comments-dialog-title"
-          sx={{ 
-            color: 'info.main',
-            fontWeight: 'bold',
-          }}
-        >
-          Area Head Comments - Request #{requestToAction?.id}
-        </DialogTitle>
-        <DialogContent>
-          {loadingComments ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-              <Typography>Loading comments...</Typography>
-            </Box>
-          ) : requestComments.length === 0 ? (
-            <Box sx={{ textAlign: 'center', p: 4 }}>
-              <Typography variant="body1" sx={{ color: '#666' }}>
-                No comments found for this request.
-              </Typography>
-            </Box>
-          ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {requestComments.map((comment, index) => (
-                <Box 
-                  key={index} 
-                  sx={{ 
-                    p: 2, 
-                    border: '1px solid #e0e0e0', 
-                    borderRadius: 1, 
-                    backgroundColor: '#f9f9f9' 
-                  }}
-                >
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
-                      {comment.user ? comment.user.username : 'Unknown User'}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: '#666' }}>
-                      {comment.comment_type || 'General'}
-                    </Typography>
-                  </Box>
-                  <Typography variant="body2" sx={{ color: '#333', mb: 1 }}>
-                    {comment.comment}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: '#666' }}>
-                    {comment.created_at ? new Date(comment.created_at).toLocaleString() : 'Unknown Date'}
-                  </Typography>
-                </Box>
-              ))}
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ p: 2, gap: 1 }}>
-          <Button 
-            onClick={cancelComments}
-            variant="outlined"
-            sx={{ 
-              color: '#666',
-              borderColor: '#ddd',
-              '&:hover': {
-                borderColor: '#999',
-                backgroundColor: '#f5f5f5',
-              }
-            }}
-          >
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* RFQ Comments Dialog */}
+      <CommentsDialog
+        addCommentDialogOpen={false}
+        onCloseAddComment={cancelComments}
+        onConfirmAddComment={() => {}}
+        newComment={rfqNewComment}
+        onCommentChange={setRfqNewComment}
+        isLoading={rfqCommentLoading}
+        requestId={requestToAction?.id}
+        messagesDialogOpen={commentsDialogOpen}
+        onCloseMessages={cancelComments}
+        messages={requestComments}
+        loadingMessages={loadingComments}
+        canAddComment={canAddRfqComment}
+        currentUser={user}
+        onSendMessage={handleSendRfqComment}
+        onClearMessage={() => setRfqNewComment('')}
+      />
 
       {/* View History Dialog */}
       <Dialog

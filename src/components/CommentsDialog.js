@@ -43,6 +43,37 @@ export default function CommentsDialog({
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
+  const getCommentTypeLabel = (commentType) => {
+    if (commentType === 'vendor') return 'Vendor';
+    if (commentType === 'areahead') return 'Area Head';
+    return commentType || 'Unknown';
+  };
+
+  const getCommentTypeStyles = (commentType) => {
+    if (commentType === 'vendor') {
+      return { backgroundColor: '#e8f5e9', color: '#2e7d32' };
+    }
+    if (commentType === 'areahead') {
+      return { backgroundColor: '#e3f2fd', color: '#1565c0' };
+    }
+    if (commentType === 'Area Head') {
+      return { backgroundColor: '#e3f2fd', color: '#1565c0' };
+    }
+    if (commentType === 'Vendor Manager') {
+      return { backgroundColor: '#f3e5f5', color: '#7b1fa2' };
+    }
+    if (commentType === 'Auditor') {
+      return { backgroundColor: '#fff3e0', color: '#e65100' };
+    }
+    if (commentType === 'Super Admin') {
+      return { backgroundColor: '#ffebee', color: '#c62828' };
+    }
+    if (commentType === 'CEO') {
+      return { backgroundColor: '#e8f5e9', color: '#2e7d32' };
+    }
+    return { backgroundColor: '#f5f5f5', color: '#424242' };
+  };
+
   return (
     <>
       {/* Add Comment Dialog */}
@@ -388,26 +419,13 @@ export default function CommentsDialog({
                           </Typography>
                           <Box sx={{ mt: 1.5, display: 'flex', justifyContent: 'flex-end' }}>
                             <Chip 
-                              label={comment.comment_type || 'Unknown'} 
+                              label={getCommentTypeLabel(comment.comment_type)} 
                               size="small" 
                               sx={{
                                 height: 22,
                                 fontSize: '0.7rem',
                                 fontWeight: 500,
-                                backgroundColor: 
-                                  comment.comment_type === 'Area Head' ? '#e3f2fd' : 
-                                  comment.comment_type === 'Vendor Manager' ? '#f3e5f5' : 
-                                  comment.comment_type === 'Auditor' ? '#fff3e0' : 
-                                  comment.comment_type === 'Super Admin' ? '#ffebee' :
-                                  comment.comment_type === 'CEO' ? '#e8f5e9' :
-                                  '#f5f5f5',
-                                color:
-                                  comment.comment_type === 'Area Head' ? '#1565c0' : 
-                                  comment.comment_type === 'Vendor Manager' ? '#7b1fa2' : 
-                                  comment.comment_type === 'Auditor' ? '#e65100' : 
-                                  comment.comment_type === 'Super Admin' ? '#c62828' :
-                                  comment.comment_type === 'CEO' ? '#2e7d32' :
-                                  '#424242',
+                                ...getCommentTypeStyles(comment.comment_type),
                                 border: 'none'
                               }}
                             />
