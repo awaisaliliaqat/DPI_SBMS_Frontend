@@ -817,10 +817,8 @@ export default function AreaHeadRequests() {
       // Check if any request has selectable status based on user permissions
       let shouldShowSelection = false;
       if (canManualApproval) {
-        // Show selection column if there are:
-        // - ceo_pending requests (where email not sent)
-        // - invoice_sent / invoice_approved requests (always)
-        const hasCeoPending = requestsData.some(request => request.status === 'ceo_pending' && request.is_email !== true);
+        // Show selection column if there are ceo_pending or invoice/payment-eligible requests
+        const hasCeoPending = requestsData.some(request => request.status === 'ceo_pending');
         const hasReleasePaymentEligible = requestsData.some(request => isBulkReleasePaymentStatus(request.status));
         shouldShowSelection = hasCeoPending || hasReleasePaymentEligible;
       }
@@ -1974,25 +1972,13 @@ export default function AreaHeadRequests() {
         // Deselecting - always allow
         return prev.filter(id => id !== requestId);
       } else {
-        // Check if email has already been sent - prevent selection only for ceo_pending if is_email === true
-        if (request.status === 'ceo_pending' && request.is_email === true) {
-          toast.warning('Email has already been sent for this request. Cannot select again.', {
-            position: "top-right",
-            autoClose: 3000,
-            hideProgressBar: false,
-            closeOnClick: true,
-            pauseOnHover: true,
-            draggable: true,
-          });
-          return prev; // Don't add request with email already sent
-        }
-        
         // Selecting - check if this request is selectable based on user permissions
         let isSelectable = false;
         if (canManualApproval) {
-          // Users with manual_approval can select ceo_pending (if email not sent) and invoice release / finance rejected (always)
+          // manual_approval: any ceo_pending (is_email only blocks Send to CEO, not selection)
+          // or invoice_sent / invoice_approved / finance_rejected for Process Payment
           if (request.status === 'ceo_pending') {
-            isSelectable = request.is_email !== true;
+            isSelectable = true;
           } else if (isBulkReleasePaymentStatus(request.status)) {
             isSelectable = true;
           }
@@ -2054,11 +2040,10 @@ export default function AreaHeadRequests() {
     // Determine selectable rows based on user permissions
     let selectableRequests = [];
     if (canManualApproval) {
-      // Users with manual_approval can select:
-      // - ceo_pending (only if email not sent, i.e., is_email !== true)
-      // - invoice_sent / invoice_approved (always, regardless of is_email)
+      // ceo_pending (all — is_email only affects Send to CEO button, not Manual Approval)
+      // invoice_sent / invoice_approved / finance_rejected for Process Payment
       const ceoPendingRows = filteredRows
-        .filter(row => row.status === 'ceo_pending' && row.is_email !== true)
+        .filter(row => row.status === 'ceo_pending')
         .map(row => row.id);
       const releasePaymentRows = filteredRows
         .filter(row => isBulkReleasePaymentStatus(row.status))
@@ -4240,13 +4225,8 @@ export default function AreaHeadRequests() {
             // Determine selectable rows based on user permissions
             let selectableRows = [];
             if (canManualApproval) {
-              // Users with manual_approval can select:
-              // - ceo_pending (only if email not sent, i.e., is_email !== true)
-              // - invoice_sent / invoice_approved (always, regardless of is_email)
-              const ceoPendingRows = filteredRows.filter(row => 
-                row.status === 'ceo_pending' && row.is_email !== true
-              );
-              const releasePaymentRows = filteredRows.filter(row => 
+              const ceoPendingRows = filteredRows.filter(row => row.status === 'ceo_pending');
+              const releasePaymentRows = filteredRows.filter(row =>
                 isBulkReleasePaymentStatus(row.status)
               );
               selectableRows = [...ceoPendingRows, ...releasePaymentRows];
@@ -4272,11 +4252,8 @@ export default function AreaHeadRequests() {
             // Determine if row is selectable based on user permissions
             let isSelectable = false;
             if (canManualApproval) {
-              // Users with manual_approval can select:
-              // - ceo_pending (only if email not sent, i.e., is_email !== true)
-              // - invoice_sent / invoice_approved (always, regardless of is_email)
               if (params.row.status === 'ceo_pending') {
-                isSelectable = params.row.is_email !== true;
+                isSelectable = true;
               } else if (isBulkReleasePaymentStatus(params.row.status)) {
                 isSelectable = true;
               }
@@ -5096,6 +5073,7 @@ export default function AreaHeadRequests() {
             const hasMixedSelection = (hasCeoPending && hasReleasePaymentEligible) || 
                                      (hasCeoPending && hasSubmittedForPayment) || 
                                      (hasReleasePaymentEligible && hasSubmittedForPayment);
+            const hasEmailAlreadySent = selectedRequestObjects.some((req) => req.is_email === true);
             
             return (
               <>
@@ -5104,7 +5082,7 @@ export default function AreaHeadRequests() {
                     variant="contained"
                     color="primary"
                     onClick={handleBulkSendToCEO}
-                    disabled={hasMixedSelection || hasReleasePaymentEligible || hasSubmittedForPayment || selectedRequestObjects.some(req => req.is_email === true)}
+                    disabled={hasMixedSelection || hasReleasePaymentEligible || hasSubmittedForPayment || hasEmailAlreadySent}
                     sx={{ fontWeight: 'bold', textTransform: 'none' }}
                   >
                     Send to CEO for Approval

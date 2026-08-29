@@ -78,6 +78,18 @@ async function openFileInNewTab(url) {
 const isVoucherSentStatus = (status) =>
   String(status || '').trim().toLowerCase() === 'voucher sent';
 
+const formatRs = (value) =>
+  `Rs ${parseFloat(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const canShowBatchItemInvoice = (request) => {
+  if (!request) return false;
+  if (request.has_invoice_files) return true;
+  if (request.invoice_number) return true;
+  return ['voucher_sent', 'invoice_sent', 'Submitted for Payment', 'payment successful'].includes(
+    request.status
+  );
+};
+
 const getBatchStatusColor = (status) => {
   const normalized = String(status || '').trim().toLowerCase();
   if (normalized === 'voucher sent') return 'warning';
@@ -1037,8 +1049,20 @@ window.populateRequestTemplate=populateTemplate;
                   Total Payment Amount
                 </Typography>
                 <Typography variant="h4" sx={{ color: '#1b5e20', fontWeight: 'bold' }}>
-                  Rs {parseFloat(batchDetails.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {formatRs(batchDetails.total_amount)}
                 </Typography>
+                {parseFloat(batchDetails.total_sales_tax || 0) > 0 && (
+                  <Typography variant="body1" sx={{ mt: 1, color: '#1565c0', fontWeight: 600 }}>
+                    Sales Tax: {formatRs(batchDetails.total_sales_tax)}
+                  </Typography>
+                )}
+                {parseFloat(batchDetails.total_sales_tax || 0) > 0 && (
+                  <Typography variant="body1" sx={{ mt: 0.5, color: '#1b5e20', fontWeight: 700 }}>
+                    Total incl. Sales Tax: {formatRs(
+                      parseFloat(batchDetails.total_amount || 0) + parseFloat(batchDetails.total_sales_tax || 0)
+                    )}
+                  </Typography>
+                )}
                 <Typography variant="body2" sx={{ mt: 1, color: '#666' }}>
                   {batchDetails.items?.length || 0} request(s) in batch
                 </Typography>
@@ -1058,7 +1082,8 @@ window.populateRequestTemplate=populateTemplate;
                       <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Invoice No.</TableCell>
                       <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Invoice Date</TableCell>
                       <TableCell align="right" sx={{ fontWeight: 'bold', color: '#666' }}>Amount</TableCell>
-                      <TableCell align="center" sx={{ fontWeight: 'bold', color: '#666', minWidth: 220 }}>Actions</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 'bold', color: '#666' }}>Sales Tax</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 'bold', color: '#666', minWidth: 260 }}>Actions</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -1108,7 +1133,12 @@ window.populateRequestTemplate=populateTemplate;
                                 : 'N/A'}
                             </TableCell>
                             <TableCell align="right" sx={{ fontWeight: 600, color: '#2e7d32' }}>
-                              Rs {parseFloat(item.amount || request?.total_cost || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              {formatRs(item.amount || request?.total_cost || 0)}
+                            </TableCell>
+                            <TableCell align="right" sx={{ color: '#1565c0', fontWeight: item.sales_tax_applied ? 600 : 400 }}>
+                              {item.sales_tax_applied && item.sales_tax_amount != null
+                                ? formatRs(item.sales_tax_amount)
+                                : '—'}
                             </TableCell>
                             <TableCell align="center">
                               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 0.25 }}>
@@ -1124,8 +1154,8 @@ window.populateRequestTemplate=populateTemplate;
                                         <VisibilityIcon fontSize="small" />
                                       </IconButton>
                                     </Tooltip>
-                                    {request.has_invoice_files && (
-                                      <Tooltip title="View Invoice Documents">
+                                    {canShowBatchItemInvoice(request) && (
+                                      <Tooltip title="View Invoice">
                                         <IconButton size="small" color="info" onClick={() => handleViewRequestInvoice(request)}>
                                           <InvoiceIcon fontSize="small" />
                                         </IconButton>
@@ -1175,7 +1205,7 @@ window.populateRequestTemplate=populateTemplate;
                       })
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
+                        <TableCell colSpan={8} align="center" sx={{ py: 3 }}>
                           <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
                             No requests found in this batch
                           </Typography>
