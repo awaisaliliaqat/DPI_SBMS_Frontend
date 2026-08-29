@@ -1607,29 +1607,55 @@ export default function AreaHeadRequests() {
     if (!selectedRequests || selectedRequests.length === 0) return;
 
     const selectedRequestObjects = filteredRows.filter((row) => selectedRequests.includes(row.id));
-    const ceoPendingOnly = selectedRequestObjects.filter((req) => req.status === 'ceo_pending');
+    const ceoPendingOnly = selectedRequestObjects.filter(
+      (req) => req.status === 'ceo_pending' && req.is_director_email_sent !== true
+    );
 
     if (ceoPendingOnly.length === 0) {
-      toast.warning('Please select one or more requests with "CEO Pending" status.', {
-        position: 'top-right',
-        autoClose: 5000,
-        hideProgressBar: false,
-        closeOnClick: true,
-        pauseOnHover: true,
-        draggable: true,
-      });
+      const hasDirectorEmailSent = selectedRequestObjects.some((req) => req.is_director_email_sent === true);
+      if (hasDirectorEmailSent) {
+        toast.warning(
+          'Cannot send to directors for requests that have already been emailed. Please deselect those requests.',
+          {
+            position: 'top-right',
+            autoClose: 5000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          }
+        );
+      } else {
+        toast.warning('Please select one or more requests with "CEO Pending" status.', {
+          position: 'top-right',
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      }
       return;
     }
 
     if (ceoPendingOnly.length !== selectedRequestObjects.length) {
-      toast.warning('Send to Directors only applies to CEO Pending requests. Deselect other statuses.', {
-        position: 'top-right',
-        autoClose: 5000,
-        hideProgressBar: false,
-        closeOnClick: true,
-        pauseOnHover: true,
-        draggable: true,
-      });
+      const hasNonCeoPending = selectedRequestObjects.some((req) => req.status !== 'ceo_pending');
+      const hasAlreadyEmailed = selectedRequestObjects.some(
+        (req) => req.status === 'ceo_pending' && req.is_director_email_sent === true
+      );
+      toast.warning(
+        hasNonCeoPending
+          ? 'Send to Directors only applies to CEO Pending requests. Deselect other statuses.'
+          : 'Send to Directors only applies to CEO Pending requests not yet emailed to directors. Deselect already-emailed requests.',
+        {
+          position: 'top-right',
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        }
+      );
       return;
     }
 
@@ -1803,23 +1829,45 @@ export default function AreaHeadRequests() {
     if (!selectedRequests || selectedRequests.length === 0) return;
 
     const selectedRequestObjects = filteredRows.filter((row) => selectedRequests.includes(row.id));
-    const ceoPendingOnly = selectedRequestObjects.filter((req) => req.status === 'ceo_pending');
+    const ceoPendingOnly = selectedRequestObjects.filter(
+      (req) => req.status === 'ceo_pending' && req.is_additional_director_email_sent !== true
+    );
 
     if (ceoPendingOnly.length === 0) {
-      toast.warning('Please select one or more requests with "CEO Pending" status.', {
-        position: 'top-right',
-        autoClose: 5000,
-        hideProgressBar: false,
-        closeOnClick: true,
-        pauseOnHover: true,
-        draggable: true,
-      });
+      const hasAdditionalDirectorEmailSent = selectedRequestObjects.some(
+        (req) => req.is_additional_director_email_sent === true
+      );
+      if (hasAdditionalDirectorEmailSent) {
+        toast.warning(
+          'Cannot send to additional director for requests that have already been emailed. Please deselect those requests.',
+          {
+            position: 'top-right',
+            autoClose: 5000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          }
+        );
+      } else {
+        toast.warning('Please select one or more requests with "CEO Pending" status.', {
+          position: 'top-right',
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      }
       return;
     }
 
     if (ceoPendingOnly.length !== selectedRequestObjects.length) {
+      const hasNonCeoPending = selectedRequestObjects.some((req) => req.status !== 'ceo_pending');
       toast.warning(
-        'Send to Additional Director only applies to CEO Pending requests. Deselect other statuses.',
+        hasNonCeoPending
+          ? 'Send to Additional Director only applies to CEO Pending requests. Deselect other statuses.'
+          : 'Send to Additional Director only applies to CEO Pending requests not yet emailed. Deselect already-emailed requests.',
         {
           position: 'top-right',
           autoClose: 5000,
@@ -5133,6 +5181,12 @@ export default function AreaHeadRequests() {
                                      (hasCeoPending && hasSubmittedForPayment) || 
                                      (hasReleasePaymentEligible && hasSubmittedForPayment);
             const hasEmailAlreadySent = selectedRequestObjects.some((req) => req.is_email === true);
+            const hasDirectorEmailAlreadySent = selectedRequestObjects.some(
+              (req) => req.is_director_email_sent === true
+            );
+            const hasAdditionalDirectorEmailAlreadySent = selectedRequestObjects.some(
+              (req) => req.is_additional_director_email_sent === true
+            );
             
             return (
               <>
@@ -5156,6 +5210,7 @@ export default function AreaHeadRequests() {
                       hasMixedSelection ||
                       hasReleasePaymentEligible ||
                       hasSubmittedForPayment ||
+                      hasDirectorEmailAlreadySent ||
                       selectedRequestObjects.length === 0 ||
                       selectedRequestObjects.some((req) => req.status !== 'ceo_pending')
                     }
@@ -5174,6 +5229,7 @@ export default function AreaHeadRequests() {
                       hasMixedSelection ||
                       hasReleasePaymentEligible ||
                       hasSubmittedForPayment ||
+                      hasAdditionalDirectorEmailAlreadySent ||
                       selectedRequestObjects.length === 0 ||
                       selectedRequestObjects.some((req) => req.status !== 'ceo_pending')
                     }
@@ -7516,6 +7572,43 @@ export default function AreaHeadRequests() {
                         })() : 'N/A'}
                     </Typography>
                   </Box>
+                  {selectedDetailedRequest.status === 'ceo_pending' && (
+                    <>
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                          CEO Email Sent
+                        </Typography>
+                        <Chip
+                          label={selectedDetailedRequest.is_email === true ? 'Yes' : 'No'}
+                          size="small"
+                          color={selectedDetailedRequest.is_email === true ? 'success' : 'default'}
+                          variant={selectedDetailedRequest.is_email === true ? 'filled' : 'outlined'}
+                        />
+                      </Box>
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                          Director Email Sent
+                        </Typography>
+                        <Chip
+                          label={selectedDetailedRequest.is_director_email_sent === true ? 'Yes' : 'No'}
+                          size="small"
+                          color={selectedDetailedRequest.is_director_email_sent === true ? 'success' : 'default'}
+                          variant={selectedDetailedRequest.is_director_email_sent === true ? 'filled' : 'outlined'}
+                        />
+                      </Box>
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
+                          Additional Director Email Sent
+                        </Typography>
+                        <Chip
+                          label={selectedDetailedRequest.is_additional_director_email_sent === true ? 'Yes' : 'No'}
+                          size="small"
+                          color={selectedDetailedRequest.is_additional_director_email_sent === true ? 'success' : 'default'}
+                          variant={selectedDetailedRequest.is_additional_director_email_sent === true ? 'filled' : 'outlined'}
+                        />
+                      </Box>
+                    </>
+                  )}
                 </Box>
               </Paper>
             </Box>
