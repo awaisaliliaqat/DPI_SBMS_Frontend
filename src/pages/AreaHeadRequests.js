@@ -259,12 +259,6 @@ export default function AreaHeadRequests() {
   // Store current month budget data (fetched once on page load)
   const [currentMonthBudget, setCurrentMonthBudget] = React.useState(null);
 
-  // Manual approval modal state
-  const [manualApprovalModalOpen, setManualApprovalModalOpen] = React.useState(false);
-  const [manualApprovalReason, setManualApprovalReason] = React.useState('');
-  const [manualApprovalFile, setManualApprovalFile] = React.useState(null);
-  const [manualApprovalLoading, setManualApprovalLoading] = React.useState(false);
-  
   // View manual approval modal state
   const [viewManualApprovalModalOpen, setViewManualApprovalModalOpen] = React.useState(false);
   const [selectedManualApprovalRequest, setSelectedManualApprovalRequest] = React.useState(null);
@@ -1111,11 +1105,24 @@ export default function AreaHeadRequests() {
 
   const handleManualApproval = React.useCallback(async (requestData) => {
     if (!canManualApproval) return;
+    if (requestData.status !== 'ceo_pending') {
+      toast.warning('Manual approval only applies to CEO Pending requests.', {
+        position: 'top-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+      return;
+    }
     setLoadingRequestDetails(true);
     try {
       const full = await fetchFullRequest(requestData.id, 'manual_approval');
-      setSelectedRequest(full);
-      setManualApprovalModalOpen(true);
+      setBulkManualApprovalRows([full]);
+      setBulkManualApprovalReason('');
+      setBulkManualApprovalFile(null);
+      setBulkManualApprovalModalOpen(true);
     } catch (e) {
       toast.error('Failed to load request details', {
         position: 'top-right',
@@ -1311,75 +1318,6 @@ export default function AreaHeadRequests() {
       setIsLoading(false);
     }
   }, [rejectInvoiceTarget, post, loadRequests]);
-
-  const handleManualApprovalSubmit = React.useCallback(async () => {
-    if (!selectedRequest) return;
-    
-    // Validate manual approval reason is provided
-    if (!manualApprovalReason || manualApprovalReason.trim() === '') {
-      toast.error('Manual approval reason is required', {
-        position: "top-right",
-        autoClose: 3000,
-        hideProgressBar: false,
-        closeOnClick: true,
-        pauseOnHover: true,
-        draggable: true,
-      });
-      return;
-    }
-    
-    setManualApprovalLoading(true);
-    try {
-      // Create FormData for file upload
-      const formData = new FormData();
-      
-      // Add request data
-      formData.append('request_id', selectedRequest.id);
-      formData.append('manual_approval_reason', manualApprovalReason);
-      
-      // Add file if provided
-      if (manualApprovalFile) {
-        formData.append('manual_approval_file', manualApprovalFile);
-      }
-
-      // Call the manual approval API with FormData
-      const response = await upload(`/api/shopboard-requests/${selectedRequest.id}/approvals/manual-approve`, formData);
-
-      if (response.success) {
-        toast.success('Manual approval submitted successfully!', {
-          position: "top-right",
-          autoClose: 3000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-        });
-        
-        // Close modal and reset form
-        setManualApprovalModalOpen(false);
-        setManualApprovalReason('');
-        setManualApprovalFile(null);
-        setSelectedRequest(null);
-        
-        // Refresh the data
-        loadRequests();
-      } else {
-        throw new Error(response.message || 'Manual approval failed');
-      }
-    } catch (error) {
-      console.error('Error submitting manual approval:', error);
-      toast.error('Failed to submit manual approval. Please try again.', {
-        position: "top-right",
-        autoClose: 5000,
-        hideProgressBar: false,
-        closeOnClick: true,
-        pauseOnHover: true,
-        draggable: true,
-      });
-    } finally {
-      setManualApprovalLoading(false);
-    }
-  }, [selectedRequest, manualApprovalReason, manualApprovalFile, upload, loadRequests]);
 
   const handleOpenBulkManualApproval = React.useCallback(() => {
     if (!canManualApproval) return;
@@ -7634,106 +7572,7 @@ export default function AreaHeadRequests() {
         </DialogActions>
       </Dialog>
 
-      {/* Manual Approval Modal */}
-      <Dialog
-        open={manualApprovalModalOpen}
-        onClose={() => setManualApprovalModalOpen(false)}
-        aria-labelledby="manual-approval-dialog-title"
-        PaperProps={{
-          sx: {
-            backgroundColor: '#ffffff',
-            minWidth: '500px',
-            maxWidth: '600px',
-            borderRadius: 2,
-            boxShadow: 6,
-          }
-        }}
-      >
-        <DialogTitle 
-          id="manual-approval-dialog-title"
-          sx={{ 
-            color: 'success.main',
-            fontWeight: 'bold',
-            borderBottom: '1px solid #eaeaea',
-            padding: '20px 24px 16px 24px'
-          }}
-        >
-          Manual Approval
-        </DialogTitle>
-        
-        <DialogContent sx={{ padding: '20px 24px' }}>
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Request ID: {selectedRequest?.id}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Dealer: {selectedRequest?.dealer?.name || selectedRequest?.dealerName || 'N/A'}
-            </Typography>
-          </Box>
-
-          <TextField
-            fullWidth
-            multiline
-            rows={4}
-            label="Reason for Manual Approval *"
-            value={manualApprovalReason}
-            onChange={(e) => setManualApprovalReason(e.target.value)}
-            placeholder="Enter the reason for manual approval..."
-            sx={{ mb: 3 }}
-            required
-            error={!manualApprovalReason || manualApprovalReason.trim() === ''}
-            helperText={(!manualApprovalReason || manualApprovalReason.trim() === '') ? 'Reason for manual approval is required' : ''}
-          />
-
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="body2" sx={{ mb: 1, fontWeight: 'medium' }}>
-              Upload File (Optional)
-            </Typography>
-            <input
-              type="file"
-              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-              onChange={(e) => setManualApprovalFile(e.target.files[0] || null)}
-              style={{
-                width: '100%',
-                padding: '8px',
-                border: '1px solid #ccc',
-                borderRadius: '4px',
-                fontSize: '14px'
-              }}
-            />
-            {manualApprovalFile && (
-              <Typography variant="caption" color="success.main" sx={{ mt: 1, display: 'block' }}>
-                File selected: {manualApprovalFile.name}
-              </Typography>
-            )}
-          </Box>
-        </DialogContent>
-        
-        <DialogActions sx={{ padding: '16px 24px 20px 24px', gap: 1 }}>
-          <Button
-            onClick={() => setManualApprovalModalOpen(false)}
-            variant="outlined"
-            color="secondary"
-            disabled={manualApprovalLoading}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleManualApprovalSubmit}
-            variant="contained"
-            color="success"
-            disabled={manualApprovalLoading || !manualApprovalReason || manualApprovalReason.trim() === ''}
-            sx={{
-              minWidth: '120px',
-              fontWeight: 'bold'
-            }}
-          >
-            {manualApprovalLoading ? 'Approving...' : 'Approve'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-      
-      {/* Bulk (multiple) Manual Approval Modal */}
+      {/* Manual Approval Modal (single or bulk — both use manual approval batch API) */}
       <Dialog
         open={bulkManualApprovalModalOpen}
         onClose={() => setBulkManualApprovalModalOpen(false)}
