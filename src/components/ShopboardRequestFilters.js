@@ -23,6 +23,7 @@ import {
   Clear as ClearIcon,
   Close as CloseIcon,
   Group as SalesHeadIcon,
+  Category as RequestTypeIcon,
 } from '@mui/icons-material';
 import { useApi } from '../hooks/useApi';
 
@@ -30,7 +31,8 @@ const ShopboardRequestFilters = ({
   onFilterChange,
   loading = false,
   filteredCount = 0,
-  showFilteredCount = false
+  showFilteredCount = false,
+  showRequestTypeFilter = false,
 }) => {
   const [selectedVendor, setSelectedVendor] = React.useState(null);
   const [selectedStatus, setSelectedStatus] = React.useState(null);
@@ -38,6 +40,7 @@ const ShopboardRequestFilters = ({
   const [selectedParentDealer, setSelectedParentDealer] = React.useState(null);
   const [selectedChildDealer, setSelectedChildDealer] = React.useState(null);
   const [selectedSalesHead, setSelectedSalesHead] = React.useState(null);
+  const [selectedRequestType, setSelectedRequestType] = React.useState(null);
   const [startDate, setStartDate] = React.useState(null);
   const [endDate, setEndDate] = React.useState(null);
   const [dateRangeAnchor, setDateRangeAnchor] = React.useState(null);
@@ -47,12 +50,14 @@ const ShopboardRequestFilters = ({
   const [childDealers, setChildDealers] = React.useState([]);
   const [salesHeads, setSalesHeads] = React.useState([]);
   const [statuses, setStatuses] = React.useState([]);
+  const [requestTypes, setRequestTypes] = React.useState([]);
   const [loadingVendors, setLoadingVendors] = React.useState(false);
   const [loadingRegions, setLoadingRegions] = React.useState(false);
   const [loadingParentDealers, setLoadingParentDealers] = React.useState(false);
   const [loadingChildDealers, setLoadingChildDealers] = React.useState(false);
   const [loadingSalesHeads, setLoadingSalesHeads] = React.useState(false);
   const [loadingStatuses, setLoadingStatuses] = React.useState(false);
+  const [loadingRequestTypes, setLoadingRequestTypes] = React.useState(false);
   const { get } = useApi();
 
   // Fetch vendors from API
@@ -128,6 +133,32 @@ const ShopboardRequestFilters = ({
 
     fetchStatuses();
   }, [get]);
+
+  // Fetch request types (Stats page only)
+  React.useEffect(() => {
+    if (!showRequestTypeFilter) return;
+
+    const fetchRequestTypes = async () => {
+      setLoadingRequestTypes(true);
+      try {
+        const response = await get('/api/request-types');
+        if (response.success && Array.isArray(response.data)) {
+          setRequestTypes(response.data);
+        } else if (Array.isArray(response)) {
+          setRequestTypes(response);
+        } else {
+          setRequestTypes([]);
+        }
+      } catch (error) {
+        console.error('Error fetching request types:', error);
+        setRequestTypes([]);
+      } finally {
+        setLoadingRequestTypes(false);
+      }
+    };
+
+    fetchRequestTypes();
+  }, [get, showRequestTypeFilter]);
 
   // Fetch sales heads from API
   React.useEffect(() => {
@@ -220,12 +251,13 @@ const ShopboardRequestFilters = ({
         parentDealer: selectedParentDealer,
         childDealer: selectedChildDealer,
         salesHead: selectedSalesHead,
+        requestType: selectedRequestType,
         startDate: startDate,
         endDate: endDate
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVendor, selectedStatus, selectedRegion, selectedParentDealer, selectedChildDealer, selectedSalesHead, startDate, endDate]);
+  }, [selectedVendor, selectedStatus, selectedRegion, selectedParentDealer, selectedChildDealer, selectedSalesHead, selectedRequestType, startDate, endDate]);
 
   const handleClearFilters = () => {
     setSelectedVendor(null);
@@ -234,11 +266,12 @@ const ShopboardRequestFilters = ({
     setSelectedParentDealer(null);
     setSelectedChildDealer(null);
     setSelectedSalesHead(null);
+    setSelectedRequestType(null);
     setStartDate(null);
     setEndDate(null);
   };
 
-  const hasActiveFilters = selectedVendor !== null || selectedStatus !== null || selectedRegion !== null || selectedParentDealer !== null || selectedChildDealer !== null || selectedSalesHead !== null || startDate !== null || endDate !== null;
+  const hasActiveFilters = selectedVendor !== null || selectedStatus !== null || selectedRegion !== null || selectedParentDealer !== null || selectedChildDealer !== null || selectedSalesHead !== null || selectedRequestType !== null || startDate !== null || endDate !== null;
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -425,6 +458,61 @@ const ShopboardRequestFilters = ({
             }}
           />
         </Grid>
+
+        {/* Request Type Filter (Stats page) */}
+        {showRequestTypeFilter && (
+          <Grid item xs={12} sm={6} md={3}>
+            <Autocomplete
+              size="small"
+              options={requestTypes}
+              getOptionLabel={(option) => option.name || ''}
+              value={selectedRequestType}
+              onChange={(event, newValue) => {
+                setSelectedRequestType(newValue);
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Request Type"
+                  placeholder="Select request type..."
+                  variant="outlined"
+                  fullWidth
+                  disabled={loading}
+                  InputProps={{
+                    ...params.InputProps,
+                    startAdornment: (
+                      <>
+                        <RequestTypeIcon sx={{ mr: 1, color: 'action.active', fontSize: '1.2rem' }} />
+                        {params.InputProps.startAdornment}
+                      </>
+                    ),
+                  }}
+                  sx={{
+                    minWidth: '280px',
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: '#fafbff',
+                      '&:hover': {
+                        backgroundColor: '#f5f7ff',
+                      },
+                      '&.Mui-focused': {
+                        backgroundColor: '#ffffff',
+                      }
+                    }
+                  }}
+                />
+              )}
+              isOptionEqualToValue={(option, value) => option.id === value?.id}
+              noOptionsText="No request types found"
+              loading={loadingRequestTypes}
+              componentsProps={{
+                popper: {
+                  style: { zIndex: 1306 },
+                  placement: 'bottom-start'
+                }
+              }}
+            />
+          </Grid>
+        )}
 
         {/* Region Filter */}
         <Grid item xs={12} sm={6} md={3}>
@@ -849,6 +937,23 @@ const ShopboardRequestFilters = ({
               size="small"
               sx={{
                 fontWeight: 500,
+                '& .MuiChip-deleteIcon': {
+                  fontSize: '1rem'
+                }
+              }}
+            />
+          )}
+          {selectedRequestType && (
+            <Chip
+              label={`Request Type: ${selectedRequestType.name || ''}`}
+              onDelete={() => setSelectedRequestType(null)}
+              color="default"
+              variant="filled"
+              size="small"
+              sx={{
+                fontWeight: 500,
+                backgroundColor: '#fff3e0',
+                color: '#e65100',
                 '& .MuiChip-deleteIcon': {
                   fontSize: '1rem'
                 }

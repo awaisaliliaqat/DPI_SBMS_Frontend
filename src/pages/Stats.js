@@ -9,15 +9,11 @@ import {
   Alert,
 } from '@mui/material';
 import {
-  People as PeopleIcon,
   Assignment as AssignmentIcon,
-  Store as StoreIcon,
-  CheckCircle as CheckCircleIcon,
-  Pending as PendingIcon,
   AttachMoney as MoneyIcon,
-  Assessment as AssessmentIcon,
   AccountBalance as BudgetIcon,
   AccountBalanceWallet as RemainingBudgetIcon,
+  Inventory as QuantityIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../auth/AuthContext';
 import PageContainer from '../components/PageContainer';
@@ -28,24 +24,19 @@ export default function Stats() {
   const { user } = useAuth();
   const { get } = useApi();
 
-  // Check user permissions
   const canRead = user?.permissions?.statistics?.includes('read') || false;
 
   const [loading, setLoading] = React.useState(true);
   const [isInitialLoad, setIsInitialLoad] = React.useState(true);
   const [error, setError] = React.useState(null);
   const [stats, setStats] = React.useState({
+    mode: 'default',
     totalRequests: 0,
-    pendingRequests: 0,
-    approvedRequests: 0,
-    totalVendors: 0,
-    totalDealers: 0,
-    totalUsers: 0,
     totalRevenue: 0,
-    completedRequests: 0,
+    totalQuantity: 0,
+    totalAmount: 0,
   });
 
-  // Budget state
   const [budgetData, setBudgetData] = React.useState({
     hasBudget: false,
     totalBudget: 0,
@@ -55,7 +46,6 @@ export default function Stats() {
     availableBudget: 0,
   });
 
-  // Filter state
   const [filters, setFilters] = React.useState({
     vendor: null,
     status: null,
@@ -63,35 +53,33 @@ export default function Stats() {
     parentDealer: null,
     childDealer: null,
     salesHead: null,
+    requestType: null,
     startDate: null,
     endDate: null,
   });
 
-  // Handle filter changes - memoized to prevent infinite loops
   const handleFilterChange = React.useCallback((newFilters) => {
-    setFilters(prevFilters => {
-      // Only update if filters actually changed to prevent unnecessary re-renders
-      const hasChanged = 
+    setFilters((prevFilters) => {
+      const hasChanged =
         prevFilters.vendor !== newFilters.vendor ||
         prevFilters.status !== newFilters.status ||
         prevFilters.region !== newFilters.region ||
         prevFilters.parentDealer !== newFilters.parentDealer ||
         prevFilters.childDealer !== newFilters.childDealer ||
         prevFilters.salesHead !== newFilters.salesHead ||
+        prevFilters.requestType !== newFilters.requestType ||
         prevFilters.startDate !== newFilters.startDate ||
         prevFilters.endDate !== newFilters.endDate;
-      
+
       return hasChanged ? newFilters : prevFilters;
     });
   }, []);
 
-  // Use ref to track filters to avoid recreating fetchStats on every filter change
   const filtersRef = React.useRef(filters);
   React.useEffect(() => {
     filtersRef.current = filters;
   }, [filters]);
 
-  // Fetch statistics data with filters
   React.useEffect(() => {
     const fetchStats = async () => {
       if (!canRead) {
@@ -101,92 +89,76 @@ export default function Stats() {
       }
 
       try {
-        // Only show full loading on initial load, use subtle loading for filter changes
         if (isInitialLoad) {
           setLoading(true);
         }
-        
-        // Use current filters from ref
+
         const currentFilters = filtersRef.current;
-        
-        // Build query parameters from filters
         const queryParams = new URLSearchParams();
-        
-        // Add vendor filter if selected
+
         if (currentFilters.vendor && currentFilters.vendor.id) {
           queryParams.append('vendor_id', currentFilters.vendor.id.toString());
         }
-        
-        // Add status filter if selected
+
         if (currentFilters.status && currentFilters.status.value) {
           queryParams.append('status', currentFilters.status.value);
         }
-        
-        // Add region filter if selected
+
         if (currentFilters.region && currentFilters.region.name) {
           queryParams.append('region', currentFilters.region.name);
         }
-        
-        // Add parent dealer filter if selected
+
         if (currentFilters.parentDealer && currentFilters.parentDealer.code) {
           queryParams.append('parent_dealer_code', currentFilters.parentDealer.code);
         }
-        
-        // Add child dealer filter if selected
+
         if (currentFilters.childDealer && currentFilters.childDealer.code) {
           queryParams.append('child_dealer_code', currentFilters.childDealer.code);
         }
-        
-        // Add sales head filter if selected
+
         if (currentFilters.salesHead && currentFilters.salesHead.sh_codes && currentFilters.salesHead.sh_codes[0]) {
           queryParams.append('sales_head_code', currentFilters.salesHead.sh_codes[0]);
         }
-        
-        // Add date range filter if both start and end dates are provided
+
+        if (currentFilters.requestType && currentFilters.requestType.id) {
+          queryParams.append('request_type_id', currentFilters.requestType.id.toString());
+        }
+
         if (currentFilters.startDate && currentFilters.endDate) {
           queryParams.append('start_date', currentFilters.startDate);
           queryParams.append('end_date', currentFilters.endDate);
         }
-        
+
         const apiUrl = `/api/statistics?${queryParams.toString()}`;
         const response = await get(apiUrl);
-        
+
         if (response.success && response.data) {
+          const isRequestTypeMode = response.data.mode === 'request_type' || !!currentFilters.requestType?.id;
           setStats({
+            mode: isRequestTypeMode ? 'request_type' : 'default',
             totalRequests: response.data.totalRequests || 0,
             totalRevenue: response.data.totalCost || 0,
-            // Keep other stats as 0 for now (can be added later if needed)
-            pendingRequests: 0,
-            approvedRequests: 0,
-            totalVendors: 0,
-            totalDealers: 0,
-            totalUsers: 0,
-            completedRequests: 0,
+            totalQuantity: response.data.totalQuantity || 0,
+            totalAmount: response.data.totalAmount || 0,
           });
         } else {
           setStats({
+            mode: 'default',
             totalRequests: 0,
             totalRevenue: 0,
-            pendingRequests: 0,
-            approvedRequests: 0,
-            totalVendors: 0,
-            totalDealers: 0,
-            totalUsers: 0,
-            completedRequests: 0,
+            totalQuantity: 0,
+            totalAmount: 0,
           });
         }
       } catch (err) {
         console.error('Error fetching statistics:', err);
         setError('Failed to load statistics');
         setStats({
+          mode: 'default',
           totalRequests: 0,
           totalRevenue: 0,
-          pendingRequests: 0,
-          approvedRequests: 0,
-          totalVendors: 0,
-          totalDealers: 0,
-          totalUsers: 0,
-          completedRequests: 0,
+          totalQuantity: 0,
+          totalAmount: 0,
         });
       } finally {
         setLoading(false);
@@ -196,9 +168,8 @@ export default function Stats() {
 
     fetchStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canRead, filters]); // Only depend on canRead and filters, not get
+  }, [canRead, filters]);
 
-  // Fetch budget data based on date range filter
   React.useEffect(() => {
     const fetchBudget = async () => {
       if (!canRead) {
@@ -215,20 +186,16 @@ export default function Stats() {
 
       try {
         const currentFilters = filtersRef.current;
-        
-        // Build query parameters for budget API
         const queryParams = new URLSearchParams();
-        
-        // Add date range filter if both start and end dates are provided
+
         if (currentFilters.startDate && currentFilters.endDate) {
           queryParams.append('start_date', currentFilters.startDate);
           queryParams.append('end_date', currentFilters.endDate);
         }
-        // If no date range, API will default to current month
-        
+
         const apiUrl = `/api/budget-management/date-range?${queryParams.toString()}`;
         const response = await get(apiUrl);
-        
+
         if (response.success && response.data) {
           setBudgetData({
             hasBudget: response.data.hasBudget || false,
@@ -263,9 +230,8 @@ export default function Stats() {
 
     fetchBudget();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canRead, filters.startDate, filters.endDate]); // Only depend on date filters for budget
+  }, [canRead, filters.startDate, filters.endDate]);
 
-  // If user doesn't have read permission, show error message
   if (!canRead) {
     return (
       <PageContainer title="Statistics" breadcrumbs={[{ title: 'Statistics' }]}>
@@ -276,64 +242,79 @@ export default function Stats() {
     );
   }
 
-  // Statistics cards configuration
-  const statCards = [
-    {
-      title: 'Total Requests',
-      value: stats.totalRequests,
-      icon: <AssignmentIcon sx={{ fontSize: 40 }} />,
-      color: '#1976d2',
-      bgColor: '#e3f2fd',
-    },
-    {
-      title: 'Total Cost',
-      value: (() => {
-        const cost = stats.totalRevenue || 0;
-        // Format number with commas for thousands separators
-        return `Rs ${cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-      })(),
-      icon: <MoneyIcon sx={{ fontSize: 40 }} />,
-      color: '#2e7d32',
-      bgColor: '#e8f5e9',
-    },
+  const isRequestTypeMode = stats.mode === 'request_type' || !!filters.requestType?.id;
+  const requestTypeName = filters.requestType?.name || 'Request Type';
+
+  const formatMoney = (amount) =>
+    `Rs ${(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const primaryCards = isRequestTypeMode
+    ? [
+        {
+          title: `Total Quantity (${requestTypeName})`,
+          value: (stats.totalQuantity || 0).toLocaleString('en-US'),
+          icon: <QuantityIcon sx={{ fontSize: 40 }} />,
+          color: '#1565c0',
+          bgColor: '#e3f2fd',
+        },
+        {
+          title: `Amount (${requestTypeName})`,
+          value: formatMoney(stats.totalAmount),
+          icon: <MoneyIcon sx={{ fontSize: 40 }} />,
+          color: '#2e7d32',
+          bgColor: '#e8f5e9',
+        },
+      ]
+    : [
+        {
+          title: 'Total Requests',
+          value: stats.totalRequests,
+          icon: <AssignmentIcon sx={{ fontSize: 40 }} />,
+          color: '#1976d2',
+          bgColor: '#e3f2fd',
+        },
+        {
+          title: 'Total Cost',
+          value: formatMoney(stats.totalRevenue),
+          icon: <MoneyIcon sx={{ fontSize: 40 }} />,
+          color: '#2e7d32',
+          bgColor: '#e8f5e9',
+        },
+      ];
+
+  const budgetCards = [
     {
       title: 'Budget',
       value: (() => {
         if (!budgetData.hasBudget) return 'No Budget';
-        const budget = budgetData.availableBudget || 0;
-        return `Rs ${budget.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        return formatMoney(budgetData.availableBudget);
       })(),
       icon: <BudgetIcon sx={{ fontSize: 40 }} />,
       color: '#9c27b0',
       bgColor: '#f3e5f5',
-      subtitle: budgetData.hasBudget && budgetData.carryForward !== 0 
-        ? `Carry Forward: Rs ${budgetData.carryForward.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-        : null,
+      subtitle:
+        budgetData.hasBudget && budgetData.carryForward !== 0
+          ? `Carry Forward: ${formatMoney(budgetData.carryForward)}`
+          : null,
     },
     {
       title: 'Remaining Budget',
       value: (() => {
         if (!budgetData.hasBudget) return 'No Budget';
-        const remaining = budgetData.remainingBudget || 0;
-        return `Rs ${remaining.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        return formatMoney(budgetData.remainingBudget);
       })(),
       icon: <RemainingBudgetIcon sx={{ fontSize: 40 }} />,
-      color: (() => {
-        const remaining = budgetData.remainingBudget || 0;
-        return remaining < 0 ? '#d32f2f' : '#2e7d32';
-      })(),
-      bgColor: (() => {
-        const remaining = budgetData.remainingBudget || 0;
-        return remaining < 0 ? '#ffebee' : '#e8f5e9';
-      })(),
+      color: (budgetData.remainingBudget || 0) < 0 ? '#d32f2f' : '#2e7d32',
+      bgColor: (budgetData.remainingBudget || 0) < 0 ? '#ffebee' : '#e8f5e9',
     },
-  ].filter(card => {
-    // Filter out budget cards if no budget data
+  ].filter((card) => {
     if ((card.title === 'Budget' || card.title === 'Remaining Budget') && !budgetData.hasBudget) {
       return false;
     }
     return true;
   });
+
+  const statCards = [...primaryCards, ...budgetCards];
 
   if (loading) {
     return (
@@ -358,7 +339,6 @@ export default function Stats() {
   return (
     <PageContainer title="Statistics" breadcrumbs={[{ title: 'Statistics' }]}>
       <Box sx={{ flexGrow: 1, p: 3, position: 'relative' }}>
-        {/* Subtle loading overlay - only show when loading after initial load */}
         {loading && !isInitialLoad && (
           <Box
             sx={{
@@ -379,18 +359,17 @@ export default function Stats() {
           </Box>
         )}
 
-        {/* Search Filters */}
         <ShopboardRequestFilters
           onFilterChange={handleFilterChange}
           loading={loading && isInitialLoad}
           filteredCount={0}
           showFilteredCount={false}
+          showRequestTypeFilter
         />
 
-        {/* Statistics Cards Grid */}
         <Grid container spacing={3}>
           {statCards.map((card, index) => (
-            <Grid item xs={12} sm={6} md={4} lg={3} key={index}>
+            <Grid item xs={12} sm={6} md={4} lg={3} key={`${card.title}-${index}`}>
               <Card
                 sx={{
                   height: '100%',
@@ -426,7 +405,10 @@ export default function Stats() {
                     variant="h4"
                     sx={{
                       fontWeight: 700,
-                      color: card.title === 'Remaining Budget' && budgetData.remainingBudget < 0 ? '#d32f2f' : '#1a237e',
+                      color:
+                        card.title === 'Remaining Budget' && budgetData.remainingBudget < 0
+                          ? '#d32f2f'
+                          : '#1a237e',
                       mb: 0.5,
                       fontSize: '2rem',
                     }}
@@ -467,4 +449,3 @@ export default function Stats() {
     </PageContainer>
   );
 }
-
