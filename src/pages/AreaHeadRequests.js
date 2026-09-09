@@ -270,6 +270,15 @@ export default function AreaHeadRequests() {
   const [bulkManualApprovalLoading, setBulkManualApprovalLoading] = React.useState(false);
   const [bulkManualApprovalRows, setBulkManualApprovalRows] = React.useState([]);
 
+  // Recipient picker for Send to Directors / Additional Director
+  const [recipientPickerOpen, setRecipientPickerOpen] = React.useState(false);
+  const [recipientPickerMode, setRecipientPickerMode] = React.useState(null); // 'director' | 'additional_director'
+  const [recipientPickerRows, setRecipientPickerRows] = React.useState([]);
+  const [recipientOptions, setRecipientOptions] = React.useState([]);
+  const [selectedRecipientIds, setSelectedRecipientIds] = React.useState([]);
+  const [recipientPickerLoading, setRecipientPickerLoading] = React.useState(false);
+  const [recipientSendLoading, setRecipientSendLoading] = React.useState(false);
+
   // Selection state for manual approval
   const [selectedRequests, setSelectedRequests] = React.useState([]);
   const [showSelectionColumn, setShowSelectionColumn] = React.useState(false);
@@ -1539,7 +1548,7 @@ export default function AreaHeadRequests() {
     }
   }, [selectedRequests, filteredRows, post, loadRequests, get]);
 
-  // Bulk notify directors (same tab permission as Send to CEO for Approval: manual_approval)
+  // Bulk notify directors: Manual Survey → recipient picker; regular → assigned director (legacy)
   const handleBulkSendToDirectors = React.useCallback(async () => {
     if (!canManualApproval) return;
     if (!selectedRequests || selectedRequests.length === 0) return;
@@ -1578,9 +1587,6 @@ export default function AreaHeadRequests() {
 
     if (ceoPendingOnly.length !== selectedRequestObjects.length) {
       const hasNonCeoPending = selectedRequestObjects.some((req) => req.status !== 'ceo_pending');
-      const hasAlreadyEmailed = selectedRequestObjects.some(
-        (req) => req.status === 'ceo_pending' && req.is_director_email_sent === true
-      );
       toast.warning(
         hasNonCeoPending
           ? 'Send to Directors only applies to CEO Pending requests. Deselect other statuses.'
@@ -1597,6 +1603,52 @@ export default function AreaHeadRequests() {
       return;
     }
 
+    const hasSurvey = ceoPendingOnly.some((r) => !!r.is_manual_survey);
+    const hasRegular = ceoPendingOnly.some((r) => !r.is_manual_survey);
+    if (hasSurvey && hasRegular) {
+      toast.warning(
+        'Cannot mix Manual Survey requests with other requests. Select only Manual Survey, or only regular requests.',
+        {
+          position: 'top-right',
+          autoClose: 6000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        }
+      );
+      return;
+    }
+
+    // Manual Survey only: pick director(s) before sending
+    if (hasSurvey) {
+      setRecipientPickerMode('director');
+      setRecipientPickerRows(ceoPendingOnly);
+      setSelectedRecipientIds([]);
+      setRecipientOptions([]);
+      setRecipientPickerOpen(true);
+      setRecipientPickerLoading(true);
+      try {
+        const res = await get('/api/sap-users/directors');
+        const list = res?.success && Array.isArray(res.data) ? res.data : [];
+        setRecipientOptions(list.filter((u) => u && u.id));
+        if (list.length === 0) {
+          toast.warning('No active directors found. Create director users first.', {
+            position: 'top-right',
+            autoClose: 5000,
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load directors:', err);
+        toast.error('Failed to load directors', { position: 'top-right', autoClose: 5000 });
+        setRecipientPickerOpen(false);
+      } finally {
+        setRecipientPickerLoading(false);
+      }
+      return;
+    }
+
+    // Regular requests: send to each sales head's assigned director (legacy)
     const missingDirector = ceoPendingOnly.filter((req) => !shopboardRowHasAssignedDirector(req));
     if (missingDirector.length > 0) {
       const lines = missingDirector.map(
@@ -1761,7 +1813,7 @@ export default function AreaHeadRequests() {
     }
   }, [canManualApproval, selectedRequests, filteredRows, post, loadRequests, get]);
 
-  // Notify all users with user_type "additional_director" (same selection rules as Send to Directors: CEO Pending only)
+  // Additional directors: Manual Survey → recipient picker; regular → all additional directors (legacy)
   const handleBulkSendToAdditionalDirectors = React.useCallback(async () => {
     if (!canManualApproval) return;
     if (!selectedRequests || selectedRequests.length === 0) return;
@@ -1818,6 +1870,52 @@ export default function AreaHeadRequests() {
       return;
     }
 
+    const hasSurvey = ceoPendingOnly.some((r) => !!r.is_manual_survey);
+    const hasRegular = ceoPendingOnly.some((r) => !r.is_manual_survey);
+    if (hasSurvey && hasRegular) {
+      toast.warning(
+        'Cannot mix Manual Survey requests with other requests. Select only Manual Survey, or only regular requests.',
+        {
+          position: 'top-right',
+          autoClose: 6000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        }
+      );
+      return;
+    }
+
+    // Manual Survey only: pick additional director(s) before sending
+    if (hasSurvey) {
+      setRecipientPickerMode('additional_director');
+      setRecipientPickerRows(ceoPendingOnly);
+      setSelectedRecipientIds([]);
+      setRecipientOptions([]);
+      setRecipientPickerOpen(true);
+      setRecipientPickerLoading(true);
+      try {
+        const res = await get('/api/sap-users/additional-directors');
+        const list = res?.success && Array.isArray(res.data) ? res.data : [];
+        setRecipientOptions(list.filter((u) => u && u.id));
+        if (list.length === 0) {
+          toast.warning('No active additional directors found.', {
+            position: 'top-right',
+            autoClose: 5000,
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load additional directors:', err);
+        toast.error('Failed to load additional directors', { position: 'top-right', autoClose: 5000 });
+        setRecipientPickerOpen(false);
+      } finally {
+        setRecipientPickerLoading(false);
+      }
+      return;
+    }
+
+    // Regular requests: email all additional directors (legacy)
     const baseUrlWithPath = (window.location.origin || 'http://localhost:3000') + BASENAME;
 
     setIsLoading(true);
@@ -1890,12 +1988,126 @@ export default function AreaHeadRequests() {
         closeOnClick: true,
         pauseOnHover: true,
         draggable: true,
-        style: { whiteSpace: 'pre-line' },
       });
     } finally {
       setIsLoading(false);
     }
   }, [canManualApproval, selectedRequests, filteredRows, post, loadRequests, get]);
+
+  const handleConfirmRecipientSend = React.useCallback(async () => {
+    if (!recipientPickerMode || recipientPickerRows.length === 0) return;
+    if (!selectedRecipientIds.length) {
+      toast.warning(
+        recipientPickerMode === 'director'
+          ? 'Please select a director.'
+          : 'Please select an additional director.',
+        { position: 'top-right', autoClose: 4000 }
+      );
+      return;
+    }
+
+    const baseUrlWithPath = (window.location.origin || 'http://localhost:3000') + BASENAME;
+    setRecipientSendLoading(true);
+    try {
+      const requestsWithTokens = await Promise.all(
+        recipientPickerRows.map(async (request) => {
+          try {
+            const [viewTokenResponse, rejectTokenResponse] = await Promise.all([
+              get(`/api/shopboard-requests/${request.id}/generate-view-token`),
+              get(`/api/shopboard-requests/${request.id}/generate-reject-token`),
+            ]);
+            return {
+              ...request,
+              viewToken: viewTokenResponse.success ? viewTokenResponse.data.token : null,
+              rejectToken: rejectTokenResponse.success ? rejectTokenResponse.data.token : null,
+            };
+          } catch (err) {
+            console.error(`Error generating tokens for request ${request.id}:`, err);
+            return { ...request, viewToken: null, rejectToken: null };
+          }
+        })
+      );
+
+      const emailRequests = requestsWithTokens.map((request) => ({
+        id: request.id,
+        dealerName: request.dealer?.name || request.dealer_code_temp || 'N/A',
+        dealerRegion: request.dealer?.district || request.region || 'N/A',
+        vendorName: request.vendor?.card_name || request.vendor_name || 'N/A',
+        totalCost: request.total_cost || 0,
+        viewToken: request.viewToken,
+        rejectToken: request.rejectToken,
+        requestItems: (request.requestItems || []).map((item) => ({
+          requestType: {
+            name: `${item.requestType?.name || 'N/A'}(${item.width || 'N/A'} x ${item.height || 'N/A'})`,
+          },
+          width: item.width,
+          height: item.height,
+        })),
+      }));
+
+      let response;
+      if (recipientPickerMode === 'director') {
+        response = await post('/api/shopboard-requests/send-to-directors', {
+          recipientSelection: true,
+          directorIds: selectedRecipientIds,
+          baseUrl: baseUrlWithPath,
+          backendUrl: BASE_URL,
+          requests: emailRequests,
+        });
+      } else {
+        response = await post('/api/shopboard-requests/send-to-additional-directors', {
+          baseUrl: baseUrlWithPath,
+          backendUrl: BASE_URL,
+          requests: emailRequests,
+          additionalDirectorIds: selectedRecipientIds,
+        });
+      }
+
+      if (response.success) {
+        toast.success(
+          response.message ||
+            (recipientPickerMode === 'director'
+              ? `Director notification queued for ${recipientPickerRows.length} request(s).`
+              : `Additional director notification queued for ${recipientPickerRows.length} request(s).`),
+          {
+            position: 'top-right',
+            autoClose: 4000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+          }
+        );
+        setRecipientPickerOpen(false);
+        setRecipientPickerMode(null);
+        setRecipientPickerRows([]);
+        setSelectedRecipientIds([]);
+        setRecipientOptions([]);
+        setSelectedRequests([]);
+        loadRequests();
+      } else {
+        throw new Error(response.message || 'Failed to send notification');
+      }
+    } catch (error) {
+      toast.error(error.message || 'Failed to send notification', {
+        position: 'top-right',
+        autoClose: 8000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setRecipientSendLoading(false);
+    }
+  }, [
+    recipientPickerMode,
+    recipientPickerRows,
+    selectedRecipientIds,
+    get,
+    post,
+    loadRequests,
+  ]);
 
   // Process payment (update status to payment_successful) - called from payment summary modal
   const handleProcessPayment = React.useCallback(async (applySalesTax = false) => {
@@ -2015,6 +2227,25 @@ export default function AreaHeadRequests() {
             });
             return prev; // Don't add the new selection
           }
+
+          // Manual Survey cannot be mixed with non-Manual Survey requests
+          const existingHasSurvey = selectedRequests.some((r) => !!r.is_manual_survey);
+          const existingHasRegular = selectedRequests.some((r) => !r.is_manual_survey);
+          const newIsSurvey = !!request.is_manual_survey;
+          if ((existingHasSurvey && !newIsSurvey) || (existingHasRegular && newIsSurvey)) {
+            toast.warning(
+              'Cannot mix Manual Survey requests with other requests. Select only Manual Survey, or only regular requests.',
+              {
+                position: 'top-right',
+                autoClose: 5000,
+                hideProgressBar: false,
+                closeOnClick: true,
+                pauseOnHover: true,
+                draggable: true,
+              }
+            );
+            return prev;
+          }
         }
         
         return [...prev, requestId];
@@ -2029,32 +2260,53 @@ export default function AreaHeadRequests() {
     }
     
     // Determine selectable rows based on user permissions
-    let selectableRequests = [];
+    let selectableRows = [];
     if (canManualApproval) {
       // ceo_pending (all — is_email only affects Send to CEO button, not Manual Approval)
       // invoice_sent / invoice_approved / finance_rejected for Process Payment
-      const ceoPendingRows = filteredRows
-        .filter(row => row.status === 'ceo_pending')
-        .map(row => row.id);
-      const releasePaymentRows = filteredRows
-        .filter(row => isBulkReleasePaymentStatus(row.status))
-        .map(row => row.id);
-      selectableRequests = [...selectableRequests, ...ceoPendingRows, ...releasePaymentRows];
+      const ceoPendingRows = filteredRows.filter((row) => row.status === 'ceo_pending');
+      const releasePaymentRows = filteredRows.filter((row) => isBulkReleasePaymentStatus(row.status));
+      selectableRows = [...selectableRows, ...ceoPendingRows, ...releasePaymentRows];
     }
     if (canPaymentRelease) {
       // Users with payment_release can select Submitted for Payment
-      const paymentRows = filteredRows
-        .filter(row => row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT)
-        .map(row => row.id);
-      selectableRequests = [...selectableRequests, ...paymentRows];
+      const paymentRows = filteredRows.filter(
+        (row) => row.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT
+      );
+      selectableRows = [...selectableRows, ...paymentRows];
     }
+
+    // Never mix Manual Survey with non-Manual Survey in select-all
+    const surveyRows = selectableRows.filter((r) => !!r.is_manual_survey);
+    const regularRows = selectableRows.filter((r) => !r.is_manual_survey);
+    let targetRows = selectableRows;
+    if (surveyRows.length > 0 && regularRows.length > 0) {
+      const selectedObjs = filteredRows.filter((row) => selectedRequests.includes(row.id));
+      const preferSurvey =
+        selectedObjs.length > 0
+          ? selectedObjs.some((r) => !!r.is_manual_survey)
+          : false;
+      targetRows = preferSurvey ? surveyRows : regularRows;
+      if (selectedRequests.length === 0) {
+        toast.info(
+          'Manual Survey and regular requests cannot be selected together. Selected regular requests only. Clear and re-select to choose Manual Survey.',
+          { position: 'top-right', autoClose: 5000 }
+        );
+      }
+    }
+
+    const selectableRequests = targetRows.map((row) => row.id);
     
-    if (selectedRequests.length === selectableRequests.length) {
+    if (
+      selectableRequests.length > 0 &&
+      selectedRequests.length === selectableRequests.length &&
+      selectableRequests.every((id) => selectedRequests.includes(id))
+    ) {
       setSelectedRequests([]);
     } else {
       setSelectedRequests(selectableRequests);
     }
-  }, [filteredRows, selectedRequests.length, canManualApproval, canPaymentRelease]);
+  }, [filteredRows, selectedRequests, canManualApproval, canPaymentRelease]);
 
   // Fetch comments for a specific request
   const fetchRequestComments = React.useCallback(async (requestId) => {
@@ -6709,6 +6961,131 @@ export default function AreaHeadRequests() {
             }}
           >
             {isLoading ? 'Updating...' : 'Update Request'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Director / Additional Director recipient picker */}
+      <Dialog
+        open={recipientPickerOpen}
+        onClose={() => {
+          if (recipientSendLoading) return;
+          setRecipientPickerOpen(false);
+          setRecipientPickerMode(null);
+          setRecipientPickerRows([]);
+          setSelectedRecipientIds([]);
+          setRecipientOptions([]);
+        }}
+        aria-labelledby="recipient-picker-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: { xs: '90vw', sm: '480px' },
+            maxWidth: '560px',
+          },
+        }}
+      >
+        <DialogTitle
+          id="recipient-picker-dialog-title"
+          sx={{ color: 'primary.main', fontWeight: 'bold' }}
+        >
+          {recipientPickerMode === 'additional_director'
+            ? 'Select Additional Director'
+            : 'Select Director'}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: '#666', mb: 2 }}>
+            Choose who should receive the email for{' '}
+            <strong>{recipientPickerRows.length}</strong> selected request
+            {recipientPickerRows.length === 1 ? '' : 's'}
+            {recipientPickerRows.some((r) => !!r.is_manual_survey) ? ' (Manual Survey)' : ''}.
+            Only one recipient can be selected.
+          </Typography>
+          {recipientPickerLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+              <CircularProgress size={32} />
+            </Box>
+          ) : recipientOptions.length === 0 ? (
+            <Alert severity="warning">
+              No{' '}
+              {recipientPickerMode === 'additional_director'
+                ? 'additional directors'
+                : 'directors'}{' '}
+              found.
+            </Alert>
+          ) : (
+            <RadioGroup
+              value={selectedRecipientIds[0] != null ? String(selectedRecipientIds[0]) : ''}
+              onChange={(e) => {
+                const raw = e.target.value;
+                const match = recipientOptions.find((u) => String(u.id) === raw);
+                setSelectedRecipientIds(match ? [match.id] : []);
+              }}
+              sx={{ maxHeight: 320, overflowY: 'auto' }}
+            >
+              {recipientOptions.map((user) => {
+                const label =
+                  (user.card_name && String(user.card_name).trim()) ||
+                  user.username ||
+                  `User ${user.id}`;
+                return (
+                  <FormControlLabel
+                    key={user.id}
+                    value={String(user.id)}
+                    control={<Radio />}
+                    label={
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                          {label}
+                        </Typography>
+                        {user.email ? (
+                          <Typography variant="caption" sx={{ color: '#888' }}>
+                            {user.email}
+                          </Typography>
+                        ) : (
+                          <Typography variant="caption" sx={{ color: '#c62828' }}>
+                            No email on file
+                          </Typography>
+                        )}
+                      </Box>
+                    }
+                  />
+                );
+              })}
+            </RadioGroup>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button
+            onClick={() => {
+              setRecipientPickerOpen(false);
+              setRecipientPickerMode(null);
+              setRecipientPickerRows([]);
+              setSelectedRecipientIds([]);
+              setRecipientOptions([]);
+            }}
+            variant="outlined"
+            disabled={recipientSendLoading}
+            sx={{
+              color: '#666',
+              borderColor: '#ddd',
+              '&:hover': { borderColor: '#999', backgroundColor: '#f5f5f5' },
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmRecipientSend}
+            variant="contained"
+            color="primary"
+            disabled={
+              recipientSendLoading ||
+              recipientPickerLoading ||
+              recipientOptions.length === 0 ||
+              selectedRecipientIds.length === 0
+            }
+          >
+            {recipientSendLoading ? 'Sending...' : 'Send'}
           </Button>
         </DialogActions>
       </Dialog>
