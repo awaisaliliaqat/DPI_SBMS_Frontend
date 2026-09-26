@@ -16,6 +16,9 @@ export const SHOPBOARD_REQUEST_STATUS = {
   RFQ_NOT_ACCEPTED: 'rfq not accepted',
   UNDER_REVIEW: 'under_review',
   CEO_PENDING: 'ceo_pending',
+  CEO_SENT: 'ceo_sent',
+  DIRECTOR_SENT: 'director_sent',
+  ADDITIONAL_DIRECTOR_SENT: 'additional_director_sent',
   CEO_APPROVAL: 'ceo_approval',
   COMPLETED: 'completed',
   INVOICE_SENT: 'invoice_sent',
@@ -50,6 +53,9 @@ export const SHOPBOARD_REQUEST_STATUS_DISPLAY = {
   [SHOPBOARD_REQUEST_STATUS.RFQ_NOT_ACCEPTED]: 'RFQ Not Accepted',
   [SHOPBOARD_REQUEST_STATUS.UNDER_REVIEW]: 'Under Review',
   [SHOPBOARD_REQUEST_STATUS.CEO_PENDING]: 'CEO Pending',
+  [SHOPBOARD_REQUEST_STATUS.CEO_SENT]: 'CEO Sent',
+  [SHOPBOARD_REQUEST_STATUS.DIRECTOR_SENT]: 'Director Sent',
+  [SHOPBOARD_REQUEST_STATUS.ADDITIONAL_DIRECTOR_SENT]: 'Additional Director Sent',
   [SHOPBOARD_REQUEST_STATUS.CEO_APPROVAL]: 'CEO Approval',
   [SHOPBOARD_REQUEST_STATUS.COMPLETED]: 'Completed',
   [SHOPBOARD_REQUEST_STATUS.INVOICE_SENT]: 'Invoice Sent',
@@ -116,6 +122,9 @@ export const getStatusColor = (status) => {
     case SHOPBOARD_REQUEST_STATUS.MANUAL_APPROVAL:
       return 'warning';
     case SHOPBOARD_REQUEST_STATUS.CEO_PENDING:
+    case SHOPBOARD_REQUEST_STATUS.CEO_SENT:
+    case SHOPBOARD_REQUEST_STATUS.DIRECTOR_SENT:
+    case SHOPBOARD_REQUEST_STATUS.ADDITIONAL_DIRECTOR_SENT:
     case SHOPBOARD_REQUEST_STATUS.DIRECTOR_APPROVAL:
     case SHOPBOARD_REQUEST_STATUS.ADDITIONAL_DIRECTOR_APPROVAL:
       return 'warning';
@@ -125,6 +134,16 @@ export const getStatusColor = (status) => {
       return 'default';
   }
 };
+
+export const EMAIL_APPROVAL_PENDING_STATUSES = [
+  SHOPBOARD_REQUEST_STATUS.CEO_PENDING,
+  SHOPBOARD_REQUEST_STATUS.CEO_SENT,
+  SHOPBOARD_REQUEST_STATUS.DIRECTOR_SENT,
+  SHOPBOARD_REQUEST_STATUS.ADDITIONAL_DIRECTOR_SENT,
+];
+
+export const isEmailApprovalPendingStatus = (status) =>
+  EMAIL_APPROVAL_PENDING_STATUSES.includes(status);
 
 // Array of all status values
 export const ALL_STATUSES = Object.values(SHOPBOARD_REQUEST_STATUS);

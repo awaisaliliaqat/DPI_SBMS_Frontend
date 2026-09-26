@@ -341,6 +341,9 @@
                 const statusMap = {
                     'pending': 'Pending',
                     'ceo_pending': 'CEO Pending',
+                    'ceo_sent': 'CEO Sent',
+                    'director_sent': 'Director Sent',
+                    'additional_director_sent': 'Additional Director Sent',
                     'approved': 'Approved',
                     'rejected': 'Rejected',
                     'completed': 'Completed',
@@ -364,7 +367,7 @@
             };
 
             const getStatusBadge = (status) => {
-                const statusClass = status === 'ceo_pending' ? 'status-ceo-pending' : 
+                const statusClass = (status === 'ceo_pending' || status === 'ceo_sent' || status === 'director_sent' || status === 'additional_director_sent') ? 'status-ceo-pending' : 
                                   status === 'approved' ? 'status-approved' :
                                   status === 'rejected' ? 'status-rejected' : 'status-pending';
                 return `<span class="status-badge ${statusClass}">${formatStatus(status)}</span>`;

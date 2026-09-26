@@ -77,7 +77,8 @@ import { BASE_URL, BASENAME } from "../constants/Constants";
 import { 
   SHOPBOARD_REQUEST_STATUS, 
   getStatusDisplayName, 
-  getStatusColor as getStatusColorHelper 
+  getStatusColor as getStatusColorHelper,
+  isEmailApprovalPendingStatus,
 } from "../constants/ShopboardRequestStatus";
 import { useApi } from '../hooks/useApi';
 import jsPDF from 'jspdf';
@@ -826,7 +827,7 @@ export default function AreaHeadRequests() {
       let shouldShowSelection = false;
       if (canManualApproval) {
         // Show selection column if there are ceo_pending or invoice/payment-eligible requests
-        const hasCeoPending = requestsData.some(request => request.status === 'ceo_pending');
+        const hasCeoPending = requestsData.some(request => isEmailApprovalPendingStatus(request.status));
         const hasReleasePaymentEligible = requestsData.some(request => isBulkReleasePaymentStatus(request.status));
         shouldShowSelection = hasCeoPending || hasReleasePaymentEligible;
       }
@@ -995,8 +996,7 @@ export default function AreaHeadRequests() {
       status === SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT ||
       status === 'under_review' ||
       status === SHOPBOARD_REQUEST_STATUS.UNDER_REVIEW ||
-      status === 'ceo_pending' ||
-      status === SHOPBOARD_REQUEST_STATUS.CEO_PENDING
+      isEmailApprovalPendingStatus(status)
     );
   }, []);
 
@@ -1114,7 +1114,7 @@ export default function AreaHeadRequests() {
 
   const handleManualApproval = React.useCallback(async (requestData) => {
     if (!canManualApproval) return;
-    if (requestData.status !== 'ceo_pending') {
+    if (!isEmailApprovalPendingStatus(requestData.status)) {
       toast.warning('Manual approval only applies to CEO Pending requests.', {
         position: 'top-right',
         autoClose: 5000,
@@ -1332,7 +1332,7 @@ export default function AreaHeadRequests() {
     if (!canManualApproval) return;
 
     const rows = filteredRows.filter((row) => selectedRequests.includes(row.id));
-    const ceoPendingOnly = rows.filter((req) => req.status === 'ceo_pending');
+    const ceoPendingOnly = rows.filter((req) => isEmailApprovalPendingStatus(req.status));
 
     if (ceoPendingOnly.length === 0) {
       toast.warning('Please select requests with "CEO Pending" status to manually approve', {
@@ -1424,7 +1424,7 @@ export default function AreaHeadRequests() {
     
     // Filter to only ceo_pending status requests (as per button logic) and exclude requests where email already sent
     const ceoPendingRequests = selectedRequestObjects.filter(req => 
-      req.status === 'ceo_pending' && req.is_email !== true
+      isEmailApprovalPendingStatus(req.status) && req.is_email !== true
     );
     
     if (ceoPendingRequests.length === 0) {
@@ -1555,7 +1555,7 @@ export default function AreaHeadRequests() {
 
     const selectedRequestObjects = filteredRows.filter((row) => selectedRequests.includes(row.id));
     const ceoPendingOnly = selectedRequestObjects.filter(
-      (req) => req.status === 'ceo_pending' && req.is_director_email_sent !== true
+      (req) => isEmailApprovalPendingStatus(req.status) && req.is_director_email_sent !== true
     );
 
     if (ceoPendingOnly.length === 0) {
@@ -1586,7 +1586,7 @@ export default function AreaHeadRequests() {
     }
 
     if (ceoPendingOnly.length !== selectedRequestObjects.length) {
-      const hasNonCeoPending = selectedRequestObjects.some((req) => req.status !== 'ceo_pending');
+      const hasNonCeoPending = selectedRequestObjects.some((req) => !isEmailApprovalPendingStatus(req.status));
       toast.warning(
         hasNonCeoPending
           ? 'Send to Directors only applies to CEO Pending requests. Deselect other statuses.'
@@ -1820,7 +1820,7 @@ export default function AreaHeadRequests() {
 
     const selectedRequestObjects = filteredRows.filter((row) => selectedRequests.includes(row.id));
     const ceoPendingOnly = selectedRequestObjects.filter(
-      (req) => req.status === 'ceo_pending' && req.is_additional_director_email_sent !== true
+      (req) => isEmailApprovalPendingStatus(req.status) && req.is_additional_director_email_sent !== true
     );
 
     if (ceoPendingOnly.length === 0) {
@@ -1853,7 +1853,7 @@ export default function AreaHeadRequests() {
     }
 
     if (ceoPendingOnly.length !== selectedRequestObjects.length) {
-      const hasNonCeoPending = selectedRequestObjects.some((req) => req.status !== 'ceo_pending');
+      const hasNonCeoPending = selectedRequestObjects.some((req) => !isEmailApprovalPendingStatus(req.status));
       toast.warning(
         hasNonCeoPending
           ? 'Send to Additional Director only applies to CEO Pending requests. Deselect other statuses.'
@@ -2180,7 +2180,7 @@ export default function AreaHeadRequests() {
         if (canManualApproval) {
           // manual_approval: any ceo_pending (is_email only blocks Send to CEO, not selection)
           // or invoice_sent / invoice_approved / finance_rejected for Process Payment
-          if (request.status === 'ceo_pending') {
+          if (isEmailApprovalPendingStatus(request.status)) {
             isSelectable = true;
           } else if (isBulkReleasePaymentStatus(request.status)) {
             isSelectable = true;
@@ -2206,7 +2206,7 @@ export default function AreaHeadRequests() {
           
           // Define status groups based on permissions
           const isManualApprovalWorkflowStatus = (status) =>
-            status === 'ceo_pending' || isBulkReleasePaymentStatus(status);
+            isEmailApprovalPendingStatus(status) || isBulkReleasePaymentStatus(status);
           const paymentReleaseStatus = SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT;
           
           // Don't allow mixing manual approval statuses with payment release status
@@ -2264,7 +2264,7 @@ export default function AreaHeadRequests() {
     if (canManualApproval) {
       // ceo_pending (all — is_email only affects Send to CEO button, not Manual Approval)
       // invoice_sent / invoice_approved / finance_rejected for Process Payment
-      const ceoPendingRows = filteredRows.filter((row) => row.status === 'ceo_pending');
+      const ceoPendingRows = filteredRows.filter((row) => isEmailApprovalPendingStatus(row.status));
       const releasePaymentRows = filteredRows.filter((row) => isBulkReleasePaymentStatus(row.status));
       selectableRows = [...selectableRows, ...ceoPendingRows, ...releasePaymentRows];
     }
@@ -4231,6 +4231,9 @@ export default function AreaHeadRequests() {
                 const statusMap = {
                     'pending': 'Pending',
                     'ceo_pending': 'CEO Pending',
+                    'ceo_sent': 'CEO Sent',
+                    'director_sent': 'Director Sent',
+                    'additional_director_sent': 'Additional Director Sent',
                     'approved': 'Approved',
                     'rejected': 'Rejected',
                     'completed': 'Completed',
@@ -4508,7 +4511,7 @@ export default function AreaHeadRequests() {
             // Determine selectable rows based on user permissions
             let selectableRows = [];
             if (canManualApproval) {
-              const ceoPendingRows = filteredRows.filter(row => row.status === 'ceo_pending');
+              const ceoPendingRows = filteredRows.filter(row => isEmailApprovalPendingStatus(row.status));
               const releasePaymentRows = filteredRows.filter(row =>
                 isBulkReleasePaymentStatus(row.status)
               );
@@ -4535,7 +4538,7 @@ export default function AreaHeadRequests() {
             // Determine if row is selectable based on user permissions
             let isSelectable = false;
             if (canManualApproval) {
-              if (params.row.status === 'ceo_pending') {
+              if (isEmailApprovalPendingStatus(params.row.status)) {
                 isSelectable = true;
               } else if (isBulkReleasePaymentStatus(params.row.status)) {
                 isSelectable = true;
@@ -4824,9 +4827,8 @@ export default function AreaHeadRequests() {
           const isQuotationReceived = row.status === 'quotation sent';
           const isInvoiceSent = row.status === 'invoice_sent';
           const isUnderReview = row.status === 'under_review';
-          const isCeoPending = row.status === 'ceo_pending';
           const isRejectableByUpdate = row.status === 'not decided' || row.status === 'Rfq' || row.status === 'quotation sent';
-          const isRejectableByManualApproval = row.status === 'under_review' || row.status === 'ceo_pending';
+          const isRejectableByManualApproval = row.status === 'under_review' || isEmailApprovalPendingStatus(row.status);
           const isRejectableStatus = isRejectableByUpdate || isRejectableByManualApproval;
           
           const actions = [];
@@ -5085,7 +5087,7 @@ export default function AreaHeadRequests() {
           // Show combined view & send messages for requests with add_comment permission
           // Exclude statuses: not decided, Rfq, quotation sent, under_review, and null/undefined/empty
           if (canAddComment) {
-            const excludedStatuses = ['not decided', 'Rfq', 'quotation sent', 'under_review', 'rejected', 'manual_approval', 'ceo_pending', 'invoice_sent', 'invoice rejected'];
+            const excludedStatuses = ['not decided', 'Rfq', 'quotation sent', 'under_review', 'rejected', 'manual_approval', 'ceo_pending', 'ceo_sent', 'director_sent', 'additional_director_sent', 'invoice_sent', 'invoice rejected'];
             const status = row.status;
             const isExcludedStatus = !status || excludedStatuses.includes(status);
             
@@ -5177,7 +5179,7 @@ export default function AreaHeadRequests() {
           }
 
           // Show print button for ceo_pending status with print permission
-          if (row.status === 'ceo_pending' && canPrint) {
+          if (isEmailApprovalPendingStatus(row.status) && canPrint) {
             actions.push(
               <GridActionsCellItem
                 key="print"
@@ -5190,7 +5192,7 @@ export default function AreaHeadRequests() {
           }
 
           // Show manual approval button for ceo_pending status with manual_approval permission
-          if (row.status === 'ceo_pending' && canManualApproval) {
+          if (isEmailApprovalPendingStatus(row.status) && canManualApproval) {
             actions.push(
               <GridActionsCellItem
                 key="manualApproval"
@@ -5364,7 +5366,7 @@ export default function AreaHeadRequests() {
           {/* Determine button states based on selected request statuses */}
           {(() => {
             const selectedRequestObjects = filteredRows.filter(row => selectedRequests.includes(row.id));
-            const hasCeoPending = selectedRequestObjects.some(req => req.status === 'ceo_pending');
+            const hasCeoPending = selectedRequestObjects.some(req => isEmailApprovalPendingStatus(req.status));
             const hasReleasePaymentEligible = selectedRequestObjects.some(req => isBulkReleasePaymentStatus(req.status));
             const hasSubmittedForPayment = selectedRequestObjects.some(req => req.status === SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT);
             const hasMixedSelection = (hasCeoPending && hasReleasePaymentEligible) || 
@@ -5402,7 +5404,7 @@ export default function AreaHeadRequests() {
                       hasSubmittedForPayment ||
                       hasDirectorEmailAlreadySent ||
                       selectedRequestObjects.length === 0 ||
-                      selectedRequestObjects.some((req) => req.status !== 'ceo_pending')
+                      selectedRequestObjects.some((req) => !isEmailApprovalPendingStatus(req.status))
                     }
                     startIcon={<SendToDirectorsIcon />}
                     sx={{ fontWeight: 'bold', textTransform: 'none' }}
@@ -5421,7 +5423,7 @@ export default function AreaHeadRequests() {
                       hasSubmittedForPayment ||
                       hasAdditionalDirectorEmailAlreadySent ||
                       selectedRequestObjects.length === 0 ||
-                      selectedRequestObjects.some((req) => req.status !== 'ceo_pending')
+                      selectedRequestObjects.some((req) => !isEmailApprovalPendingStatus(req.status))
                     }
                     startIcon={<SendToAdditionalDirectorsIcon />}
                     sx={{ fontWeight: 'bold', textTransform: 'none' }}
@@ -5439,7 +5441,7 @@ export default function AreaHeadRequests() {
                       hasReleasePaymentEligible ||
                       hasSubmittedForPayment ||
                       selectedRequestObjects.length === 0 ||
-                      selectedRequestObjects.some((req) => req.status !== 'ceo_pending')
+                      selectedRequestObjects.some((req) => !isEmailApprovalPendingStatus(req.status))
                     }
                     startIcon={<ManualApprovalIcon />}
                     sx={{ fontWeight: 'bold', textTransform: 'none' }}
@@ -7841,7 +7843,7 @@ export default function AreaHeadRequests() {
                         selectedDetailedRequest.status === 'invoice_sent' ? 'primary' :
                         selectedDetailedRequest.status === 'invoice_approved' ? 'success' :
                         selectedDetailedRequest.status === 'payment_released' ? 'success' :
-                        selectedDetailedRequest.status === 'ceo_pending' ? 'warning' :
+                        isEmailApprovalPendingStatus(selectedDetailedRequest.status) ? 'warning' :
                         selectedDetailedRequest.status === 'under_review' ? 'info' :
                         'default'
                       }
@@ -7887,7 +7889,7 @@ export default function AreaHeadRequests() {
                         })() : 'N/A'}
                     </Typography>
                   </Box>
-                  {selectedDetailedRequest.status === 'ceo_pending' && (
+                  {isEmailApprovalPendingStatus(selectedDetailedRequest.status) && (
                     <>
                       <Box>
                         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>
