@@ -19,6 +19,7 @@ import {
   IconButton,
   Backdrop,
   CircularProgress,
+  Paper,
 } from '@mui/material';
 import {
   Visibility as VisibilityIcon,
@@ -31,6 +32,7 @@ import {
   Print as PrintIcon,
   Receipt as InvoiceIcon,
   ShoppingCart as OldPurchasesIcon,
+  Gavel as ManualApprovalIcon,
 } from '@mui/icons-material';
 import { GridActionsCellItem } from '@mui/x-data-grid';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -90,6 +92,45 @@ const canShowBatchItemInvoice = (request) => {
   );
 };
 
+const getWorkApprovalChipColor = (type) => {
+  if (type === 'ceo') return 'success';
+  if (type === 'director') return 'warning';
+  if (type === 'additional_director') return 'info';
+  if (type === 'manual') return 'secondary';
+  return 'default';
+};
+
+const getRequestWorkApprovals = (request) => {
+  if (!request) return [];
+  if (Array.isArray(request.work_approvals) && request.work_approvals.length > 0) {
+    return request.work_approvals;
+  }
+  const fallback = [];
+  if (
+    request.is_manual === true ||
+    (request.manual_approval_reason && String(request.manual_approval_reason).trim() !== '') ||
+    request.has_manual_approval_file
+  ) {
+    fallback.push({
+      type: 'manual',
+      label: 'Manual Approval',
+      reason: request.manual_approval_reason || null,
+    });
+  }
+  return fallback;
+};
+
+const canShowManualApproval = (request) => {
+  if (!request) return false;
+  return Boolean(
+    request.has_manual_approval_file ||
+      request.is_manual ||
+      (request.manual_approval_reason && String(request.manual_approval_reason).trim() !== '') ||
+      (Array.isArray(request.manual_approval_files) && request.manual_approval_files.length > 0) ||
+      getRequestWorkApprovals(request).some((a) => a.type === 'manual')
+  );
+};
+
 const getBatchStatusColor = (status) => {
   const normalized = String(status || '').trim().toLowerCase();
   if (normalized === 'voucher sent') return 'warning';
@@ -142,6 +183,8 @@ export default function PaymentBatch() {
   const [loadingHistory, setLoadingHistory] = React.useState(false);
   const [oldPurchasesModalOpen, setOldPurchasesModalOpen] = React.useState(false);
   const [selectedDealerForOldPurchases, setSelectedDealerForOldPurchases] = React.useState(null);
+  const [viewManualApprovalModalOpen, setViewManualApprovalModalOpen] = React.useState(false);
+  const [selectedManualApprovalRequest, setSelectedManualApprovalRequest] = React.useState(null);
 
   // Table state management
   const [paginationModel, setPaginationModel] = React.useState({
@@ -457,8 +500,11 @@ export default function PaymentBatch() {
     if (!requestData?.id) return;
     setLoadingRequestDetails(true);
     try {
-      const full = await fetchFullRequest(requestData.id, 'details');
-      setSelectedDetailedRequest(full);
+      const full = await fetchFullRequest(requestData.id, 'details,manual_approval');
+      setSelectedDetailedRequest({
+        ...full,
+        work_approvals: full.work_approvals || requestData.work_approvals || [],
+      });
       setDetailedViewModalOpen(true);
     } catch (e) {
       toast.error('Failed to load request details', { position: 'top-right', autoClose: 5000 });
@@ -466,6 +512,23 @@ export default function PaymentBatch() {
       setLoadingRequestDetails(false);
     }
   }, [fetchFullRequest]);
+
+  const handleViewManualApproval = React.useCallback(async (requestData) => {
+    if (!canRead || !requestData?.id) return;
+    setLoadingRequestDetails(true);
+    try {
+      const full = await fetchFullRequest(requestData.id, 'manual_approval');
+      setSelectedManualApprovalRequest({
+        ...full,
+        work_approvals: full.work_approvals || requestData.work_approvals || [],
+      });
+      setViewManualApprovalModalOpen(true);
+    } catch (e) {
+      toast.error('Failed to load manual approval', { position: 'top-right', autoClose: 5000 });
+    } finally {
+      setLoadingRequestDetails(false);
+    }
+  }, [canRead, fetchFullRequest]);
 
   const handleViewRequestInvoice = React.useCallback(async (requestData) => {
     if (!canRead || !requestData?.id) return;
@@ -1079,11 +1142,12 @@ window.populateRequestTemplate=populateTemplate;
                       <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Request ID</TableCell>
                       <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Dealer</TableCell>
                       <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Vendor</TableCell>
+                      <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Approvals</TableCell>
                       <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Invoice No.</TableCell>
                       <TableCell sx={{ fontWeight: 'bold', color: '#666' }}>Invoice Date</TableCell>
                       <TableCell align="right" sx={{ fontWeight: 'bold', color: '#666' }}>Amount</TableCell>
                       <TableCell align="right" sx={{ fontWeight: 'bold', color: '#666' }}>Sales Tax</TableCell>
-                      <TableCell align="center" sx={{ fontWeight: 'bold', color: '#666', minWidth: 260 }}>Actions</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 'bold', color: '#666', minWidth: 280 }}>Actions</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -1120,6 +1184,40 @@ window.populateRequestTemplate=populateTemplate;
                                 </Typography>
                               )}
                             </TableCell>
+                            <TableCell sx={{ minWidth: 160 }}>
+                              {(() => {
+                                const approvals = getRequestWorkApprovals(request);
+                                if (approvals.length === 0) {
+                                  return (
+                                    <Typography variant="caption" sx={{ color: '#999' }}>
+                                      —
+                                    </Typography>
+                                  );
+                                }
+                                return (
+                                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                    {approvals.map((approval, idx) => (
+                                      <Tooltip
+                                        key={`${approval.type}-${idx}`}
+                                        title={
+                                          approval.user_name
+                                            ? `${approval.label} — ${approval.user_name}`
+                                            : approval.label
+                                        }
+                                      >
+                                        <Chip
+                                          label={approval.label}
+                                          size="small"
+                                          color={getWorkApprovalChipColor(approval.type)}
+                                          variant="outlined"
+                                          sx={{ maxWidth: 180 }}
+                                        />
+                                      </Tooltip>
+                                    ))}
+                                  </Box>
+                                );
+                              })()}
+                            </TableCell>
                             <TableCell>
                               {request?.invoice_number || 'N/A'}
                             </TableCell>
@@ -1154,6 +1252,17 @@ window.populateRequestTemplate=populateTemplate;
                                         <VisibilityIcon fontSize="small" />
                                       </IconButton>
                                     </Tooltip>
+                                    {canShowManualApproval(request) && (
+                                      <Tooltip title="View Manual Approval">
+                                        <IconButton
+                                          size="small"
+                                          onClick={() => handleViewManualApproval(request)}
+                                          sx={{ color: '#ff9800' }}
+                                        >
+                                          <ManualApprovalIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    )}
                                     {canShowBatchItemInvoice(request) && (
                                       <Tooltip title="View Invoice">
                                         <IconButton size="small" color="info" onClick={() => handleViewRequestInvoice(request)}>
@@ -1205,7 +1314,7 @@ window.populateRequestTemplate=populateTemplate;
                       })
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={8} align="center" sx={{ py: 3 }}>
+                        <TableCell colSpan={9} align="center" sx={{ py: 3 }}>
                           <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
                             No requests found in this batch
                           </Typography>
@@ -1646,6 +1755,60 @@ window.populateRequestTemplate=populateTemplate;
                     )}
                   </Box>
                 ))}
+
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1, color: '#ff9800' }}>
+                    Manual Approval Form
+                  </Typography>
+                  {selectedDetailedRequest.manual_approval_reason && (
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        mb: 1.5,
+                        p: 1.5,
+                        backgroundColor: '#fff',
+                        borderRadius: 1,
+                        border: '1px solid #eee',
+                        whiteSpace: 'pre-wrap',
+                      }}
+                    >
+                      {selectedDetailedRequest.manual_approval_reason}
+                    </Typography>
+                  )}
+                  {selectedDetailedRequest.manual_approval_files?.length > 0 ? (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      {selectedDetailedRequest.manual_approval_files.map((file, idx) => (
+                        <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                          <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#666' }}>
+                            File:
+                          </Typography>
+                          <Typography variant="body2">{file.fileName || `Form ${idx + 1}`}</Typography>
+                          {file.isBatchForm && (
+                            <Chip
+                              label={file.batchNumber ? `Batch ${file.batchNumber}` : 'Batch form'}
+                              size="small"
+                              color="info"
+                              variant="outlined"
+                            />
+                          )}
+                          <Button
+                            variant="contained"
+                            color="primary"
+                            size="small"
+                            startIcon={<VisibilityIcon />}
+                            onClick={() => openFileInNewTab(file.url)}
+                          >
+                            View File
+                          </Button>
+                        </Box>
+                      ))}
+                    </Box>
+                  ) : (
+                    <Typography variant="body2" sx={{ color: '#666', fontStyle: 'italic' }}>
+                      No manual approval form uploaded
+                    </Typography>
+                  )}
+                </Box>
               </Box>
 
               <Box sx={{ p: 3, borderRadius: 2, backgroundColor: '#f8f9fa', border: '1px solid #e0e0e0' }}>
@@ -1659,6 +1822,28 @@ window.populateRequestTemplate=populateTemplate;
                       size="small"
                       color={getStatusColorHelper(selectedDetailedRequest.status)}
                     />
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>Approvals</Typography>
+                    {getRequestWorkApprovals(selectedDetailedRequest).length > 0 ? (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {getRequestWorkApprovals(selectedDetailedRequest).map((approval, idx) => (
+                          <Chip
+                            key={`${approval.type}-${idx}`}
+                            label={
+                              approval.user_name
+                                ? `${approval.label} (${approval.user_name})`
+                                : approval.label
+                            }
+                            size="small"
+                            color={getWorkApprovalChipColor(approval.type)}
+                            variant="outlined"
+                          />
+                        ))}
+                      </Box>
+                    ) : (
+                      <Typography variant="body1">—</Typography>
+                    )}
                   </Box>
                   <Box>
                     <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#666', mb: 0.5 }}>Vendor</Typography>
@@ -1685,6 +1870,140 @@ window.populateRequestTemplate=populateTemplate;
         </DialogContent>
         <DialogActions sx={{ p: 3 }}>
           <Button onClick={() => setDetailedViewModalOpen(false)} variant="outlined">Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* View Manual Approval Modal (same pattern as Area Head / Manual Approval Batches) */}
+      <Dialog
+        open={viewManualApprovalModalOpen}
+        onClose={() => {
+          setViewManualApprovalModalOpen(false);
+          setSelectedManualApprovalRequest(null);
+        }}
+        aria-labelledby="batch-view-manual-approval-dialog-title"
+        PaperProps={{
+          sx: {
+            backgroundColor: '#ffffff',
+            minWidth: '600px',
+            maxWidth: '800px',
+            borderRadius: 2,
+            boxShadow: 6,
+          },
+        }}
+      >
+        <DialogTitle
+          id="batch-view-manual-approval-dialog-title"
+          sx={{
+            color: '#ff9800',
+            fontWeight: 'bold',
+            borderBottom: '1px solid #eaeaea',
+            padding: '20px 24px 16px 24px',
+          }}
+        >
+          Manual Approval Details — #{selectedManualApprovalRequest?.id || 'N/A'}
+        </DialogTitle>
+        <DialogContent sx={{ padding: '20px 24px' }}>
+          {selectedManualApprovalRequest && (
+            <Box>
+              {getRequestWorkApprovals(selectedManualApprovalRequest).length > 0 && (
+                <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 2 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1.5, color: '#ff9800' }}>
+                    Approvals
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                    {getRequestWorkApprovals(selectedManualApprovalRequest).map((approval, idx) => (
+                      <Chip
+                        key={`${approval.type}-${idx}`}
+                        label={
+                          approval.user_name
+                            ? `${approval.label} (${approval.user_name})`
+                            : approval.label
+                        }
+                        size="small"
+                        color={getWorkApprovalChipColor(approval.type)}
+                        variant="outlined"
+                      />
+                    ))}
+                  </Box>
+                </Paper>
+              )}
+
+              <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: '#ff9800' }}>
+                  Manual Approval Comments
+                </Typography>
+                <Typography
+                  variant="body1"
+                  sx={{
+                    p: 2,
+                    backgroundColor: '#f5f5f5',
+                    borderRadius: 1,
+                    minHeight: '80px',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {selectedManualApprovalRequest.manual_approval_reason || 'No comments provided'}
+                </Typography>
+              </Paper>
+
+              <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, color: '#ff9800' }}>
+                  Manual Approval Form
+                </Typography>
+                {selectedManualApprovalRequest.manual_approval_files?.length > 0 ? (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {selectedManualApprovalRequest.manual_approval_files.map((file, idx) => (
+                      <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                        <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#666' }}>
+                          File:
+                        </Typography>
+                        <Typography variant="body2">{file.fileName || 'N/A'}</Typography>
+                        {file.isBatchForm && (
+                          <Chip
+                            label={file.batchNumber ? `Batch ${file.batchNumber}` : 'Batch form'}
+                            size="small"
+                            color="info"
+                            variant="outlined"
+                          />
+                        )}
+                        <Button
+                          variant="contained"
+                          color="primary"
+                          size="small"
+                          startIcon={<VisibilityIcon />}
+                          onClick={() => openFileInNewTab(file.url)}
+                          sx={{ ml: 1 }}
+                        >
+                          View File
+                        </Button>
+                      </Box>
+                    ))}
+                  </Box>
+                ) : (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                    <Chip label="Pending" color="warning" size="small" />
+                    <Typography variant="body2" color="text.secondary">
+                      No signed form has been uploaded for this request yet.
+                    </Typography>
+                  </Box>
+                )}
+              </Paper>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ padding: '16px 24px 20px 24px', gap: 1 }}>
+          <Button
+            onClick={() => {
+              setViewManualApprovalModalOpen(false);
+              setSelectedManualApprovalRequest(null);
+            }}
+            variant="contained"
+            color="primary"
+            sx={{ minWidth: '120px' }}
+          >
+            Close
+          </Button>
         </DialogActions>
       </Dialog>
 
