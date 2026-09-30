@@ -425,16 +425,22 @@ export default function AreaHeadRequests() {
   }, [canRead, navigate]);
 
   // API call to fetch vendors from users table (SAP users) filtered by dealer district
-  const fetchVendors = React.useCallback(async (dealerDistrict = null) => {
+  // For Manual Survey: pass allVendors=true so backend returns every vendor (no district / no page limit)
+  const fetchVendors = React.useCallback(async (dealerDistrict = null, { allVendors = false } = {}) => {
     setLoadingVendors(true);
     setVendorsError(null);
     
     try {
       // Build API URL with district filter if provided
       let apiUrl = '/api/sap-users';
-      if (dealerDistrict) {
-        apiUrl += `?district=${encodeURIComponent(dealerDistrict)}`;
+      const params = new URLSearchParams();
+      if (allVendors) {
+        params.set('is_manual_survey', 'true');
+      } else if (dealerDistrict) {
+        params.set('district', dealerDistrict);
       }
+      const qs = params.toString();
+      if (qs) apiUrl += `?${qs}`;
       
       const response = await get(apiUrl);
       
@@ -456,7 +462,11 @@ export default function AreaHeadRequests() {
         }));
         
         setVendors(vendorData);
-        console.log(`SAP vendors loaded for district "${dealerDistrict || 'all'}":`, vendorData.length, 'vendors');
+        console.log(
+          allVendors
+            ? `SAP vendors loaded (manual survey — all): ${vendorData.length}`
+            : `SAP vendors loaded for district "${dealerDistrict || 'all'}": ${vendorData.length} vendors`
+        );
       } else {
         throw new Error('Invalid vendors data format');
       }
@@ -481,7 +491,7 @@ export default function AreaHeadRequests() {
     if (!assignDialogOpen || !requestToAction) return;
     // Manual surveys have no SAP dealer district — show all vendors
     if (requestToAction.is_manual_survey) {
-      fetchVendors(null);
+      fetchVendors(null, { allVendors: true });
       return;
     }
     if (requestToAction.dealer?.district) {
