@@ -41,6 +41,9 @@ export const SHOPBOARD_REQUEST_STATUS = {
   VENDOR_REJECTED: 'vendor_rejected',
   VENDOR_RESUBMITTED: 'vendor_resubmitted',
   INVOICE_APPROVED: 'invoice_approved',
+  CEO_REJECTED: 'ceo_rejected',
+  DIRECTOR_REJECTED: 'director_rejected',
+  ADDITIONAL_DIRECTOR_REJECTED: 'additional_director_rejected',
 };
 
 // Display names mapping for each status
@@ -78,6 +81,9 @@ export const SHOPBOARD_REQUEST_STATUS_DISPLAY = {
   [SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED]: 'Vendor Rejected',
   [SHOPBOARD_REQUEST_STATUS.VENDOR_RESUBMITTED]: 'Vendor Resubmitted',
   [SHOPBOARD_REQUEST_STATUS.INVOICE_APPROVED]: 'Executive verified',
+  [SHOPBOARD_REQUEST_STATUS.CEO_REJECTED]: 'CEO Rejected',
+  [SHOPBOARD_REQUEST_STATUS.DIRECTOR_REJECTED]: 'Director Rejected',
+  [SHOPBOARD_REQUEST_STATUS.ADDITIONAL_DIRECTOR_REJECTED]: 'Additional Director Rejected',
 };
 
 // Helper function to get display name for a status
@@ -98,6 +104,9 @@ export const getStatusColor = (status) => {
     case SHOPBOARD_REQUEST_STATUS.FINANCE_REJECTED:
     case SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED:
     case SHOPBOARD_REQUEST_STATUS.REJECTED:
+    case SHOPBOARD_REQUEST_STATUS.CEO_REJECTED:
+    case SHOPBOARD_REQUEST_STATUS.DIRECTOR_REJECTED:
+    case SHOPBOARD_REQUEST_STATUS.ADDITIONAL_DIRECTOR_REJECTED:
     case SHOPBOARD_REQUEST_STATUS.RFQ_REJECTED:
     case SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED:
       return 'error';
@@ -144,6 +153,15 @@ export const EMAIL_APPROVAL_PENDING_STATUSES = [
 
 export const isEmailApprovalPendingStatus = (status) =>
   EMAIL_APPROVAL_PENDING_STATUSES.includes(status);
+
+export const EMAIL_ROLE_REJECTED_STATUSES = [
+  SHOPBOARD_REQUEST_STATUS.CEO_REJECTED,
+  SHOPBOARD_REQUEST_STATUS.DIRECTOR_REJECTED,
+  SHOPBOARD_REQUEST_STATUS.ADDITIONAL_DIRECTOR_REJECTED,
+];
+
+export const isEmailRoleRejectedStatus = (status) =>
+  EMAIL_ROLE_REJECTED_STATUSES.includes(status);
 
 // Array of all status values
 export const ALL_STATUSES = Object.values(SHOPBOARD_REQUEST_STATUS);

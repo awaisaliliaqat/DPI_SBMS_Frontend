@@ -79,6 +79,7 @@ import {
   getStatusDisplayName, 
   getStatusColor as getStatusColorHelper,
   isEmailApprovalPendingStatus,
+  isEmailRoleRejectedStatus,
 } from "../constants/ShopboardRequestStatus";
 import { useApi } from '../hooks/useApi';
 import jsPDF from 'jspdf';
@@ -997,7 +998,7 @@ export default function AreaHeadRequests() {
     setInvoiceApproveDialogOpen(true);
   }, [canRead, canManualApproval]);
 
-  // Statuses that show Reject complete vs Allow resubmit
+  // Statuses that show two reject options (complete vs forward/resubmit to vendor)
   const isTwoOptionRejectStatus = React.useCallback((status) => {
     return (
       status === 'Rfq' ||
@@ -1006,16 +1007,22 @@ export default function AreaHeadRequests() {
       status === SHOPBOARD_REQUEST_STATUS.QUOTATION_SENT ||
       status === 'under_review' ||
       status === SHOPBOARD_REQUEST_STATUS.UNDER_REVIEW ||
-      isEmailApprovalPendingStatus(status)
+      isEmailApprovalPendingStatus(status) ||
+      isEmailRoleRejectedStatus(status)
     );
   }, []);
 
   const handleReject = React.useCallback((requestData) => {
-    if (!canReject) return;
+    // CEO / Director / Additional Director rejected → reject modal for manual_approval only
+    if (isEmailRoleRejectedStatus(requestData?.status)) {
+      if (!canManualApproval) return;
+    } else if (!canReject) {
+      return;
+    }
     setRequestToAction(requestData);
     setRejectMode('complete');
     setRejectDialogOpen(true);
-  }, [canReject]);
+  }, [canReject, canManualApproval]);
 
   const handleAssign = React.useCallback((requestData) => {
     if (!canAssign) return;
@@ -2654,9 +2661,12 @@ export default function AreaHeadRequests() {
 
       await patch(`/api/shopboard-requests/${requestToAction.id}`, updateData);
 
+      const fromEmailRoleReject = isEmailRoleRejectedStatus(requestToAction.status);
       const successMsg =
         nextStatus === SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED
-          ? `Request #${requestToAction.id} rejected — vendor may resubmit.`
+          ? fromEmailRoleReject
+            ? `Request #${requestToAction.id} forwarded to vendor — they may edit and resubmit.`
+            : `Request #${requestToAction.id} rejected — vendor may resubmit.`
           : nextStatus === SHOPBOARD_REQUEST_STATUS.RFQ_REJECTED
             ? `Request #${requestToAction.id} rejected — you can assign another vendor.`
             : `Request #${requestToAction.id} rejected successfully!`;
@@ -4246,6 +4256,9 @@ export default function AreaHeadRequests() {
                     'additional_director_sent': 'Additional Director Sent',
                     'approved': 'Approved',
                     'rejected': 'Rejected',
+                    'ceo_rejected': 'CEO Rejected',
+                    'director_rejected': 'Director Rejected',
+                    'additional_director_rejected': 'Additional Director Rejected',
                     'completed': 'Completed',
                     'in_progress': 'In Progress'
                 };
@@ -4839,7 +4852,8 @@ export default function AreaHeadRequests() {
           const isUnderReview = row.status === 'under_review';
           const isRejectableByUpdate = row.status === 'not decided' || row.status === 'Rfq' || row.status === 'quotation sent';
           const isRejectableByManualApproval = row.status === 'under_review' || isEmailApprovalPendingStatus(row.status);
-          const isRejectableStatus = isRejectableByUpdate || isRejectableByManualApproval;
+          const isEmailRoleRejected = isEmailRoleRejectedStatus(row.status);
+          const isRejectableStatus = isRejectableByUpdate || isRejectableByManualApproval || isEmailRoleRejected;
           
           const actions = [];
           
@@ -4941,8 +4955,13 @@ export default function AreaHeadRequests() {
           
           // Show reject action:
           // - 'not decided', 'Rfq', 'quotation sent' → update permission only
-          // - 'under_review', 'ceo_pending' → update + manual_approval permission
-          if ((isRejectableByUpdate && canReject) || (isRejectableByManualApproval && canReject && canManualApproval)) {
+          // - 'under_review', ceo pending/sent → update + manual_approval
+          // - ceo/director/additional_director rejected → manual_approval only (two-option modal)
+          if (
+            (isRejectableByUpdate && canReject) ||
+            (isRejectableByManualApproval && canReject && canManualApproval) ||
+            (isEmailRoleRejected && canManualApproval)
+          ) {
             actions.push(
               <GridActionsCellItem
                 key="reject"
@@ -4961,6 +4980,7 @@ export default function AreaHeadRequests() {
           // Show view rejection / finance rejection comments
           if (
             (row.status === 'rejected' ||
+              isEmailRoleRejectedStatus(row.status) ||
               row.status === 'rfq_rejected' ||
               row.status === 'vendor_rejected' ||
               row.status === SHOPBOARD_REQUEST_STATUS.VENDOR_REJECTED ||
@@ -5097,7 +5117,7 @@ export default function AreaHeadRequests() {
           // Show combined view & send messages for requests with add_comment permission
           // Exclude statuses: not decided, Rfq, quotation sent, under_review, and null/undefined/empty
           if (canAddComment) {
-            const excludedStatuses = ['not decided', 'Rfq', 'quotation sent', 'under_review', 'rejected', 'manual_approval', 'ceo_pending', 'ceo_sent', 'director_sent', 'additional_director_sent', 'invoice_sent', 'invoice rejected'];
+            const excludedStatuses = ['not decided', 'Rfq', 'quotation sent', 'under_review', 'rejected', 'ceo_rejected', 'director_rejected', 'additional_director_rejected', 'manual_approval', 'ceo_pending', 'ceo_sent', 'director_sent', 'additional_director_sent', 'invoice_sent', 'invoice rejected'];
             const status = row.status;
             const isExcludedStatus = !status || excludedStatuses.includes(status);
             
@@ -5890,10 +5910,14 @@ export default function AreaHeadRequests() {
                   label={
                     <Box>
                       <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                        Reject complete request
+                        {isEmailRoleRejectedStatus(requestToAction?.status)
+                          ? 'Reject'
+                          : 'Reject complete request'}
                       </Typography>
                       <Typography variant="body2" sx={{ color: '#666' }}>
-                        Ends this vendor&apos;s work. You can assign another vendor.
+                        {isEmailRoleRejectedStatus(requestToAction?.status)
+                          ? 'Ends this request path. You can assign another vendor.'
+                          : "Ends this vendor's work. You can assign another vendor."}
                       </Typography>
                     </Box>
                   }
@@ -5905,10 +5929,14 @@ export default function AreaHeadRequests() {
                   label={
                     <Box>
                       <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                        Allow resubmit
+                        {isEmailRoleRejectedStatus(requestToAction?.status)
+                          ? 'Forward to vendor'
+                          : 'Allow resubmit'}
                       </Typography>
                       <Typography variant="body2" sx={{ color: '#666' }}>
-                        Same vendor can edit and send quotation again. You cannot re-assign.
+                        {isEmailRoleRejectedStatus(requestToAction?.status)
+                          ? 'Send back to the same vendor so they can edit and send quotation again.'
+                          : 'Same vendor can edit and send quotation again. You cannot re-assign.'}
                       </Typography>
                     </Box>
                   }
