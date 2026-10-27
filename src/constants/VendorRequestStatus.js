@@ -34,6 +34,8 @@ export const VENDOR_REQUEST_STATUS_DISPLAY = {
   [SHOPBOARD_REQUEST_STATUS.INVOICE_SENT]: 'Invoice Sent',
   [SHOPBOARD_REQUEST_STATUS.FINANCE_REJECTED]: 'Finance Rejected',
   [SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT]: 'Invoice Approved',
+  // Backend maps voucher_sent → Submitted for Payment; keep label if raw value ever arrives
+  [SHOPBOARD_REQUEST_STATUS.VOUCHER_SENT]: 'Invoice Approved',
   [SHOPBOARD_REQUEST_STATUS.INVOICE_REJECTED]: 'Invoice Rejected',
   [SHOPBOARD_REQUEST_STATUS.PAYMENT_SUCCESSFUL]: 'Payment Successful',
   [SHOPBOARD_REQUEST_STATUS.REJECTED]: 'Rejected',
@@ -90,6 +92,7 @@ export const getVendorStatusColor = (status) => {
     case SHOPBOARD_REQUEST_STATUS.FINANCE_REJECTED:
       return 'error';
     case SHOPBOARD_REQUEST_STATUS.SUBMITTED_FOR_PAYMENT:
+    case SHOPBOARD_REQUEST_STATUS.VOUCHER_SENT:
       return 'success'; // Green color for "Invoice Approved"
     case SHOPBOARD_REQUEST_STATUS.PAYMENT_SUCCESSFUL:
       return 'success'; // Green color for "Payment Successful"
