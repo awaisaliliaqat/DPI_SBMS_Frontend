@@ -336,14 +336,22 @@ export default function SalesHeadManagement() {
     } finally { setAssignSaving(false); }
   }, [selectedAssignRow, selectedValueInDialog, assignDialogMode, closeAssignDialog, post, loadSalesHeads]);
 
-  // ── Toggle active (FUTURE USE: used by Active column when uncommented) ───────
+  // ── Toggle active ─────────────────────────────────────────────────────────
   const handleToggleActive = React.useCallback(async (row, newValue) => {
     const username = String(row.username || '').trim();
     if (!username) { toast.error('Cannot toggle: username is missing'); return; }
+    // Prefer hierarchy sourceTypes from API; fall back from row type
+    const sourceTypeFromRow = Array.isArray(row.sourceTypes) && row.sourceTypes.length > 0
+      ? String(row.sourceTypes[0]).trim()
+      : (row.rowType === 'manager' ? 'Sales Manager' : 'Sales Head');
     const key = row.assignmentKey;
     setTogglingActive((prev) => ({ ...prev, [key]: true }));
     try {
-      const res = await post('/api/sap-users/toggle-user-active', { username, is_active: newValue });
+      const res = await post('/api/sap-users/toggle-user-active', {
+        username,
+        is_active: newValue,
+        source_type: sourceTypeFromRow,
+      });
       if (res?.success) {
         toast.success(res.message || `User ${newValue ? 'activated' : 'deactivated'}`);
         await loadSalesHeads();
